@@ -7,8 +7,8 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 export default function SubmitPage() {
   const [hn, setHn] = useState("");
   const [problem, setProblem] = useState("");
-
-  // VVVV แก้ไขบรรทัดนี้ VVVV (เพิ่ม <string[]>)
+  
+  // VVVV แก้ไขแล้ว: เพิ่ม <string[]> VVVV
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
 
   // รายชื่อแผนกทั้งหมดจาก Google Form ของคุณ
@@ -17,26 +17,25 @@ export default function SubmitPage() {
     "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"
   ];
 
-  const handleCheckboxChange = (dept: string) => { // (เพิ่ม : string ตรงนี้)
+  // VVVV แก้ไขแล้ว: เพิ่ม (dept: string) VVVV
+  const handleCheckboxChange = (dept: string) => { 
     setSelectedDepts(prev => 
       prev.includes(dept) 
         ? prev.filter(d => d !== dept) 
         : [...prev, dept]
     );
   };
-  
-  // (โค้ดที่เหลือเหมือนเดิม)
-  // ... (ส่วน handleSubmit และ return ...)
-  // ...
-  const handleSubmit = async (e: React.FormEvent) => { // (เพิ่ม Type ตรงนี้)
+
+  // VVVV แก้ไขแล้ว: เพิ่ม (e: React.FormEvent) VVVV
+  const handleSubmit = async (e: React.FormEvent) => { 
     e.preventDefault();
     if (!hn || !problem || selectedDepts.length === 0) {
       alert("กรุณากรอกข้อมูลให้ครบ");
       return;
     }
 
-    // สร้าง Object 'departments' ตาม Schema ที่เราออกแบบไว้
-    const departmentsMap: { [key: string]: any } = {}; // (เพิ่ม Type ตรงนี้)
+    // VVVV แก้ไขแล้ว: เพิ่ม Type { [key: string]: any } VVVV
+    const departmentsMap: { [key: string]: any } = {}; 
     selectedDepts.forEach(dept => {
       departmentsMap[dept] = { status: "pending", completedAt: null };
     });
@@ -58,9 +57,15 @@ export default function SubmitPage() {
       setProblem("");
       setSelectedDepts([]);
 
-    } catch (error) {
+    } catch (error) { // VVVV นี่คือส่วนที่แก้ไข Error ล่าสุด VVVV
       console.error("Error adding document: ", error);
-      alert("เกิดข้อผิดพลาด: " + error.message);
+      // เราต้องเช็ค Type ก่อนใช้ .message
+      if (error instanceof Error) {
+        alert("เกิดข้อผิดพลาด: " + error.message);
+      } else {
+        alert("เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ");
+      }
+      // ^^^^ สิ้นสุดส่วนที่แก้ไข ^^^^
     }
   };
 
