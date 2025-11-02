@@ -1,22 +1,18 @@
-"use client";
+"use client"; // <--- 1. เพิ่มบรรทัดนี้เป็นบรรทัดแรกสุด
 
 import { db } from "@/lib/firebase";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 
-// VVVV อัปเดตบรรทัดนี้ VVVV
-export default function ConsultCard({ caseData, caseId, departmentName }: { caseData: any, caseId: any, departmentName: any }) {
-
-  const { hn, problem, createdAt, departments } = caseData;
-
-  // (ที่เหลือเหมือนเดิม)
 // คอมโพเนนต์นี้รับ props: 
 // - caseData (ข้อมูลเคสทั้งหมด)
 // - caseId (ID ของ Document)
 // - departmentName (ชื่อแผนกที่ Dashboard นี้กำลังแสดงผล เช่น "Gen Sx")
-export default function ConsultCard({ caseData, caseId, departmentName }) {
 
+// VVVV 2. แก้ไขบรรทัดนี้ โดยเพิ่ม Type ": { caseData: any, ... }" VVVV
+export default function ConsultCard({ caseData, caseId, departmentName }: { caseData: any, caseId: any, departmentName: any }) {
+  
   const { hn, problem, createdAt, departments } = caseData;
-
+  
   // ข้อมูลสถานะของแผนกนี้โดยเฉพาะ
   const deptStatus = departments[departmentName];
 
@@ -31,7 +27,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }) {
       // เช่น 'departments.Gen Sx.status'
       const updateKeyStatus = `departments.${departmentName}.status`;
       const updateKeyTime = `departments.${departmentName}.completedAt`;
-
+      
       await updateDoc(caseRef, {
         [updateKeyStatus]: "completed",
         [updateKeyTime]: serverTimestamp()
@@ -55,7 +51,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }) {
       <h3>HN: {hn} (ปรึกษา {departmentName})</h3>
       <p>Problem: {problem}</p>
       <p>เวลาส่งปรึกษา: {timeAgo}</p>
-
+      
       {isCompleted ? (
         <p style={{ color: 'green' }}>ปิดงานแล้วเมื่อ: {completedTime}</p>
       ) : (
@@ -66,7 +62,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }) {
       <div>
         <strong>สถานะแผนกอื่นในเคสนี้:</strong>
         <ul>
-          {Object.entries(departments).map(([dept, status]) => (
+          {Object.entries(departments).map(([dept, status]: [string, any]) => ( // <--- เพิ่ม Type ตรงนี้ด้วย
             <li key={dept}>
               {dept}: {status.status} 
               {status.completedAt && ` (เสร็จ: ${status.completedAt.toDate().toLocaleTimeString('th-TH')})`}
