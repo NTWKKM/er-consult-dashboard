@@ -38,7 +38,14 @@ export default function Dashboard() {
   };
 
   if (loading) {
-    return <div className="text-center p-10 text-gray-600 text-lg font-semibold">Loading...</div>;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-xl text-gray-700 font-semibold">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
