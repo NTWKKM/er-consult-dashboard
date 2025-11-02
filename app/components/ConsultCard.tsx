@@ -1,71 +1,100 @@
-"use client"; // <--- 1. เพิ่มบรรทัดนี้เป็นบรรทัดแรกสุด
+"use client";
 
 import { db } from "@/lib/firebase";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 
-// คอมโพเนนต์นี้รับ props: 
-// - caseData (ข้อมูลเคสทั้งหมด)
-// - caseId (ID ของ Document)
-// - departmentName (ชื่อแผนกที่ Dashboard นี้กำลังแสดงผล เช่น "Gen Sx")
-
-// VVVV 2. แก้ไขบรรทัดนี้ โดยเพิ่ม Type ": { caseData: any, ... }" VVVV
 export default function ConsultCard({ caseData, caseId, departmentName }: { caseData: any, caseId: any, departmentName: any }) {
   
   const { hn, problem, createdAt, departments } = caseData;
-  
-  // ข้อมูลสถานะของแผนกนี้โดยเฉพาะ
   const deptStatus = departments[departmentName];
+  const isCompleted = deptStatus.status === "completed";
 
-  // ฟังก์ชันสำหรับ "ปิดงาน"
+  // --- ฟังก์ชันแปลงเวลาให้อ่านง่าย ---
+  const formatTime = (timestamp: any) => {
+    if (!timestamp) return "N/A";
+    return timestamp.toDate().toLocaleString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: 'short'
+    });
+  };
+
+  const timeAgo = formatTime(createdAt);
+  const completedTime = formatTime(deptStatus.completedAt);
+
+  // --- ฟังก์ชันปิดงาน (เหมือนเดิม) ---
   const handleCloseCase = async () => {
     if (!confirm(`ยืนยันการปิดเคสของแผนก ${departmentName}?`)) return;
-
     const caseRef = doc(db, "consults", caseId);
-
     try {
-      // นี่คือการอัปเดตเฉพาะฟิลด์ของแผนกนี้ โดยใช้ "dot notation"
-      // เช่น 'departments.Gen Sx.status'
       const updateKeyStatus = `departments.${departmentName}.status`;
       const updateKeyTime = `departments.${departmentName}.completedAt`;
-      
       await updateDoc(caseRef, {
         [updateKeyStatus]: "completed",
         [updateKeyTime]: serverTimestamp()
-        // (คุณสามารถเพิ่ม Logic ตรวจสอบว่าทุกแผนก completed แล้วหรือยัง
-        // แล้วค่อยอัปเดต status หลักของเคส)
       });
-
     } catch (error) {
       console.error("Error closing case: ", error);
       alert("เกิดข้อผิดพลาดในการปิดเคส");
     }
   };
 
-  // ตรวจสอบสถานะเพื่อแสดงผล
-  const isCompleted = deptStatus.status === "completed";
-  const timeAgo = createdAt?.toDate().toLocaleTimeString('th-TH'); // แปลง Timestamp เป็นเวลา
-  const completedTime = deptStatus.completedAt?.toDate().toLocaleString('th-TH');
-
   return (
-    <div style={{ border: '1px solid black', margin: '10px', padding: '10px', backgroundColor: isCompleted ? '#e0ffe0' : '#ffffdd' }}>
-      <h3>HN: {hn} (ปรึกษา {departmentName})</h3>
-      <p>Problem: {problem}</p>
-      <p>เวลาส่งปรึกษา: {timeAgo}</p>
-      
-      {isCompleted ? (
-        <p style={{ color: 'green' }}>ปิดงานแล้วเมื่อ: {completedTime}</p>
-      ) : (
-        <button onClick={handleCloseCase}>ปิดงาน (Close Case)</button>
+    // VVVV นี่คือส่วนที่ใช้ Tailwind CSS VVVV
+
+    // เราใช้เงื่อนไขเพื่อเปลี่ยนสีพื้นหลัง:
+    // ถ้าเสร็จแล้ว (isCompleted) ให้เป็น 'bg-green-100 border-green-300'
+    // ถ้ายัง (pending) ให้เป็น 'bg-yellow-100 border-yellow-300'
+    <div 
+      className={`
+        border rounded-lg p-4 shadow-md w-full max-w-md mx-auto
+        ${isCompleted ? 'bg-green-100 border-green-300' : 'bg-yellow-100 border-yellow-300'}
+      `}
+    >
+      {/* ส่วนหัวของการ์ด */}
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="text-xl font-bold text-gray-800">HN: {hn}</h3>
+        <span className="text-sm font-semibold text-gray-600">
+          ปรึกษา {departmentName}
+        </span>
+      </div>
+
+      {/* ส่วนเนื้อหา */}
+      <div className="mb-4">
+        <p className="text-gray-700 font-semibold">Problem:</p>
+        <p className="text-gray-600 ml-2">{problem}</p>
+      </div>
+
+      {/* ส่วนเวลา */}
+      <div className="text-sm text-gray-500 mb-4">
+        <p>เวลาส่งปรึกษา: {timeAgo}</p>
+        {isCompleted && (
+          <p className="text-green-600 font-semibold">ปิดงานแล้วเมื่อ: {completedTime}</p>
+        )}
+      </div>
+
+      {/* ปุ่มกด (ถ้ายังไม่เสร็จ) */}
+      {!isCompleted && (
+        <button 
+          onClick={handleCloseCase}
+          className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+        >
+          ปิดงาน (Close Case)
+        </button>
       )}
 
-      {/* ส่วนแสดงสถานะแผนกอื่น (โบนัส) */}
-      <div>
-        <strong>สถานะแผนกอื่นในเคสนี้:</strong>
-        <ul>
-          {Object.entries(departments).map(([dept, status]: [string, any]) => ( // <--- เพิ่ม Type ตรงนี้ด้วย
-            <li key={dept}>
-              {dept}: {status.status} 
-              {status.completedAt && ` (เสร็จ: ${status.completedAt.toDate().toLocaleTimeString('th-TH')})`}
+      {/* ส่วนแสดงสถานะแผนกอื่น */}
+      <div className="mt-4 border-t pt-2">
+        <strong className="text-xs text-gray-500">สถานะแผนกอื่นในเคสนี้:</strong>
+        <ul className="text-xs text-gray-600">
+          {Object.entries(departments).map(([dept, status]: [string, any]) => (
+            <li key={dept} className="flex justify-between">
+              <span>{dept}:</span>
+              <span className={status.status === 'completed' ? 'text-green-600' : 'text-yellow-600'}>
+                {status.status}
+                {status.status === 'completed' && ` (${formatTime(status.completedAt)})`}
+              </span>
             </li>
           ))}
         </ul>

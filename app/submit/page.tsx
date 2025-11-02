@@ -1,4 +1,4 @@
-"use client"; // ต้องเป็น Client Component เพราะมีการใช้ state และ event
+"use client"; 
 
 import { useState } from "react";
 import { db } from "@/lib/firebase";
@@ -7,17 +7,14 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 export default function SubmitPage() {
   const [hn, setHn] = useState("");
   const [problem, setProblem] = useState("");
-  
-  // VVVV แก้ไขแล้ว: เพิ่ม <string[]> VVVV
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(false); // เพิ่ม state สำหรับ loading
 
-  // รายชื่อแผนกทั้งหมดจาก Google Form ของคุณ
   const allDepartments = [
     "Gen Sx", "Sx Trauma", "Ortho", "Neuro Sx", 
     "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"
   ];
 
-  // VVVV แก้ไขแล้ว: เพิ่ม (dept: string) VVVV
   const handleCheckboxChange = (dept: string) => { 
     setSelectedDepts(prev => 
       prev.includes(dept) 
@@ -26,27 +23,25 @@ export default function SubmitPage() {
     );
   };
 
-  // VVVV แก้ไขแล้ว: เพิ่ม (e: React.FormEvent) VVVV
   const handleSubmit = async (e: React.FormEvent) => { 
     e.preventDefault();
     if (!hn || !problem || selectedDepts.length === 0) {
-      alert("กรุณากรอกข้อมูลให้ครบ");
+      alert("กรุณากรอกข้อมูลให้ครบ (HN, Problem, และเลือกอย่างน้อย 1 แผนก)");
       return;
     }
+    
+    setIsLoading(true); // เริ่ม loading
 
-    // VVVV แก้ไขแล้ว: เพิ่ม Type { [key: string]: any } VVVV
     const departmentsMap: { [key: string]: any } = {}; 
     selectedDepts.forEach(dept => {
       departmentsMap[dept] = { status: "pending", completedAt: null };
     });
 
     try {
-      // เพิ่มข้อมูลเข้า Collection 'consults'
       await addDoc(collection(db, "consults"), {
         hn: hn,
         problem: problem,
-        // resusTeam: ... (เพิ่มฟิลด์อื่น ๆ ตามต้องการ)
-        createdAt: serverTimestamp(), // ใช้เวลาของ Server
+        createdAt: serverTimestamp(), 
         status: "pending",
         departments: departmentsMap
       });
@@ -57,47 +52,102 @@ export default function SubmitPage() {
       setProblem("");
       setSelectedDepts([]);
 
-    } catch (error) { // VVVV นี่คือส่วนที่แก้ไข Error ล่าสุด VVVV
+    } catch (error) { 
       console.error("Error adding document: ", error);
-      // เราต้องเช็ค Type ก่อนใช้ .message
       if (error instanceof Error) {
         alert("เกิดข้อผิดพลาด: " + error.message);
       } else {
         alert("เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ");
       }
-      // ^^^^ สิ้นสุดส่วนที่แก้ไข ^^^^
+    } finally {
+      setIsLoading(false); // หยุด loading
     }
   };
 
+  // VVVV นี่คือส่วนหน้าตาที่แก้ไขใหม่ทั้งหมด VVVV
   return (
-    <div>
-      <h1>ส่งเคสปรึกษา (ER MNRH)</h1>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>HN:</label>
-          <input type="text" value={hn} onChange={(e) => setHn(e.target.value)} />
-        </div>
-        <div>
-          <label>Problem:</label>
-          <textarea value={problem} onChange={(e) => setProblem(e.target.value)} />
-        </div>
-        <div>
-          <label>ปรึกษาแผนก (เลือกได้หลายแผนก):</label>
-          {allDepartments.map(dept => (
-            <div key={dept}>
-              <input 
-                type="checkbox" 
-                id={dept} 
-                value={dept}
-                checked={selectedDepts.includes(dept)}
-                onChange={() => handleCheckboxChange(dept)}
-              />
-              <label htmlFor={dept}>{dept}</label>
+    // พื้นหลังสีเทาอ่อน
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      
+      {/* การ์ดฟอร์มสีขาว */}
+      <div className="bg-white p-6 sm:p-8 md:p-10 rounded-xl shadow-2xl max-w-2xl w-full">
+        <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">
+          ส่งเคสปรึกษา (ER MNRH)
+        </h1>
+        
+        <form onSubmit={handleSubmit} className="space-y-6">
+          
+          {/* ช่องกรอก HN */}
+          <div>
+            <label htmlFor="hn" className="block text-sm font-bold text-gray-700 mb-2">
+              HN*
+            </label>
+            <input 
+              type="text" 
+              id="hn"
+              value={hn} 
+              onChange={(e) => setHn(e.target.value)} 
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="กรอก HN ผู้ป่วย"
+            />
+          </div>
+
+          {/* ช่องกรอก Problem */}
+          <div>
+            <label htmlFor="problem" className="block text-sm font-bold text-gray-700 mb-2">
+              Problem*
+            </label>
+            <textarea 
+              id="problem"
+              value={problem} 
+              onChange={(e) => setProblem(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={4}
+              placeholder="เช่น TBI, Blunt abdomen, Maxilofacial injury"
+            />
+          </div>
+
+          {/* ช่องเลือกแผนก */}
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-3">
+              ปรึกษาแผนก* (เลือกได้หลายแผนก)
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {allDepartments.map(dept => (
+                <div key={dept} className="flex items-center bg-gray-50 p-3 rounded-lg border">
+                  <input 
+                    type="checkbox" 
+                    id={dept} 
+                    value={dept}
+                    checked={selectedDepts.includes(dept)}
+                    onChange={() => handleCheckboxChange(dept)}
+                    className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor={dept} className="ml-3 text-sm font-medium text-gray-700">
+                    {dept}
+                  </label>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <button type="submit">ส่งปรึกษา</button>
-      </form>
+          </div>
+
+          {/* ปุ่ม Submit */}
+          <div>
+            <button 
+              type="submit" 
+              disabled={isLoading} // ปิดปุ่มตอนกำลังโหลด
+              className={`w-full font-bold py-3 px-4 rounded-lg transition-colors text-white
+                ${isLoading 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+            >
+              {isLoading ? 'กำลังส่งข้อมูล...' : 'ส่งเคสปรึกษา'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
+  // ^^^^ สิ้นสุดส่วนหน้าตาที่แก้ไข ^^^^
 }
