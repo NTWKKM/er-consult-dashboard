@@ -7,7 +7,9 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 export default function SubmitPage() {
   const [hn, setHn] = useState("");
   const [problem, setProblem] = useState("");
-  const [selectedDepts, setSelectedDepts] = useState([]);
+
+  // VVVV แก้ไขบรรทัดนี้ VVVV (เพิ่ม <string[]>)
+  const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
 
   // รายชื่อแผนกทั้งหมดจาก Google Form ของคุณ
   const allDepartments = [
@@ -15,15 +17,18 @@ export default function SubmitPage() {
     "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"
   ];
 
-  const handleCheckboxChange = (dept) => {
+  const handleCheckboxChange = (dept: string) => { // (เพิ่ม : string ตรงนี้)
     setSelectedDepts(prev => 
       prev.includes(dept) 
         ? prev.filter(d => d !== dept) 
         : [...prev, dept]
     );
   };
-
-  const handleSubmit = async (e) => {
+  
+  // (โค้ดที่เหลือเหมือนเดิม)
+  // ... (ส่วน handleSubmit และ return ...)
+  // ...
+  const handleSubmit = async (e: React.FormEvent) => { // (เพิ่ม Type ตรงนี้)
     e.preventDefault();
     if (!hn || !problem || selectedDepts.length === 0) {
       alert("กรุณากรอกข้อมูลให้ครบ");
@@ -31,7 +36,7 @@ export default function SubmitPage() {
     }
 
     // สร้าง Object 'departments' ตาม Schema ที่เราออกแบบไว้
-    const departmentsMap = {};
+    const departmentsMap: { [key: string]: any } = {}; // (เพิ่ม Type ตรงนี้)
     selectedDepts.forEach(dept => {
       departmentsMap[dept] = { status: "pending", completedAt: null };
     });

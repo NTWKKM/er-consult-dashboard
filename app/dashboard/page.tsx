@@ -6,7 +6,8 @@ import { collection, query, where, onSnapshot, orderBy } from "firebase/firestor
 import ConsultCard from "@/app/components/ConsultCard";
 
 export default function Dashboard() {
-  const [allCases, setAllCases] = useState([]); // เก็บเคสทั้งหมดที่ยังไม่เสร็จ
+  // VVVV แก้ไขบรรทัดนี้ VVVV (เพิ่ม <any[]>)
+  const [allCases, setAllCases] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
   // แผนกที่เราจะแสดงผล (คุณสามารถทำเป็น Dropdown ให้เลือกได้)
@@ -26,7 +27,10 @@ export default function Dashboard() {
     // มันจะทำงานครั้งแรกเพื่อดึงข้อมูลทั้งหมด 
     // และจะทำงานอีก "ทุกครั้ง" ที่ข้อมูลใน Firestore ที่ตรง Query นี้มีการเปลี่ยนแปลง
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const cases = [];
+      
+      // VVVV แก้ไขบรรทัดนี้ VVVV (เพิ่ม : any[])
+      const cases: any[] = []; 
+      
       querySnapshot.forEach((doc) => {
         cases.push({ id: doc.id, ...doc.data() });
       });
@@ -39,7 +43,7 @@ export default function Dashboard() {
   }, []); // ทำงานแค่ครั้งเดียวตอนโหลดหน้า
 
   // ฟังก์ชันสำหรับกรองเคสตามแผนก
-  const getCasesForDepartment = (deptName) => {
+  const getCasesForDepartment = (deptName: string) => { // (เพิ่ม :string ตรงนี้)
     return allCases.filter(caseData => 
       caseData.departments[deptName] // ต้องมีชื่อแผนกนี้ใน Object
       && caseData.departments[deptName].status === 'pending' // และแผนกนี้ยังไม่ปิดงาน
@@ -53,7 +57,7 @@ export default function Dashboard() {
   return (
     <div>
       <h1>ER MNRH Monitor Room (Real-time)</h1>
-
+      
       {/* Dashboard ศัลยกรรม */}
       <section>
         <h2>Surgery Dashboard</h2>
