@@ -54,7 +54,7 @@ export default function SubmitPage() {
     } catch (error) { 
       console.error("Error adding document: ", error);
       if (error instanceof Error) {
-        alert("เกิดข้อผิดพลาด: "G + error.message);
+        alert("เกิดข้อผิดพลาด: " + error.message);
       } else {
         alert("เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ");
       }
