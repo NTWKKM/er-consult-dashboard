@@ -40,10 +40,10 @@ export default function Dashboard() {
     return <div className="text-center p-10 text-gray-600 text-lg font-semibold">Loading...</div>;
   }
 
-  // VVVV นี่คือส่วนหน้าตาที่แก้ไขใหม่ทั้งหมด (Theme "Refer Program") VVVV
+  // VVVV นี่คือโค้ด Dashboard สไตล์ SaaS ที่ถูกต้อง VVVV
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-gray-100 min-h-screen">
-      
+
       {/* --- Dashboard ศัลยกรรม --- */}
       {/* เราจะสร้างการ์ดใหญ่ที่มี Header ไล่สี */}
       <div className="bg-white rounded-xl shadow-2xl mb-10">
@@ -51,7 +51,7 @@ export default function Dashboard() {
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-t-xl">
           <h2 className="text-2xl font-bold">Surgery Dashboard</h2>
         </div>
-        
+
         {/* เนื้อหา (Grid ของการ์ด) */}
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {SURGERY_DEPTS.map(dept => {
@@ -87,7 +87,7 @@ export default function Dashboard() {
         <div className="bg-gradient-to-r from-green-600 to-teal-700 text-white p-5 rounded-t-xl">
           <h2 className="text-2xl font-bold">Ortho Dashboard</h2>
         </div>
-        
+
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {ORTHO_DEPTS.map(dept => {
              const cases = getCasesForDepartment(dept);
@@ -118,5 +118,5 @@ export default function Dashboard() {
       </div>
     </div>
   );
-  // ^^^^ สิ้นสุดส่วนหน้าตาที่แก้ไข ^^^^
+  // ^^^^ สิ้นสุดโค้ด Dashboard ^^^^
 }
