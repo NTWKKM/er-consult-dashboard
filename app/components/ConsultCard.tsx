@@ -9,7 +9,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: { case
   const deptStatus = departments[departmentName];
   const isCompleted = deptStatus.status === "completed";
 
-  // --- ฟังก์ชันแปลงเวลาให้อ่านง่าย ---
+  // --- ฟังก์ชันแปลงเวลา ---
   const formatTime = (timestamp: any) => {
     if (!timestamp) return "N/A";
     return timestamp.toDate().toLocaleString('th-TH', {
@@ -41,34 +41,29 @@ export default function ConsultCard({ caseData, caseId, departmentName }: { case
   };
 
   return (
-    // VVVV นี่คือส่วนที่ใช้ Tailwind CSS VVVV
-
-    // เราใช้เงื่อนไขเพื่อเปลี่ยนสีพื้นหลัง:
-    // ถ้าเสร็จแล้ว (isCompleted) ให้เป็น 'bg-green-100 border-green-300'
-    // ถ้ายัง (pending) ให้เป็น 'bg-yellow-100 border-yellow-300'
+    // VVVV นี่คือดีไซน์ใหม่: "การ์ดสีขาว + แถบสถานะด้านซ้าย" VVVV
     <div 
       className={`
-        border rounded-lg p-4 shadow-md w-full max-w-md mx-auto
-        ${isCompleted ? 'bg-green-100 border-green-300' : 'bg-yellow-100 border-yellow-300'}
+        bg-white rounded-lg p-4 shadow-lg w-full max-w-md mx-auto
+        border-l-4 ${isCompleted ? 'border-green-500' : 'border-orange-400'}
       `}
     >
       {/* ส่วนหัวของการ์ด */}
       <div className="flex justify-between items-center mb-2">
-        <h3 className="text-xl font-bold text-gray-800">HN: {hn}</h3>
-        <span className="text-sm font-semibold text-gray-600">
-          ปรึกษา {departmentName}
+        <h3 className="text-2xl font-bold text-slate-800">HN: {hn}</h3>
+        <span className="text-sm font-semibold text-blue-700 px-3 py-1 bg-blue-100 rounded-full">
+          {departmentName}
         </span>
       </div>
 
       {/* ส่วนเนื้อหา */}
       <div className="mb-4">
-        <p className="text-gray-700 font-semibold">Problem:</p>
-        <p className="text-gray-600 ml-2">{problem}</p>
+        <p className="text-slate-600 ml-1">{problem}</p>
       </div>
 
       {/* ส่วนเวลา */}
-      <div className="text-sm text-gray-500 mb-4">
-        <p>เวลาส่งปรึกษา: {timeAgo}</p>
+      <div className="text-sm text-slate-500 mb-4 border-t border-slate-200 pt-3">
+        <p>เวลาส่งปรึกษา: <span className="font-semibold">{timeAgo}</span></p>
         {isCompleted && (
           <p className="text-green-600 font-semibold">ปิดงานแล้วเมื่อ: {completedTime}</p>
         )}
@@ -78,20 +73,20 @@ export default function ConsultCard({ caseData, caseId, departmentName }: { case
       {!isCompleted && (
         <button 
           onClick={handleCloseCase}
-          className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow"
         >
           ปิดงาน (Close Case)
         </button>
       )}
 
       {/* ส่วนแสดงสถานะแผนกอื่น */}
-      <div className="mt-4 border-t pt-2">
-        <strong className="text-xs text-gray-500">สถานะแผนกอื่นในเคสนี้:</strong>
-        <ul className="text-xs text-gray-600">
+      <div className="mt-4 border-t border-slate-200 pt-2">
+        <strong className="text-xs text-slate-500">สถานะเคสนี้:</strong>
+        <ul className="text-xs text-slate-600">
           {Object.entries(departments).map(([dept, status]: [string, any]) => (
             <li key={dept} className="flex justify-between">
               <span>{dept}:</span>
-              <span className={status.status === 'completed' ? 'text-green-600' : 'text-yellow-600'}>
+              <span className={`font-semibold ${status.status === 'completed' ? 'text-green-600' : 'text-orange-600'}`}>
                 {status.status}
                 {status.status === 'completed' && ` (${formatTime(status.completedAt)})`}
               </span>

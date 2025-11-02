@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter } from "next/font/google"; // ใช้ฟอนต์ Inter ดีอยู่แล้วครับ ชัดเจน ทันสมัย
 import "./globals.css";
-import Link from "next/link"; // Import Link สำหรับการนำทาง
+import Link from "next/link";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -17,16 +17,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th">
-      <body className={`${inter.className} bg-gray-100`}>
+      {/* VVVV แก้ไข: เปลี่ยนพื้นหลังเป็น bg-slate-100 (เทาอ่อนสะอาดตา) VVVV */}
+      <body className={`${inter.className} bg-slate-100`}>
         
-        {/* VVVV นี่คือแถบ Navbar ที่เราเพิ่มเข้ามา VVVV */}
-        <nav className="bg-gray-800 text-white shadow-lg">
+        {/* VVVV แก้ไข: เปลี่ยน Navbar เป็นสีน้ำเงินเข้ม ดูน่าเชื่อถือ VVVV */}
+        <nav className="bg-blue-900 text-white shadow-lg"> 
           <div className="container mx-auto px-4">
             <div className="flex justify-between items-center h-16">
-              <Link href="/" className="text-xl font-bold hover:text-blue-300">
+              <Link href="/" className="text-xl font-bold hover:text-blue-200 transition-colors">
                 ER Consult Dashboard
               </Link>
-              <Link href="/submit" className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+              <Link href="/submit" className="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow">
                 + ส่งเคสปรึกษา
               </Link>
             </div>
@@ -34,7 +35,6 @@ export default function RootLayout({
         </nav>
         {/* ^^^^ สิ้นสุด Navbar ^^^^ */}
 
-        {/* {children} คือเนื้อหาของหน้าต่างๆ (Dashboard, Submit) */}
         <main>
           {children}
         </main>

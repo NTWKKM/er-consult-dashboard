@@ -8,7 +8,7 @@ export default function SubmitPage() {
   const [hn, setHn] = useState("");
   const [problem, setProblem] = useState("");
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false); // เพิ่ม state สำหรับ loading
+  const [isLoading, setIsLoading] = useState(false); 
 
   const allDepartments = [
     "Gen Sx", "Sx Trauma", "Ortho", "Neuro Sx", 
@@ -30,7 +30,7 @@ export default function SubmitPage() {
       return;
     }
     
-    setIsLoading(true); // เริ่ม loading
+    setIsLoading(true); 
 
     const departmentsMap: { [key: string]: any } = {}; 
     selectedDepts.forEach(dept => {
@@ -47,7 +47,6 @@ export default function SubmitPage() {
       });
       
       alert("ส่งเคสปรึกษาสำเร็จ!");
-      // เคลียร์ฟอร์ม
       setHn("");
       setProblem("");
       setSelectedDepts([]);
@@ -60,18 +59,18 @@ export default function SubmitPage() {
         alert("เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ");
       }
     } finally {
-      setIsLoading(false); // หยุด loading
+      setIsLoading(false); 
     }
   };
 
-  // VVVV นี่คือส่วนหน้าตาที่แก้ไขใหม่ทั้งหมด VVVV
+  // VVVV แก้ไข: เปลี่ยนสีพื้นหลังเป็น bg-slate-100 และปรับสีปุ่ม VVVV
   return (
     // พื้นหลังสีเทาอ่อน
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
       
       {/* การ์ดฟอร์มสีขาว */}
       <div className="bg-white p-6 sm:p-8 md:p-10 rounded-xl shadow-2xl max-w-2xl w-full">
-        <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">
+        <h1 className="text-3xl font-bold text-slate-800 mb-8 text-center">
           ส่งเคสปรึกษา (ER MNRH)
         </h1>
         
@@ -79,7 +78,7 @@ export default function SubmitPage() {
           
           {/* ช่องกรอก HN */}
           <div>
-            <label htmlFor="hn" className="block text-sm font-bold text-gray-700 mb-2">
+            <label htmlFor="hn" className="block text-sm font-bold text-slate-700 mb-2">
               HN*
             </label>
             <input 
@@ -87,21 +86,21 @@ export default function SubmitPage() {
               id="hn"
               value={hn} 
               onChange={(e) => setHn(e.target.value)} 
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
               placeholder="กรอก HN ผู้ป่วย"
             />
           </div>
 
           {/* ช่องกรอก Problem */}
           <div>
-            <label htmlFor="problem" className="block text-sm font-bold text-gray-700 mb-2">
+            <label htmlFor="problem" className="block text-sm font-bold text-slate-700 mb-2">
               Problem*
             </label>
             <textarea 
               id="problem"
               value={problem} 
               onChange={(e) => setProblem(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
               rows={4}
               placeholder="เช่น TBI, Blunt abdomen, Maxilofacial injury"
             />
@@ -109,21 +108,21 @@ export default function SubmitPage() {
 
           {/* ช่องเลือกแผนก */}
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-3">
+            <label className="block text-sm font-bold text-slate-700 mb-3">
               ปรึกษาแผนก* (เลือกได้หลายแผนก)
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {allDepartments.map(dept => (
-                <div key={dept} className="flex items-center bg-gray-50 p-3 rounded-lg border">
+                <div key={dept} className="flex items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <input 
                     type="checkbox" 
                     id={dept} 
                     value={dept}
                     checked={selectedDepts.includes(dept)}
                     onChange={() => handleCheckboxChange(dept)}
-                    className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-5 w-5 text-blue-600 focus:ring-blue-600 border-slate-300 rounded"
                   />
-                  <label htmlFor={dept} className="ml-3 text-sm font-medium text-gray-700">
+                  <label htmlFor={dept} className="ml-3 text-sm font-medium text-slate-700">
                     {dept}
                   </label>
                 </div>
@@ -131,15 +130,15 @@ export default function SubmitPage() {
             </div>
           </div>
 
-          {/* ปุ่ม Submit */}
+          {/* ปุ่ม Submit (เปลี่ยนเป็นสีเขียว ให้สอดคล้องกับปุ่มบน Navbar) */}
           <div>
             <button 
               type="submit" 
-              disabled={isLoading} // ปิดปุ่มตอนกำลังโหลด
-              className={`w-full font-bold py-3 px-4 rounded-lg transition-colors text-white
+              disabled={isLoading} 
+              className={`w-full font-bold py-3 px-4 rounded-lg transition-colors text-white shadow
                 ${isLoading 
-                  ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-blue-600 hover:bg-blue-700'
+                  ? 'bg-slate-400 cursor-not-allowed' 
+                  : 'bg-green-500 hover:bg-green-600'
                 }`}
             >
               {isLoading ? 'กำลังส่งข้อมูล...' : 'ส่งเคสปรึกษา'}
@@ -149,5 +148,4 @@ export default function SubmitPage() {
       </div>
     </div>
   );
-  // ^^^^ สิ้นสุดส่วนหน้าตาที่แก้ไข ^^^^
 }
