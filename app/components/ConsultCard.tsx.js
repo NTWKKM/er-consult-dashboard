@@ -3,6 +3,12 @@
 import { db } from "@/lib/firebase";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 
+// VVVV อัปเดตบรรทัดนี้ VVVV
+export default function ConsultCard({ caseData, caseId, departmentName }: { caseData: any, caseId: any, departmentName: any }) {
+
+  const { hn, problem, createdAt, departments } = caseData;
+
+  // (ที่เหลือเหมือนเดิม)
 // คอมโพเนนต์นี้รับ props: 
 // - caseData (ข้อมูลเคสทั้งหมด)
 // - caseId (ID ของ Document)
