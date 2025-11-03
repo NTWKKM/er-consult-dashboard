@@ -23,15 +23,15 @@ Preferred communication style: Simple, everyday language.
 
 **Component Structure**:
 - **Page Components**: 
-  - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states. Surgery department displays in responsive 3-column grid (1 col mobile, 2 col tablet, 3 col desktop) for efficient space usage. Uses scalpel icon for Surgery and bone icon for Ortho. Compact design with reduced spacing and padding for efficient information display. Performance optimized with query limit(100) and useMemo for department filtering.
-  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with dual submission buttons (normal green "ส่งเคสปรึกษา" and urgent red "ส่งปรึกษาเคสด่วน" with lightning icon) placed side-by-side, interactive department selection, and room/location field. Compact header design to prevent content overlap.
+  - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states. Surgery department displays in responsive 3-column grid (1 col mobile, 2 col tablet, 3 col desktop) for efficient space usage. Uses scalpel icon for Surgery and bone icon for Ortho. Compact design with reduced spacing and padding for efficient information display. Performance optimized with query limit(30) and useMemo for department filtering.
+  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with dual submission buttons (normal green "Consult" and urgent red "Consult FastTrack" with lightning icon) placed side-by-side, interactive department selection, and room/location field. Compact header with proper spacing to prevent overlap with form.
 - **Shared Components**: 
   - `ConsultCard`: Compact card design with patient icon, status badges, room location, and hover lift effects. Regular cases display blue accent border; urgent cases display red border, red pulsing icon with lightning bolt, and "ด่วน" (urgent) badge
 - **Layout**: Compact sticky navigation bar with branded logo, gradient background, and prominent submit button
 
 **State Management**:
 - Local React state with `useState` for form inputs and UI controls
-- Real-time data subscription using Firebase Firestore's `onSnapshot` listener with limit(100) for performance
+- Real-time data subscription using Firebase Firestore's `onSnapshot` listener with limit(30) for performance
 - Memoized department case filtering with `useMemo` to prevent redundant calculations on every render
 - No additional state management library needed due to simple data flow
 
@@ -69,7 +69,7 @@ consults collection:
 - Surgery Departments: Gen Sx, Sx Trauma, Neuro Sx, Sx Vascular, Sx Plastic, Uro Sx, CVT
 - Orthopedic Department: Ortho
 
-**Query Pattern**: Cases filtered by overall status "pending" and ordered by creation time (newest first), limited to 100 most recent cases for performance. Client-side filtering uses memoized map for department-specific views.
+**Query Pattern**: Cases filtered by overall status "pending" and ordered by creation time (newest first), limited to 30 most recent cases for performance. Client-side filtering uses memoized map for department-specific views.
 
 **Important**: A Firestore composite index on (status asc, createdAt desc) should be created in Firebase Console for optimal query performance. Without this index, queries may be slower or fail at scale.
 

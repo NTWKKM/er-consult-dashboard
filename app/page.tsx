@@ -18,7 +18,7 @@ export default function Dashboard() {
       collection(db, "consults"),
       where("status", "==", "pending"),
       orderBy("createdAt", "desc"),
-      limit(100)
+      limit(30)
     );
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const cases: any[] = [];
