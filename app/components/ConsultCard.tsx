@@ -37,10 +37,16 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
     
     try {
       const updatedDepartments = { ...caseData.departments };
-      updatedDepartments[departmentName] = {
-        ...updatedDepartments[departmentName],
-        acceptedAt: serverTimestamp()
-      };
+      
+      // รับเคสทุกแผนกพร้อมกัน
+      Object.keys(updatedDepartments).forEach(dept => {
+        if (updatedDepartments[dept].status === 'pending') {
+          updatedDepartments[dept] = {
+            ...updatedDepartments[dept],
+            acceptedAt: serverTimestamp()
+          };
+        }
+      });
 
       const caseRef = doc(db, "consults", caseId);
       await updateDoc(caseRef, {
@@ -115,6 +121,14 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
               <span className="text-[#C7CFDA]">•</span>
               <span className="text-[#014167] font-semibold">{room}</span>
             </div>
+            {Object.keys(caseData.departments).filter(d => d !== departmentName && caseData.departments[d].status === 'pending').length > 0 && (
+              <div className="flex items-center gap-1 text-xs mt-1">
+                <span className="text-[#014167] font-medium">แผนกอื่น:</span>
+                <span className="text-[#699D5D] font-semibold">
+                  {Object.keys(caseData.departments).filter(d => d !== departmentName && caseData.departments[d].status === 'pending').join(', ')}
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <span
