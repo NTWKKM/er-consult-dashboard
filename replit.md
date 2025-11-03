@@ -27,7 +27,7 @@ Preferred communication style: Simple, everyday language.
   - Submit form (`app/submit/page.tsx`): Modern consultation submission form with solid color theme. Features dual submission buttons (normal green "Consult" and urgent coral "Consult FastTrack" with lightning icon) placed side-by-side, interactive department selection with green backgrounds for selected departments, and room/location field. Navy background with peach header and white input fields.
   - Completed cases (`app/completed/page.tsx`): Management page for completed consultations with solid color theme showing 100 latest cases in table format with pagination (25 cases per page). Features Re-consult functionality with **department selection** allowing staff to choose which departments to consult (can be different from original), add new problem details, and automatically return cases to pending status on the dashboard. Table uses coral header, gray-blue background, and navy text. Displays HN, room, problem (with line-clamp for long text), departments, and formatted timestamps. **Error handling**: Shows light-themed error screen with green reload button if Firebase connection fails.
 - **Shared Components**: 
-  - `ConsultCard`: Light-themed card with solid gray-blue background, patient icon, status badges, room location, and hover lift effects with glow. Regular cases display green accent border; urgent cases display coral border with pulsing glow effect, coral icon with lightning bolt, and "ด่วน" (urgent) badge. **New Feature**: "รับเคส" (Accept Case) button with solid green background allows staff to acknowledge case reception, stores acceptedAt timestamp in Firestore. "ปิดเคส" (Close Case) button uses solid coral background.
+  - `ConsultCard`: Light-themed card with solid gray-blue background, patient icon, status badges, room location, and hover lift effects with glow. Regular cases display green accent border; urgent cases display coral border with pulsing glow effect, coral icon with lightning bolt, and "ด่วน" (urgent) badge. **Multi-department display**: Shows other consulted departments in green text below the main department. **Accept behavior**: "รับเคส" (Accept Case) button accepts the case for ALL consulted departments simultaneously, stores acceptedAt timestamp for all pending departments in Firestore. **Close behavior**: "ปิดเคส" (Close Case) button closes only the specific department shown on the card, uses solid coral background.
 - **Layout**: Compact sticky navigation bar with solid coral logo, navy background, "จัดการเคส" (completed cases) link with gray-blue button, and prominent green submit button
 
 **State Management**:
@@ -65,6 +65,7 @@ consults collection:
       [departmentName]: {
         status: "pending" | "completed"
         completedAt: timestamp | null
+        acceptedAt: timestamp | null
       }
 ```
 
