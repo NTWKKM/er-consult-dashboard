@@ -23,11 +23,11 @@ Preferred communication style: Simple, everyday language.
 
 **Component Structure**:
 - **Page Components**: 
-  - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states. Surgery department displays in responsive 3-column grid (1 col mobile, 2 col tablet, 3 col desktop) for efficient space usage. Uses scalpel icon for Surgery and bone icon for Ortho. Compact design with reduced spacing and padding for efficient information display. Performance optimized with query limit(30) and useMemo for department filtering. **Error handling**: Shows error screen with reload button if Firebase connection fails, preventing infinite loading state.
+  - Dashboard (`app/page.tsx`): Real-time dashboard with dark theme, department filtering (Surgery/Ortho/Both toggles with orange/gold/gradient buttons), pending case counter with orange pulsing for active cases. Department displays in responsive 2-column grid (1 col mobile, 2 col on medium+) for optimal readability. Uses scalpel icon for Surgery (orange gradient header) and bone icon for Ortho (gold gradient header). Dark card backgrounds with warm beige text. Performance optimized with query limit(30) and useMemo for department filtering. **Error handling**: Shows dark-themed error screen with gold reload button if Firebase connection fails.
   - Submit form (`app/submit/page.tsx`): Modern consultation submission form with dual submission buttons (normal green "Consult" and urgent red "Consult FastTrack" with lightning icon) placed side-by-side, interactive department selection, and room/location field. Compact header with proper spacing to prevent overlap with form.
   - Completed cases (`app/completed/page.tsx`): Management page for completed consultations showing 100 latest cases in table format with pagination (25 cases per page). Features Re-consult functionality with **department selection** allowing staff to choose which departments to consult (can be different from original), add new problem details, and automatically return cases to pending status on the dashboard. Displays HN, room, problem (with line-clamp for long text), departments, and formatted timestamps. **Error handling**: Shows error screen with reload button if Firebase connection fails.
 - **Shared Components**: 
-  - `ConsultCard`: Compact card design with patient icon, status badges, room location, and hover lift effects. Regular cases display blue accent border; urgent cases display red border, red pulsing icon with lightning bolt, and "ด่วน" (urgent) badge
+  - `ConsultCard`: Dark-themed card with gradient background (navy to darker navy), patient icon, status badges, room location, and hover lift effects with glow. Regular cases display golden accent border; urgent cases display orange border with pulsing glow effect, orange icon with lightning bolt, and "ด่วน" (urgent) badge. **New Feature**: "รับเคส" (Accept Case) button allows staff to acknowledge case reception, stores acceptedAt timestamp in Firestore
 - **Layout**: Compact sticky navigation bar with branded logo, gradient background, "จัดการเคส" (completed cases) link, and prominent submit button
 
 **State Management**:
@@ -114,18 +114,22 @@ consults collection:
 
 **Tailwind CSS (v4)**: Utility-first CSS framework with PostCSS integration for styling
 - **Custom CSS**: Professional design utilities in `globals.css` including:
-  - Emergency gradient backgrounds (blue spectrum)
-  - Card shadow effects with hover states
-  - Pulse animation for urgent case indicators
+  - Vibrant gradient backgrounds (dark navy to black spectrum)
+  - Enhanced card shadows with orange/gold accent glow effects
+  - Pulse animation for urgent case indicators with orange glow
   - Slide-in animations for smooth content loading
-- **Color Palette**: Soft, eye-friendly color scheme optimized for emergency department use
-  - **Primary Colors**: All colored elements (blue, emerald, rose, orange, purple) use exclusively 400/500-level Tailwind colors for reduced eye strain
-  - **Hover States**: Transitions stay within 400/500 range or use complementary 500-level colors (blue→cyan, emerald→teal, rose→pink, orange→amber)
-  - **Neutral Grays**: Gray-600 for labels/headers/content, gray-800 for user input text (for optimal readability)
-  - **Design Rationale**: Softer color palette reduces visual fatigue during extended use in high-stress emergency department environment
-  - **No 600/700-level colored elements**: Zero instances of blue-600, emerald-600, rose-600, etc. in the codebase
-- **Typography**: Inter font family with antialiasing for crisp text rendering
+  - Glow-hover effects with bright yellow highlights
+- **Color Palette**: Contrasting Vibrancy theme optimized for high visibility and modern aesthetics
+  - **Background**: #181818 (dark gray) transitioning to #072A40 (deep navy)
+  - **Primary Text**: #F5E8D8 (warm beige) for excellent contrast on dark backgrounds
+  - **Accent 1**: #FF4500 (burnt orange) for urgent items, primary actions, Surgery department
+  - **Accent 2**: #DAA520 (golden yellow) for success states, secondary actions, Ortho department
+  - **Hover Effects**: #FFEB3B (bright yellow) for interactive element highlights and glow effects
+  - **Design Rationale**: High-contrast dark theme reduces eye strain in low-light emergency room environments while vibrant accents ensure critical information stands out
+  - **Custom Gradients**: accent-gradient-orange, accent-gradient-gold, vibrant-gradient for consistent visual identity
+- **Typography**: Inter font family with antialiasing for crisp text rendering on dark backgrounds
 - **Responsive Design**: Mobile-first approach with tablet and desktop breakpoints
+- **Grid Layout**: Dashboard uses 2-column grid (md:grid-cols-2) for efficient space utilization
 
 **Next.js Font Optimization**: 
 - Inter font family from Google Fonts
