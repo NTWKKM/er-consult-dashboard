@@ -95,7 +95,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
       
       <div className="mb-2 bg-gray-50/60 p-2 rounded-lg border border-gray-100/60">
         <p className="text-xs text-gray-500 font-semibold mb-0.5">ปัญหา:</p>
-        <p className="text-sm text-gray-700 leading-snug">{problem}</p>
+        <p className="text-sm text-gray-600 leading-snug">{problem}</p>
       </div>
       
       <div className="flex items-center justify-between gap-2 text-xs">

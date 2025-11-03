@@ -181,7 +181,7 @@ export default function Dashboard() {
                   return (
                     <div key={dept} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between bg-gradient-to-r from-blue-50/50 to-cyan-50/50 px-3 py-2 rounded-lg border border-blue-100/50">
-                        <h3 className="text-sm font-bold text-gray-700">{dept}</h3>
+                        <h3 className="text-sm font-bold text-gray-600">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-rose-100 text-rose-500 pulse-urgent' : 'bg-emerald-100 text-emerald-500'}`}>
                           {cases.length}
                         </span>
@@ -226,7 +226,7 @@ export default function Dashboard() {
                   return (
                     <div key={dept} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between bg-gradient-to-r from-emerald-50/50 to-teal-50/50 px-3 py-2 rounded-lg border border-emerald-100/50">
-                        <h3 className="text-sm font-bold text-gray-700">{dept}</h3>
+                        <h3 className="text-sm font-bold text-gray-600">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-rose-100 text-rose-500 pulse-urgent' : 'bg-emerald-100 text-emerald-500'}`}>
                           {cases.length}
                         </span>

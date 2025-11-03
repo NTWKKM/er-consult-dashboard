@@ -293,11 +293,11 @@ export default function CompletedPage() {
 
             <div className="mb-4 p-3 bg-gray-50/60 rounded-lg border border-gray-100">
               <p className="text-xs text-gray-500 font-semibold mb-1">ปัญหาเดิม:</p>
-              <p className="text-sm text-gray-700">{selectedCase?.problem}</p>
+              <p className="text-sm text-gray-600">{selectedCase?.problem}</p>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-bold text-gray-700 mb-2">
+              <label className="block text-sm font-bold text-gray-600 mb-2">
                 แผนกที่ต้องการส่งปรึกษา <span className="text-rose-500">*</span>
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -322,13 +322,13 @@ export default function CompletedPage() {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-bold text-gray-700 mb-2">
+              <label className="block text-sm font-bold text-gray-600 mb-2">
                 ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-rose-500">*</span>
               </label>
               <textarea
                 value={newProblem}
                 onChange={(e) => setNewProblem(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all duration-200 min-h-[120px] text-sm"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all duration-200 min-h-[120px] text-sm"
                 placeholder="ระบุปัญหาใหม่หรืออาการเพิ่มเติมที่ต้องการปรึกษา..."
                 required
               />

@@ -118,7 +118,12 @@ consults collection:
   - Card shadow effects with hover states
   - Pulse animation for urgent case indicators
   - Slide-in animations for smooth content loading
-- **Color Palette**: Medical-themed colors (emergency blue, trust green, urgent red/orange)
+- **Color Palette**: Soft, eye-friendly color scheme optimized for emergency department use
+  - **Primary Colors**: All colored elements (blue, emerald, rose, orange, purple) use exclusively 400/500-level Tailwind colors for reduced eye strain
+  - **Hover States**: Transitions stay within 400/500 range or use complementary 500-level colors (blue→cyan, emerald→teal, rose→pink, orange→amber)
+  - **Neutral Grays**: Gray-600 for labels/headers/content, gray-800 for user input text (for optimal readability)
+  - **Design Rationale**: Softer color palette reduces visual fatigue during extended use in high-stress emergency department environment
+  - **No 600/700-level colored elements**: Zero instances of blue-600, emerald-600, rose-600, etc. in the codebase
 - **Typography**: Inter font family with antialiasing for crisp text rendering
 - **Responsive Design**: Mobile-first approach with tablet and desktop breakpoints
 
