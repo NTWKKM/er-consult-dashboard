@@ -46,10 +46,17 @@ export default function Dashboard() {
     const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
     
     allDepts.forEach(dept => {
-      map[dept] = allCases.filter(caseData =>
+      const filtered = allCases.filter(caseData =>
         caseData.departments[dept]
         && caseData.departments[dept].status === 'pending'
       );
+      
+      // เรียงลำดับ: เคสด่วนขึ้นก่อน จากนั้นเรียงตามเวลา (เคสที่มาก่อนขึ้นก่อน)
+      map[dept] = filtered.sort((a, b) => {
+        if (a.isUrgent && !b.isUrgent) return -1;
+        if (!a.isUrgent && b.isUrgent) return 1;
+        return b.createdAt?.seconds - a.createdAt?.seconds;
+      });
     });
     
     return map;
