@@ -258,13 +258,13 @@ export default function Dashboard() {
                   <span className="text-[#C7CFDA] text-sm font-normal ml-1">ศัลยกรรมกระดูก</span>
                 </h2>
               </div>
-              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4">
                 {ORTHO_DEPTS.map(dept => {
                   const cases = getCasesForDepartment(dept);
                   return (
                     <div 
                       key={dept} 
-                      className="flex flex-col gap-2"
+                      className="flex flex-col gap-2 max-w-full"
                       ref={(el) => { deptRefs.current[dept] = el; }}
                     >
                       <div className="flex items-center justify-between bg-[#014167] px-3 py-2 rounded-lg border border-[#699D5D]/20">
