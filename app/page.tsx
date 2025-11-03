@@ -63,8 +63,8 @@ export default function Dashboard() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block w-16 h-16 border-4 border-[#bb1515] border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-xl text-[#e0cda7] font-semibold">กำลังโหลดข้อมูล...</p>
+          <div className="inline-block w-16 h-16 border-4 border-[#E55143] border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-xl text-[#FDFCDF] font-semibold">กำลังโหลดข้อมูล...</p>
         </div>
       </div>
     );
@@ -73,15 +73,15 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center bg-gradient-to-br from-[#2a344f] to-[#1a1f2e] rounded-xl shadow-lg p-8 max-w-md border border-[#bb1515]/30">
-          <svg className="w-16 h-16 mx-auto text-[#bb1515] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="text-center bg-[#C7CFDA] rounded-xl shadow-lg p-8 max-w-md border border-[#E55143]/30">
+          <svg className="w-16 h-16 mx-auto text-[#E55143] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <h2 className="text-xl font-bold text-[#e0cda7] mb-2">เกิดข้อผิดพลาด</h2>
-          <p className="text-[#8b8b8b] mb-4">{error}</p>
+          <h2 className="text-xl font-bold text-[#014167] mb-2">เกิดข้อผิดพลาด</h2>
+          <p className="text-[#014167] mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 accent-gradient-cream text-[#000000] rounded-lg font-bold hover:shadow-lg transition-all glow-hover"
+            className="px-4 py-2 bg-[#699D5D] text-[#FDFCDF] rounded-lg font-bold hover:shadow-lg transition-all glow-hover"
           >
             โหลดใหม่
           </button>
@@ -97,19 +97,19 @@ export default function Dashboard() {
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         <div className="mb-4 text-center slide-in">
           <div className="inline-flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 accent-gradient-red rounded-lg flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 bg-[#E55143] rounded-lg flex items-center justify-center shadow-lg">
               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <h1 className="text-3xl font-bold text-[#e0cda7]">
+            <h1 className="text-3xl font-bold text-[#FDFCDF]">
               ER Consult Dashboard
             </h1>
           </div>
-          <p className="text-[#8b8b8b] text-sm font-bold mb-3">MNRH</p>
-          <div className="inline-flex items-center gap-3 bg-gradient-to-br from-[#2a344f] to-[#1a1f2e] px-6 py-2 rounded-full shadow-lg border border-[#e0cda7]/30">
-            <span className="text-[#e0cda7] font-bold">เคสรอดำเนินการ:</span>
-            <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#bb1515] pulse-urgent' : 'text-[#e0cda7]'}`}>
+          <p className="text-[#C7CFDA] text-sm font-bold mb-3">MNRH</p>
+          <div className="inline-flex items-center gap-3 bg-[#C7CFDA] px-6 py-2 rounded-full shadow-lg border border-[#014167]/30">
+            <span className="text-[#014167] font-bold">เคสรอดำเนินการ:</span>
+            <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#E55143] pulse-urgent' : 'text-[#014167]'}`}>
               {totalPendingCases}
             </span>
           </div>
@@ -119,8 +119,8 @@ export default function Dashboard() {
           <button
             className={`px-5 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-sm glow-hover
               ${view === 'surgery' 
-                ? 'accent-gradient-red text-white' 
-                : 'bg-[#2a344f] text-[#bb1515] border border-[#bb1515]/50 hover:border-[#bb1515]'}
+                ? 'bg-[#E55143] text-white' 
+                : 'bg-[#C7CFDA] text-[#E55143] border border-[#E55143]/50 hover:border-[#E55143]'}
             `}
             onClick={() => setView('surgery')}
           >
@@ -134,8 +134,8 @@ export default function Dashboard() {
           <button
             className={`px-5 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-sm glow-hover
               ${view === 'ortho' 
-                ? 'accent-gradient-cream text-[#000000]' 
-                : 'bg-[#2a344f] text-[#e0cda7] border border-[#e0cda7]/50 hover:border-[#e0cda7]'}
+                ? 'bg-[#699D5D] text-[#FDFCDF]' 
+                : 'bg-[#C7CFDA] text-[#699D5D] border border-[#699D5D]/50 hover:border-[#699D5D]'}
             `}
             onClick={() => setView('ortho')}
           >
@@ -149,8 +149,8 @@ export default function Dashboard() {
           <button
             className={`px-5 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-sm glow-hover
               ${view === 'both' 
-                ? 'bg-gradient-to-r from-[#bb1515] to-[#e0cda7] text-white' 
-                : 'bg-[#2a344f] text-[#8b8b8b] border border-[#8b8b8b]/50 hover:border-[#8b8b8b]'}
+                ? 'bg-[#F1AE9E] text-[#014167]' 
+                : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
             `}
             onClick={() => setView('both')}
           >
@@ -165,8 +165,8 @@ export default function Dashboard() {
 
         <div className="flex flex-col lg:flex-row gap-4">
           {(view === 'surgery' || view === 'both') && (
-            <div className="flex-1 bg-gradient-to-br from-[#2a344f] to-[#1a1f2e] rounded-xl shadow-lg border border-[#bb1515]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
-              <div className="accent-gradient-red text-white px-5 py-3 border-b border-[#bb1515]/20">
+            <div className="flex-1 bg-[#C7CFDA] rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
+              <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
@@ -180,18 +180,18 @@ export default function Dashboard() {
                   const cases = getCasesForDepartment(dept);
                   return (
                     <div key={dept} className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between bg-[#000000]/60 px-3 py-2 rounded-lg border border-[#bb1515]/20">
-                        <h3 className="text-sm font-bold text-[#e0cda7]">{dept}</h3>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#bb1515]/20 text-[#bb1515] pulse-urgent' : 'bg-[#e0cda7]/20 text-[#e0cda7]'}`}>
+                      <div className="flex items-center justify-between bg-[#014167] px-3 py-2 rounded-lg border border-[#E55143]/20">
+                        <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
                           {cases.length}
                         </span>
                       </div>
                       {cases.length === 0 ? (
-                        <div className="text-center py-4 px-3 bg-[#000000]/40 rounded-lg border border-[#e0cda7]/10">
-                          <svg className="w-10 h-10 mx-auto text-[#e0cda7] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="text-center py-4 px-3 bg-[#014167]/40 rounded-lg border border-[#FDFCDF]/10">
+                          <svg className="w-10 h-10 mx-auto text-[#FDFCDF] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="text-[#8b8b8b] font-medium text-xs">ไม่มีเคสค้าง</p>
+                          <p className="text-[#014167] font-medium text-xs">ไม่มีเคสค้าง</p>
                         </div>
                       ) : (
                         cases.map(caseData => (
@@ -210,14 +210,14 @@ export default function Dashboard() {
             </div>
           )}
           {(view === 'ortho' || view === 'both') && (
-            <div className="flex-1 bg-gradient-to-br from-[#2a344f] to-[#1a1f2e] rounded-xl shadow-lg border border-[#e0cda7]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
-              <div className="accent-gradient-cream text-[#000000] px-5 py-3 border-b border-[#e0cda7]/20">
+            <div className="flex-1 bg-[#C7CFDA] rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
+              <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5c-3.5 0-6 2.5-6 6v3c0 1.5-1 2.5-2 3.5-.5.5-.5 1 0 1.5.5.5 1 .5 1.5 0 1.5-1.5 2.5-3 2.5-5v-3c0-2 1.5-3.5 4-3.5s4 1.5 4 3.5v3c0 2 1 3.5 2.5 5 .5.5 1 .5 1.5 0s.5-1 0-1.5c-1-1-2-2-2-3.5v-3c0-3.5-2.5-6-6-6z" />
                   </svg>
                   Ortho
-                  <span className="text-[#000000]/70 text-sm font-normal ml-1">ศัลยกรรมกระดูก</span>
+                  <span className="text-[#FDFCDF]/80 text-sm font-normal ml-1">ศัลยกรรมกระดูก</span>
                 </h2>
               </div>
               <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -225,18 +225,18 @@ export default function Dashboard() {
                   const cases = getCasesForDepartment(dept);
                   return (
                     <div key={dept} className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between bg-[#000000]/60 px-3 py-2 rounded-lg border border-[#e0cda7]/20">
-                        <h3 className="text-sm font-bold text-[#e0cda7]">{dept}</h3>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#bb1515]/20 text-[#bb1515] pulse-urgent' : 'bg-[#e0cda7]/20 text-[#e0cda7]'}`}>
+                      <div className="flex items-center justify-between bg-[#014167] px-3 py-2 rounded-lg border border-[#699D5D]/20">
+                        <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
                           {cases.length}
                         </span>
                       </div>
                       {cases.length === 0 ? (
-                        <div className="text-center py-4 px-3 bg-[#000000]/40 rounded-lg border border-[#e0cda7]/10">
-                          <svg className="w-10 h-10 mx-auto text-[#e0cda7] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="text-center py-4 px-3 bg-[#014167]/40 rounded-lg border border-[#FDFCDF]/10">
+                          <svg className="w-10 h-10 mx-auto text-[#FDFCDF] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="text-[#8b8b8b] font-medium text-xs">ไม่มีเคสค้าง</p>
+                          <p className="text-[#014167] font-medium text-xs">ไม่มีเคสค้าง</p>
                         </div>
                       ) : (
                         cases.map(caseData => (
