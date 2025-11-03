@@ -209,7 +209,7 @@ export default function Dashboard() {
                   <span className="text-white/80 text-sm font-normal ml-1">แผนกศัลยกรรม</span>
                 </h2>
               </div>
-              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {SURGERY_DEPTS.map(dept => {
                   const cases = getCasesForDepartment(dept);
                   return (
