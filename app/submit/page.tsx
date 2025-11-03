@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 export default function SubmitPage() {
+  const router = useRouter();
   const [hn, setHn] = useState("");
   const [room, setRoom] = useState("");
   const [problem, setProblem] = useState("");
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
   const rooms = ["Resus Team 1", "Resus Team 2", "Resus Team 3", "Resus Team 4", "Urgent", "NT"];
   
@@ -28,11 +31,16 @@ export default function SubmitPage() {
 
   const handleSubmit = async (isUrgent: boolean = false) => {
     if (!hn || !room || !problem || selectedDepts.length === 0) {
-      alert("กรุณากรอกข้อมูลให้ครบ (HN, ห้องตรวจ, Problem, และเลือกอย่างน้อย 1 แผนก)");
+      setSubmitStatus({
+        type: 'error',
+        message: 'กรุณากรอกข้อมูลให้ครบ (HN, ห้องตรวจ, Problem, และเลือกอย่างน้อย 1 แผนก)'
+      });
+      setTimeout(() => setSubmitStatus(null), 4000);
       return;
     }
 
     setIsLoading(true);
+    setSubmitStatus(null);
 
     const departmentsMap: { [key: string]: any } = {};
     selectedDepts.forEach(dept => {
@@ -50,19 +58,27 @@ export default function SubmitPage() {
         departments: departmentsMap
       });
 
-      alert(isUrgent ? "ส่งเคสปรึกษาด่วนสำเร็จ!" : "ส่งเคสปรึกษาสำเร็จ!");
+      setSubmitStatus({
+        type: 'success',
+        message: isUrgent ? '✓ ส่งเคสปรึกษาด่วนสำเร็จ!' : '✓ ส่งเคสปรึกษาสำเร็จ!'
+      });
+
       setHn("");
       setRoom("");
       setProblem("");
       setSelectedDepts([]);
 
+      setTimeout(() => {
+        router.push('/');
+      }, 1500);
+
     } catch (error) {
       console.error("Error adding document: ", error);
-      if (error instanceof Error) {
-        alert("เกิดข้อผิดพลาด: " + error.message);
-      } else {
-        alert("เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ");
-      }
+      setSubmitStatus({
+        type: 'error',
+        message: error instanceof Error ? `เกิดข้อผิดพลาด: ${error.message}` : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'
+      });
+      setTimeout(() => setSubmitStatus(null), 5000);
     } finally {
       setIsLoading(false);
     }
@@ -85,6 +101,24 @@ export default function SubmitPage() {
           </div>
         </div>
         <div className="bg-white p-5 md:p-6 rounded-xl shadow-xl relative z-0 border border-gray-100">
+          {submitStatus && (
+            <div className={`mb-4 p-4 rounded-lg border-2 flex items-center gap-3 animate-pulse ${
+              submitStatus.type === 'success' 
+                ? 'bg-green-50 border-green-500 text-green-800' 
+                : 'bg-red-50 border-red-500 text-red-800'
+            }`}>
+              {submitStatus.type === 'success' ? (
+                <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+              <p className="font-semibold">{submitStatus.message}</p>
+            </div>
+          )}
           <form className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
