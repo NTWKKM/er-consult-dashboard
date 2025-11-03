@@ -14,6 +14,9 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
   const [isUpdating, setIsUpdating] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
   
+  const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
+  const ORTHO_DEPTS = ["Ortho"];
+  
   const hn = caseData.hn || "-";
   const room = caseData.room || "-";
   const problem = caseData.problem || "-";
@@ -38,9 +41,13 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
     try {
       const updatedDepartments = { ...caseData.departments };
       
-      // รับเคสทุกแผนกพร้อมกัน
+      // หากลุ่มแผนกที่ต้องรับพร้อมกัน
+      const isSurgeryDept = SURGERY_DEPTS.includes(departmentName);
+      const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
+      
+      // รับเคสเฉพาะแผนกในกลุ่มเดียวกัน
       Object.keys(updatedDepartments).forEach(dept => {
-        if (updatedDepartments[dept].status === 'pending') {
+        if (targetDepts.includes(dept) && updatedDepartments[dept].status === 'pending') {
           updatedDepartments[dept] = {
             ...updatedDepartments[dept],
             acceptedAt: serverTimestamp()
