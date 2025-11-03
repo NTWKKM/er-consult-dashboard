@@ -71,20 +71,20 @@ export default function SubmitPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center p-3 py-6">
       <div className="relative max-w-4xl w-full">
-        <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 text-white p-4 rounded-xl shadow-xl -mb-8 z-10 relative border-2 border-white">
-          <div className="flex items-center justify-center gap-3">
-            <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 text-white p-3 rounded-xl shadow-xl -mb-6 z-10 relative border-2 border-white">
+          <div className="flex items-center justify-center gap-2.5">
+            <div className="w-9 h-9 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
             <div>
-              <h1 className="text-2xl font-bold">ส่งเคสปรึกษา</h1>
+              <h1 className="text-xl font-bold">ส่งเคสปรึกษา</h1>
               <p className="text-blue-100 text-xs">ER MNRH</p>
             </div>
           </div>
         </div>
-        <div className="bg-white pt-14 p-5 md:p-6 rounded-xl shadow-xl relative z-0 border border-gray-100">
+        <div className="bg-white pt-12 p-5 md:p-6 rounded-xl shadow-xl relative z-0 border border-gray-100">
           <form className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -233,7 +233,7 @@ export default function SubmitPage() {
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
-                      <span className="hidden sm:inline">ส่งเคสด่วน</span>
+                      <span className="hidden sm:inline">ส่งปรึกษาเคสด่วน</span>
                       <span className="sm:hidden">ด่วน</span>
                     </>
                   )}

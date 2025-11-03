@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, limit } from "firebase/firestore";
 import ConsultCard from "@/app/components/ConsultCard";
 
 export default function Dashboard() {
@@ -17,7 +17,8 @@ export default function Dashboard() {
     const q = query(
       collection(db, "consults"),
       where("status", "==", "pending"),
-      orderBy("createdAt", "desc")
+      orderBy("createdAt", "desc"),
+      limit(100)
     );
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const cases: any[] = [];
@@ -30,11 +31,22 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, []);
 
+  const departmentCasesMap = useMemo(() => {
+    const map: { [key: string]: any[] } = {};
+    const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
+    
+    allDepts.forEach(dept => {
+      map[dept] = allCases.filter(caseData =>
+        caseData.departments[dept]
+        && caseData.departments[dept].status === 'pending'
+      );
+    });
+    
+    return map;
+  }, [allCases]);
+
   const getCasesForDepartment = (deptName: string) => {
-    return allCases.filter(caseData =>
-      caseData.departments[deptName]
-      && caseData.departments[deptName].status === 'pending'
-    );
+    return departmentCasesMap[deptName] || [];
   };
 
   if (loading) {
