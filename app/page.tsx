@@ -8,6 +8,7 @@ import ConsultCard from "@/app/components/ConsultCard";
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'both' | 'surgery' | 'ortho'>('both');
 
   const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
@@ -20,14 +21,23 @@ export default function Dashboard() {
       orderBy("createdAt", "desc"),
       limit(30)
     );
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const cases: any[] = [];
-      querySnapshot.forEach((doc) => {
-        cases.push({ id: doc.id, ...doc.data() });
-      });
-      setAllCases(cases);
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const cases: any[] = [];
+        querySnapshot.forEach((doc) => {
+          cases.push({ id: doc.id, ...doc.data() });
+        });
+        setAllCases(cases);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error("Firestore error:", err);
+        setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาตรวจสอบการตั้งค่า Firebase");
+        setLoading(false);
+      }
+    );
     return () => unsubscribe();
   }, []);
 
@@ -55,6 +65,26 @@ export default function Dashboard() {
         <div className="text-center">
           <div className="inline-block w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-xl text-gray-700 font-semibold">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center p-4">
+        <div className="text-center bg-white rounded-xl shadow-lg p-8 max-w-md">
+          <svg className="w-16 h-16 mx-auto text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">เกิดข้อผิดพลาด</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 transition-all"
+          >
+            โหลดใหม่
+          </button>
         </div>
       </div>
     );

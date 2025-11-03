@@ -7,13 +7,16 @@ import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, s
 export default function CompletedPage() {
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedCase, setSelectedCase] = useState<any>(null);
   const [showModal, setShowModal] = useState(false);
   const [newProblem, setNewProblem] = useState("");
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const ITEMS_PER_PAGE = 25;
+  const ALL_DEPARTMENTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "Ortho"];
 
   useEffect(() => {
     const q = query(
@@ -23,14 +26,23 @@ export default function CompletedPage() {
       limit(100)
     );
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const completedCases: any[] = [];
-      querySnapshot.forEach((doc) => {
-        completedCases.push({ id: doc.id, ...doc.data() });
-      });
-      setCases(completedCases);
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const completedCases: any[] = [];
+        querySnapshot.forEach((doc) => {
+          completedCases.push({ id: doc.id, ...doc.data() });
+        });
+        setCases(completedCases);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error("Firestore error:", err);
+        setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาตรวจสอบการตั้งค่า Firebase");
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, []);
@@ -41,11 +53,16 @@ export default function CompletedPage() {
       return;
     }
 
+    if (selectedDepartments.length === 0) {
+      alert("กรุณาเลือกอย่างน้อย 1 แผนก");
+      return;
+    }
+
     setIsUpdating(true);
 
     try {
       const updatedDepartments: any = {};
-      Object.keys(selectedCase.departments).forEach(dept => {
+      selectedDepartments.forEach(dept => {
         updatedDepartments[dept] = {
           status: "pending",
           completedAt: null
@@ -63,6 +80,7 @@ export default function CompletedPage() {
       setShowModal(false);
       setSelectedCase(null);
       setNewProblem("");
+      setSelectedDepartments([]);
       alert("✓ ส่งปรึกษาใหม่สำเร็จ!");
 
     } catch (error) {
@@ -76,7 +94,16 @@ export default function CompletedPage() {
   const openReConsultModal = (caseData: any) => {
     setSelectedCase(caseData);
     setNewProblem("");
+    setSelectedDepartments(Object.keys(caseData.departments));
     setShowModal(true);
+  };
+
+  const toggleDepartment = (dept: string) => {
+    setSelectedDepartments(prev =>
+      prev.includes(dept)
+        ? prev.filter(d => d !== dept)
+        : [...prev, dept]
+    );
   };
 
   const totalPages = Math.ceil(cases.length / ITEMS_PER_PAGE);
@@ -90,6 +117,26 @@ export default function CompletedPage() {
         <div className="text-center">
           <div className="inline-block w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-xl text-gray-700 font-semibold">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center p-4">
+        <div className="text-center bg-white rounded-xl shadow-lg p-8 max-w-md">
+          <svg className="w-16 h-16 mx-auto text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">เกิดข้อผิดพลาด</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 transition-all"
+          >
+            โหลดใหม่
+          </button>
         </div>
       </div>
     );
@@ -251,6 +298,31 @@ export default function CompletedPage() {
 
             <div className="mb-4">
               <label className="block text-sm font-bold text-gray-800 mb-2">
+                แผนกที่ต้องการส่งปรึกษา <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {ALL_DEPARTMENTS.map(dept => (
+                  <button
+                    key={dept}
+                    type="button"
+                    onClick={() => toggleDepartment(dept)}
+                    className={`px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
+                      selectedDepartments.includes(dept)
+                        ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                    }`}
+                  >
+                    {dept}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                เลือกได้หลายแผนก (คลิกเพื่อเลือก/ยกเลิก)
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-800 mb-2">
                 ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-red-500">*</span>
               </label>
               <textarea
@@ -271,9 +343,9 @@ export default function CompletedPage() {
               </button>
               <button
                 onClick={handleReConsult}
-                disabled={isUpdating || !newProblem.trim()}
+                disabled={isUpdating || !newProblem.trim() || selectedDepartments.length === 0}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
-                  isUpdating || !newProblem.trim()
+                  isUpdating || !newProblem.trim() || selectedDepartments.length === 0
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : 'bg-gradient-to-r from-orange-600 to-orange-700 text-white hover:from-orange-700 hover:to-orange-800 shadow-md hover:shadow-lg'
                 }`}
