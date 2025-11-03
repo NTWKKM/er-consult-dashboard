@@ -124,7 +124,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
             {Object.keys(caseData.departments).filter(d => d !== departmentName && caseData.departments[d].status === 'pending').length > 0 && (
               <div className="flex items-center gap-1 text-xs mt-1">
                 <span className="text-[#014167] font-medium">แผนกอื่น:</span>
-                <span className="text-[#699D5D] font-semibold">
+                <span className="text-[#F1AE9E] font-bold">
                   {Object.keys(caseData.departments).filter(d => d !== departmentName && caseData.departments[d].status === 'pending').join(', ')}
                 </span>
               </div>
