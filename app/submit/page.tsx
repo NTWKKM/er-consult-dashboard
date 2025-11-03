@@ -26,8 +26,7 @@ export default function SubmitPage() {
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (isUrgent: boolean = false) => {
     if (!hn || !room || !problem || selectedDepts.length === 0) {
       alert("กรุณากรอกข้อมูลให้ครบ (HN, ห้องตรวจ, Problem, และเลือกอย่างน้อย 1 แผนก)");
       return;
@@ -47,10 +46,11 @@ export default function SubmitPage() {
         problem: problem,
         createdAt: serverTimestamp(),
         status: "pending",
+        isUrgent: isUrgent,
         departments: departmentsMap
       });
 
-      alert("ส่งเคสปรึกษาสำเร็จ!");
+      alert(isUrgent ? "ส่งเคสปรึกษาด่วนสำเร็จ!" : "ส่งเคสปรึกษาสำเร็จ!");
       setHn("");
       setRoom("");
       setProblem("");
@@ -85,7 +85,7 @@ export default function SubmitPage() {
           </div>
         </div>
         <div className="bg-white pt-14 p-5 md:p-6 rounded-xl shadow-xl relative z-0 border border-gray-100">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="hn" className="flex items-center gap-1.5 text-xs font-bold text-gray-800 mb-2">
@@ -188,29 +188,57 @@ export default function SubmitPage() {
               )}
             </div>
             <div className="pt-3 border-t border-gray-200">
-              <button
-                type="submit"
-                disabled={isLoading}
-                className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 text-white shadow-md text-sm flex items-center justify-center gap-2
-                  ${isLoading
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 hover:shadow-lg transform hover:-translate-y-0.5'
-                  }`}
-              >
-                {isLoading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    กำลังส่งข้อมูล...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                    ส่งเคสปรึกษา
-                  </>
-                )}
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(false)}
+                  disabled={isLoading}
+                  className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 text-white shadow-md text-sm flex items-center justify-center gap-2
+                    ${isLoading
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 hover:shadow-lg transform hover:-translate-y-0.5'
+                    }`}
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span className="hidden sm:inline">กำลังส่ง...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                      ส่งเคสปรึกษา
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(true)}
+                  disabled={isLoading}
+                  className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 text-white shadow-md text-sm flex items-center justify-center gap-2
+                    ${isLoading
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 hover:shadow-lg transform hover:-translate-y-0.5'
+                    }`}
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span className="hidden sm:inline">กำลังส่ง...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      <span className="hidden sm:inline">ส่งเคสด่วน</span>
+                      <span className="sm:hidden">ด่วน</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </form>
         </div>
