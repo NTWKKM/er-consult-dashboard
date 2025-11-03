@@ -14,21 +14,21 @@ Preferred communication style: Simple, everyday language.
 
 **Framework**: Next.js 16 with React 19 and TypeScript
 - **Rationale**: Next.js provides server-side rendering capabilities, file-based routing, and excellent developer experience. The App Router architecture enables modern React features including React Server Components.
-- **Styling**: Tailwind CSS v4 with professional medical-themed design system
+- **Styling**: Tailwind CSS v4 with professional medical-themed design system using solid colors only (no gradients)
 - **Design Philosophy**: Modern, trustworthy, compact aesthetic appropriate for emergency department use
-- **Visual Identity**: Blue gradients for trust and professionalism, emerald green for success states, red for urgent items
+- **Visual Identity**: Deep navy backgrounds for professionalism, coral accents for urgent items, green for success states, peach tones for secondary actions
 - **Animations**: Smooth transitions, pulse effects for urgent cases, slide-in animations for content
 - **Language Support**: Thai language support (lang="th") for local hospital staff
 - **Compact Design**: Reduced spacing, padding, and element sizes throughout for efficient information density while maintaining readability
 
 **Component Structure**:
 - **Page Components**: 
-  - Dashboard (`app/page.tsx`): Real-time dashboard with Nautical Red theme, department filtering (Surgery/Ortho/Both toggles with red/cream/gradient buttons), pending case counter with red pulsing for active cases. Department displays in responsive 2-column grid (1 col mobile, 2 col on medium+) for optimal readability. Uses scalpel icon for Surgery (red gradient header) and bone icon for Ortho (cream gradient header). Dark navy card backgrounds with cream text. Performance optimized with query limit(30) and useMemo for department filtering. **Error handling**: Shows dark-themed error screen with cream reload button if Firebase connection fails.
-  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with Nautical Red theme. Features dual submission buttons (normal cream "Consult" and urgent red "Consult FastTrack" with lightning icon) placed side-by-side, interactive department selection with cream gradient for selected departments, and room/location field. Navy background with cream header and dark input fields.
-  - Completed cases (`app/completed/page.tsx`): Management page for completed consultations with Nautical Red theme showing 100 latest cases in table format with pagination (25 cases per page). Features Re-consult functionality with **department selection** allowing staff to choose which departments to consult (can be different from original), add new problem details, and automatically return cases to pending status on the dashboard. Table uses red gradient header, navy background, and cream text. Displays HN, room, problem (with line-clamp for long text), departments, and formatted timestamps. **Error handling**: Shows dark-themed error screen with cream reload button if Firebase connection fails.
+  - Dashboard (`app/page.tsx`): Real-time dashboard with solid color theme, department filtering (Surgery/Ortho/Both toggles with coral/green/peach buttons), pending case counter with coral pulsing for active cases. Department displays in responsive 2-column grid (1 col mobile, 2 col on medium+) for optimal readability. Uses scalpel icon for Surgery (coral header) and bone icon for Ortho (green header). Light gray-blue card backgrounds with navy text. Performance optimized with query limit(30) and useMemo for department filtering. **Error handling**: Shows light-themed error screen with green reload button if Firebase connection fails.
+  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with solid color theme. Features dual submission buttons (normal green "Consult" and urgent coral "Consult FastTrack" with lightning icon) placed side-by-side, interactive department selection with green backgrounds for selected departments, and room/location field. Navy background with peach header and white input fields.
+  - Completed cases (`app/completed/page.tsx`): Management page for completed consultations with solid color theme showing 100 latest cases in table format with pagination (25 cases per page). Features Re-consult functionality with **department selection** allowing staff to choose which departments to consult (can be different from original), add new problem details, and automatically return cases to pending status on the dashboard. Table uses coral header, gray-blue background, and navy text. Displays HN, room, problem (with line-clamp for long text), departments, and formatted timestamps. **Error handling**: Shows light-themed error screen with green reload button if Firebase connection fails.
 - **Shared Components**: 
-  - `ConsultCard`: Nautical-themed card with gradient background (navy to darker navy), patient icon, status badges, room location, and hover lift effects with glow. Regular cases display cream accent border; urgent cases display red border with pulsing glow effect, red icon with lightning bolt, and "ด่วน" (urgent) badge. **New Feature**: "รับเคส" (Accept Case) button with cream gradient allows staff to acknowledge case reception, stores acceptedAt timestamp in Firestore. "ปิดเคส" (Close Case) button uses red gradient.
-- **Layout**: Compact sticky navigation bar with red gradient logo, nautical gradient background, "จัดการเคส" (completed cases) link with navy button, and prominent cream gradient submit button
+  - `ConsultCard`: Light-themed card with solid gray-blue background, patient icon, status badges, room location, and hover lift effects with glow. Regular cases display green accent border; urgent cases display coral border with pulsing glow effect, coral icon with lightning bolt, and "ด่วน" (urgent) badge. **New Feature**: "รับเคส" (Accept Case) button with solid green background allows staff to acknowledge case reception, stores acceptedAt timestamp in Firestore. "ปิดเคส" (Close Case) button uses solid coral background.
+- **Layout**: Compact sticky navigation bar with solid coral logo, navy background, "จัดการเคส" (completed cases) link with gray-blue button, and prominent green submit button
 
 **State Management**:
 - Local React state with `useState` for form inputs and UI controls
@@ -114,20 +114,24 @@ consults collection:
 
 **Tailwind CSS (v4)**: Utility-first CSS framework with PostCSS integration for styling
 - **Custom CSS**: Professional design utilities in `globals.css` including:
-  - Nautical gradient backgrounds (navy to black spectrum)
-  - Enhanced card shadows with red accent glow effects
-  - Pulse animation for urgent case indicators with red glow
+  - Solid color backgrounds (NO gradients)
+  - Enhanced card shadows with subtle glow effects
+  - Pulse animation for urgent case indicators with coral glow
   - Slide-in animations for smooth content loading
-  - Glow-hover effects with cream highlights
-- **Color Palette**: Nautical Red theme optimized for professional medical aesthetics
-  - **Background**: #000000 (black) transitioning to #2a344f (deep navy)
-  - **Primary Text**: #e0cda7 (cream) for excellent contrast on dark backgrounds
-  - **Accent Red**: #bb1515 (nautical red) for urgent items, primary alerts, Surgery department headers
-  - **Accent Cream**: #e0cda7 (cream beige) for success states, secondary actions, Ortho department headers
-  - **Secondary Gray**: #8b8b8b (gray) for secondary text and borders
-  - **Design Rationale**: Professional nautical-inspired dark theme reduces eye strain in low-light emergency room environments while red accents ensure critical urgent cases are immediately visible
-  - **Custom Gradients**: accent-gradient-red, accent-gradient-cream, nautical-gradient for consistent visual identity
-- **Typography**: Inter font family with antialiasing for crisp text rendering on dark backgrounds
+  - Glow-hover effects with soft highlights
+- **Color Palette**: Clean modern palette with SOLID COLORS ONLY (no gradients)
+  - **Primary Background**: #014167 (deep navy) - main page backgrounds, navigation
+  - **Secondary Background**: #C7CFDA (gray-blue) - cards, secondary surfaces
+  - **Primary Text on Dark**: #FDFCDF (cream) - text on navy backgrounds
+  - **Primary Text on Light**: #014167 (navy) - text on light backgrounds
+  - **Urgent/Alert**: #E55143 (coral) - urgent cases, alerts, Surgery department, FastTrack button
+  - **Success/Accept**: #699D5D (green) - success states, accept buttons, Ortho department, normal submit
+  - **Accent Peach**: #F1AE9E (peach) - secondary actions, medium accents
+  - **Accent Peach Light**: #FBD8C5 (peach light) - soft accents
+  - **Success Light**: #B4C8AB (green light) - soft success states
+  - **Warning/Highlight**: #F4ECA3 (yellow light) - warnings, highlights
+  - **Design Rationale**: Professional medical theme with clean solid colors, coral for urgent visibility, green for positive actions, navy backgrounds for trust and professionalism
+- **Typography**: Inter font family with antialiasing for crisp text rendering
 - **Responsive Design**: Mobile-first approach with tablet and desktop breakpoints
 - **Grid Layout**: Dashboard uses 2-column grid (md:grid-cols-2) for efficient space utilization
 
