@@ -1,11 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --color-nautical-red: #bb1515;
-  --color-cream: #e0cda7;
-  --color-navy: #2a344f;
-  --color-gray: #8b8b8b;
-  --color-black: #000000;
+  --color-navy-dark: #014167;
+  --color-gray-blue: #C7CFDA;
+  --color-peach-light: #FBD8C5;
+  --color-peach: #F1AE9E;
+  --color-coral: #E55143;
+  --color-green: #699D5D;
+  --color-green-light: #B4C8AB;
+  --color-yellow-light: #F4ECA3;
+  --color-cream: #FDFCDF;
 }
 
 * {
@@ -15,31 +19,19 @@
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #000000 0%, #2a344f 100%);
-  color: #e0cda7;
-}
-
-.nautical-gradient {
-  background: linear-gradient(135deg, #2a344f 0%, #000000 50%, #1a1f2e 100%);
-}
-
-.accent-gradient-red {
-  background: linear-gradient(135deg, #bb1515 0%, #d41f1f 100%);
-}
-
-.accent-gradient-cream {
-  background: linear-gradient(135deg, #e0cda7 0%, #f0e4c7 100%);
+  background: #014167;
+  color: #FDFCDF;
 }
 
 .card-shadow {
-  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.6), 
-              0 2px 4px -2px rgba(187, 21, 21, 0.15);
+  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.3), 
+              0 2px 4px -2px rgba(1, 65, 103, 0.2);
 }
 
 .card-shadow-hover {
-  box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.7), 
-              0 4px 8px -4px rgba(187, 21, 21, 0.25),
-              0 0 20px rgba(224, 205, 167, 0.1);
+  box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.4), 
+              0 4px 8px -4px rgba(1, 65, 103, 0.3),
+              0 0 20px rgba(253, 252, 223, 0.1);
 }
 
 .pulse-urgent {
@@ -49,11 +41,11 @@ body {
 @keyframes pulse-urgent {
   0%, 100% {
     opacity: 1;
-    box-shadow: 0 0 0 0 rgba(187, 21, 21, 0.7);
+    box-shadow: 0 0 0 0 rgba(229, 81, 67, 0.7);
   }
   50% {
     opacity: 0.9;
-    box-shadow: 0 0 0 10px rgba(187, 21, 21, 0);
+    box-shadow: 0 0 0 10px rgba(229, 81, 67, 0);
   }
 }
 
@@ -73,6 +65,6 @@ body {
 }
 
 .glow-hover:hover {
-  box-shadow: 0 0 20px rgba(224, 205, 167, 0.4);
+  box-shadow: 0 0 20px rgba(253, 252, 223, 0.3);
   transition: all 0.3s ease;
 }
