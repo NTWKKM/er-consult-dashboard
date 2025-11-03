@@ -25,9 +25,10 @@ Preferred communication style: Simple, everyday language.
 - **Page Components**: 
   - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states. Surgery department displays in responsive 3-column grid (1 col mobile, 2 col tablet, 3 col desktop) for efficient space usage. Uses scalpel icon for Surgery and bone icon for Ortho. Compact design with reduced spacing and padding for efficient information display. Performance optimized with query limit(30) and useMemo for department filtering.
   - Submit form (`app/submit/page.tsx`): Modern consultation submission form with dual submission buttons (normal green "Consult" and urgent red "Consult FastTrack" with lightning icon) placed side-by-side, interactive department selection, and room/location field. Compact header with proper spacing to prevent overlap with form.
+  - Completed cases (`app/completed/page.tsx`): Management page for completed consultations showing 100 latest cases in table format with pagination (25 cases per page). Features Re-consult functionality allowing staff to reopen completed cases with new problem details, automatically returning them to pending status on the dashboard. Displays HN, room, problem (with line-clamp for long text), departments, and formatted timestamps.
 - **Shared Components**: 
   - `ConsultCard`: Compact card design with patient icon, status badges, room location, and hover lift effects. Regular cases display blue accent border; urgent cases display red border, red pulsing icon with lightning bolt, and "ด่วน" (urgent) badge
-- **Layout**: Compact sticky navigation bar with branded logo, gradient background, and prominent submit button
+- **Layout**: Compact sticky navigation bar with branded logo, gradient background, "จัดการเคส" (completed cases) link, and prominent submit button
 
 **State Management**:
 - Local React state with `useState` for form inputs and UI controls
