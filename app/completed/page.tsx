@@ -1,0 +1,301 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { db } from "@/lib/firebase";
+import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+
+export default function CompletedPage() {
+  const [cases, setCases] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedCase, setSelectedCase] = useState<any>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [newProblem, setNewProblem] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const ITEMS_PER_PAGE = 25;
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "consults"),
+      where("status", "==", "completed"),
+      orderBy("createdAt", "desc"),
+      limit(100)
+    );
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const completedCases: any[] = [];
+      querySnapshot.forEach((doc) => {
+        completedCases.push({ id: doc.id, ...doc.data() });
+      });
+      setCases(completedCases);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleReConsult = async () => {
+    if (!selectedCase || !newProblem.trim()) {
+      alert("กรุณาระบุปัญหาใหม่");
+      return;
+    }
+
+    setIsUpdating(true);
+
+    try {
+      const updatedDepartments: any = {};
+      Object.keys(selectedCase.departments).forEach(dept => {
+        updatedDepartments[dept] = {
+          status: "pending",
+          completedAt: null
+        };
+      });
+
+      const caseRef = doc(db, "consults", selectedCase.id);
+      await updateDoc(caseRef, {
+        status: "pending",
+        departments: updatedDepartments,
+        problem: `${selectedCase.problem}\n\n[Re-consult]: ${newProblem}`,
+        createdAt: serverTimestamp()
+      });
+
+      setShowModal(false);
+      setSelectedCase(null);
+      setNewProblem("");
+      alert("✓ ส่งปรึกษาใหม่สำเร็จ!");
+
+    } catch (error) {
+      console.error("Error re-consulting:", error);
+      alert("เกิดข้อผิดพลาด");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const openReConsultModal = (caseData: any) => {
+    setSelectedCase(caseData);
+    setNewProblem("");
+    setShowModal(true);
+  };
+
+  const totalPages = Math.ceil(cases.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const currentCases = cases.slice(startIndex, endIndex);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-xl text-gray-700 font-semibold">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+      <div className="max-w-[1800px] mx-auto p-4">
+        <div className="mb-4 text-center">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 bg-clip-text text-transparent mb-2">
+            เคสที่ปรึกษาเสร็จแล้ว
+          </h1>
+          <p className="text-gray-600 text-sm">แสดง 100 เคสล่าสุด</p>
+          <div className="mt-2 inline-flex items-center gap-2 bg-white px-4 py-1.5 rounded-full shadow-md border border-gray-200">
+            <span className="text-gray-700 font-semibold text-sm">ทั้งหมด:</span>
+            <span className="text-xl font-bold text-blue-600">{cases.length}</span>
+            <span className="text-gray-500 text-sm">เคส</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 text-white">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-bold">HN</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold">ห้อง</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold">ปัญหา</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold">แผนก</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold">วันที่ส่ง</th>
+                  <th className="px-4 py-3 text-center text-sm font-bold">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {currentCases.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                      ไม่มีข้อมูล
+                    </td>
+                  </tr>
+                ) : (
+                  currentCases.map((caseData) => (
+                    <tr key={caseData.id} className="hover:bg-blue-50 transition-colors">
+                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                        {caseData.hn}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-blue-600 font-medium">
+                        {caseData.room}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700 max-w-md">
+                        <div className="line-clamp-2">{caseData.problem}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex flex-wrap gap-1">
+                          {Object.keys(caseData.departments).map(dept => (
+                            <span key={dept} className="inline-block px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs font-medium">
+                              {dept}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {caseData.createdAt
+                          ? new Date(caseData.createdAt.seconds * 1000).toLocaleDateString("th-TH", {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            })
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => openReConsultModal(caseData)}
+                          className="px-3 py-1.5 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-lg text-xs font-bold hover:from-orange-700 hover:to-orange-800 shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-1 mx-auto"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Re-consult
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                แสดง {startIndex + 1}-{Math.min(endIndex, cases.length)} จาก {cases.length} เคส
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
+                    currentPage === 1
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-white text-blue-600 border border-blue-300 hover:bg-blue-50'
+                  }`}
+                >
+                  ← ก่อนหน้า
+                </button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
+                        currentPage === page
+                          ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
+                    currentPage === totalPages
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-white text-blue-600 border border-blue-300 hover:bg-blue-50'
+                  }`}
+                >
+                  ถัดไป →
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Re-consult เคส HN: {selectedCase?.hn}</h2>
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <p className="text-xs text-gray-500 font-semibold mb-1">ปัญหาเดิม:</p>
+              <p className="text-sm text-gray-800">{selectedCase?.problem}</p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-800 mb-2">
+                ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={newProblem}
+                onChange={(e) => setNewProblem(e.target.value)}
+                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all duration-200 min-h-[120px] text-sm"
+                placeholder="ระบุปัญหาใหม่หรืออาการเพิ่มเติมที่ต้องการปรึกษา..."
+                required
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-all text-sm"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleReConsult}
+                disabled={isUpdating || !newProblem.trim()}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
+                  isUpdating || !newProblem.trim()
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-orange-600 to-orange-700 text-white hover:from-orange-700 hover:to-orange-800 shadow-md hover:shadow-lg'
+                }`}
+              >
+                {isUpdating ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>กำลังส่ง...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>ส่งปรึกษาใหม่</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
