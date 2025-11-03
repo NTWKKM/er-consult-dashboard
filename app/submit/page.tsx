@@ -112,7 +112,7 @@ export default function SubmitPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold drop-shadow-sm">ส่งเคสปรึกษา</h1>
-              <p className="text-[#014167]/80 text-xs">ER MNRH</p>
+              <p className="text-[#014167] text-xs font-medium">ER MNRH</p>
             </div>
           </div>
         </div>
@@ -245,7 +245,7 @@ export default function SubmitPage() {
                   disabled={isLoading}
                   className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2
                     ${isLoading
-                      ? 'bg-[#C7CFDA]/30 cursor-not-allowed text-[#014167]/40'
+                      ? 'bg-[#C7CFDA] cursor-not-allowed text-[#014167]'
                       : 'bg-[#699D5D] text-white hover:shadow-md transform hover:-translate-y-0.5'
                     }`}
                 >
@@ -269,7 +269,7 @@ export default function SubmitPage() {
                   disabled={isLoading}
                   className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2
                     ${isLoading
-                      ? 'bg-[#C7CFDA]/30 cursor-not-allowed text-[#014167]/40'
+                      ? 'bg-[#C7CFDA] cursor-not-allowed text-[#014167]'
                       : 'bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5'
                     }`}
                 >

@@ -112,7 +112,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
             </div>
             <div className="flex items-center gap-2 text-xs">
               <span className="text-[#014167] font-semibold">{departmentName}</span>
-              <span className="text-[#014167]/30">•</span>
+              <span className="text-[#C7CFDA]">•</span>
               <span className="text-[#014167] font-semibold">{room}</span>
             </div>
           </div>
@@ -131,7 +131,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
       
       <div className="flex flex-col gap-2 text-xs">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1 text-[#014167]/70">
+          <div className="flex items-center gap-1 text-[#014167] font-medium">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -163,7 +163,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
                 disabled={isAccepting}
                 className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
                   isAccepting
-                    ? 'bg-[#014167]/40 text-[#FDFCDF]/40 cursor-not-allowed'
+                    ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
                     : 'bg-[#699D5D] text-[#FDFCDF] hover:shadow-lg glow-hover transform hover:-translate-y-0.5'
                 }`}
               >
@@ -187,7 +187,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
               disabled={isUpdating}
               className={`${isAccepted ? 'flex-1' : 'flex-1'} px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
                 isUpdating
-                  ? 'bg-[#014167]/40 text-[#FDFCDF]/40 cursor-not-allowed'
+                  ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
                   : 'bg-[#E55143] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5'
               }`}
             >

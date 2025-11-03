@@ -153,7 +153,7 @@ export default function CompletedPage() {
           <div className="mt-2 inline-flex items-center gap-2 bg-[#C7CFDA] px-4 py-1.5 rounded-full shadow-sm border border-[#C7CFDA]/30">
             <span className="text-[#014167] font-semibold text-sm">ทั้งหมด:</span>
             <span className="text-xl font-bold text-[#014167]">{cases.length}</span>
-            <span className="text-[#014167]/70 text-sm">เคส</span>
+            <span className="text-[#014167] text-sm font-medium">เคส</span>
           </div>
         </div>
 
@@ -173,7 +173,7 @@ export default function CompletedPage() {
               <tbody className="divide-y divide-[#014167]/10">
                 {currentCases.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-[#014167]/70">
+                    <td colSpan={6} className="px-4 py-8 text-center text-[#014167] font-medium">
                       ไม่มีข้อมูล
                     </td>
                   </tr>
@@ -229,7 +229,7 @@ export default function CompletedPage() {
 
           {totalPages > 1 && (
             <div className="bg-[#014167]/10 px-4 py-3 border-t border-[#014167]/20 flex items-center justify-between">
-              <div className="text-sm text-[#014167]/70">
+              <div className="text-sm text-[#014167] font-medium">
                 แสดง {startIndex + 1}-{Math.min(endIndex, cases.length)} จาก {cases.length} เคส
               </div>
               <div className="flex gap-2">
@@ -238,7 +238,7 @@ export default function CompletedPage() {
                   disabled={currentPage === 1}
                   className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
                     currentPage === 1
-                      ? 'bg-[#C7CFDA]/50 text-[#014167]/40 cursor-not-allowed'
+                      ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
                       : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30'
                   }`}
                 >
@@ -264,7 +264,7 @@ export default function CompletedPage() {
                   disabled={currentPage === totalPages}
                   className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
                     currentPage === totalPages
-                      ? 'bg-[#C7CFDA]/50 text-[#014167]/40 cursor-not-allowed'
+                      ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
                       : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30'
                   }`}
                 >
@@ -283,7 +283,7 @@ export default function CompletedPage() {
               <h2 className="text-xl font-bold text-[#014167]">Re-consult เคส HN: {selectedCase?.hn}</h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-[#014167]/70 hover:text-[#014167] transition-colors"
+                className="text-[#014167] hover:text-[#E55143] transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -292,7 +292,7 @@ export default function CompletedPage() {
             </div>
 
             <div className="mb-4 p-3 bg-white rounded-lg border border-[#C7CFDA]">
-              <p className="text-xs text-[#014167]/70 font-semibold mb-1">ปัญหาเดิม:</p>
+              <p className="text-xs text-[#014167] font-semibold mb-1">ปัญหาเดิม:</p>
               <p className="text-sm text-[#014167]">{selectedCase?.problem}</p>
             </div>
 
@@ -316,7 +316,7 @@ export default function CompletedPage() {
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-[#014167]/70 mt-2">
+              <p className="text-xs text-[#014167] font-medium mt-2">
                 เลือกได้หลายแผนก (คลิกเพื่อเลือก/ยกเลิก)
               </p>
             </div>
@@ -346,7 +346,7 @@ export default function CompletedPage() {
                 disabled={isUpdating || !newProblem.trim() || selectedDepartments.length === 0}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
                   isUpdating || !newProblem.trim() || selectedDepartments.length === 0
-                    ? 'bg-[#C7CFDA]/50 text-[#014167]/40 cursor-not-allowed'
+                    ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
                     : 'bg-[#699D5D] text-white hover:shadow-md'
                 }`}
               >
