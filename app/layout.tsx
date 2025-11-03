@@ -17,35 +17,33 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th">
-      <body className={`${inter.className} bg-gradient-to-br from-blue-50/30 via-slate-50 to-blue-50/50`}>
-        <nav className="emergency-gradient shadow-md border-b border-blue-300/30 sticky top-0 z-50 backdrop-blur-sm">
+      <body className={`${inter.className}`} style={{background: 'linear-gradient(135deg, #181818 0%, #072A40 100%)', minHeight: '100vh'}}>
+        <nav className="vibrant-gradient shadow-lg border-b border-[#FF4500]/30 sticky top-0 z-50 backdrop-blur-sm">
           <div className="container mx-auto px-3">
-            <div className="flex justify-between items-center h-12">
+            <div className="flex justify-between items-center h-14">
               <Link href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity group">
-                <div className="w-8 h-8 bg-white/30 backdrop-blur-sm rounded-lg flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-10 h-10 accent-gradient-orange backdrop-blur-sm rounded-lg flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform glow-hover">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                   </svg>
                 </div>
                 <div>
-                  <div className="text-base font-bold text-white drop-shadow-sm">ER Consult</div>
-                  <div className="text-xs text-white/90 font-medium hidden sm:block">MNRH</div>
+                  <div className="text-lg font-bold text-[#F5E8D8] drop-shadow-sm">ER Consult</div>
+                  <div className="text-xs text-[#DAA520] font-medium">MNRH</div>
                 </div>
               </Link>
               <div className="flex items-center gap-2">
-                <Link href="/completed" className="bg-white/20 hover:bg-white/30 text-white font-semibold py-1.5 px-3 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-1.5 text-sm border border-white/40">
+                <Link href="/completed" className="bg-[#072A40]/80 hover:bg-[#072A40] text-[#F5E8D8] font-semibold py-2 px-4 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2 text-sm border border-[#DAA520]/30 glow-hover">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                   </svg>
                   <span className="hidden sm:inline">จัดการเคส</span>
-                  <span className="sm:hidden">จัดการ</span>
                 </Link>
-                <Link href="/submit" className="bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold py-1.5 px-3 rounded-lg shadow-sm hover:shadow-md transform hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-1.5 text-sm">
+                <Link href="/submit" className="accent-gradient-gold hover:shadow-lg text-[#181818] font-bold py-2 px-4 rounded-lg shadow-md transform hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-2 text-sm glow-hover">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
                   <span className="hidden sm:inline">ส่งเคสปรึกษา</span>
-                  <span className="sm:hidden">ส่งเคส</span>
                 </Link>
               </div>
             </div>

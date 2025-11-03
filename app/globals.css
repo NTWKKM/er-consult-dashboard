@@ -1,10 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --color-emergency-red: #f87171;
-  --color-medical-blue: #60a5fa;
-  --color-trust-green: #34d399;
-  --color-urgent-orange: #fb923c;
+  --color-dark-bg: #181818;
+  --color-navy-bg: #072A40;
+  --color-warm-text: #F5E8D8;
+  --color-burnt-orange: #FF4500;
+  --color-golden-yellow: #DAA520;
+  --color-bright-yellow: #FFEB3B;
 }
 
 * {
@@ -14,20 +16,31 @@
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(135deg, #181818 0%, #072A40 100%);
+  color: #F5E8D8;
 }
 
-.emergency-gradient {
-  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%);
+.vibrant-gradient {
+  background: linear-gradient(135deg, #072A40 0%, #181818 50%, #0a1929 100%);
+}
+
+.accent-gradient-orange {
+  background: linear-gradient(135deg, #FF4500 0%, #ff6347 100%);
+}
+
+.accent-gradient-gold {
+  background: linear-gradient(135deg, #DAA520 0%, #FFD700 100%);
 }
 
 .card-shadow {
-  box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.06), 
-              0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.5), 
+              0 2px 4px -2px rgba(255, 69, 0, 0.1);
 }
 
 .card-shadow-hover {
-  box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.08), 
-              0 3px 6px -2px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.6), 
+              0 4px 8px -4px rgba(255, 69, 0, 0.2),
+              0 0 20px rgba(218, 165, 32, 0.15);
 }
 
 .pulse-urgent {
@@ -37,9 +50,11 @@ body {
 @keyframes pulse-urgent {
   0%, 100% {
     opacity: 1;
+    box-shadow: 0 0 0 0 rgba(255, 69, 0, 0.7);
   }
   50% {
-    opacity: 0.7;
+    opacity: 0.9;
+    box-shadow: 0 0 0 10px rgba(255, 69, 0, 0);
   }
 }
 
@@ -56,4 +71,9 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.glow-hover:hover {
+  box-shadow: 0 0 20px rgba(255, 235, 59, 0.5);
+  transition: all 0.3s ease;
 }

@@ -63,8 +63,8 @@ export default function Dashboard() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block w-16 h-16 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-xl text-gray-600 font-semibold">กำลังโหลดข้อมูล...</p>
+          <div className="inline-block w-16 h-16 border-4 border-[#FF4500] border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-xl text-[#F5E8D8] font-semibold">กำลังโหลดข้อมูล...</p>
         </div>
       </div>
     );
@@ -73,15 +73,15 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center bg-white rounded-xl shadow-md p-8 max-w-md">
-          <svg className="w-16 h-16 mx-auto text-rose-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="text-center bg-gradient-to-br from-[#072A40] to-[#0a1929] rounded-xl shadow-lg p-8 max-w-md border border-[#FF4500]/30">
+          <svg className="w-16 h-16 mx-auto text-[#FF4500] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">เกิดข้อผิดพลาด</h2>
-          <p className="text-gray-500 mb-4">{error}</p>
+          <h2 className="text-xl font-bold text-[#F5E8D8] mb-2">เกิดข้อผิดพลาด</h2>
+          <p className="text-[#DAA520] mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-gradient-to-r from-blue-400 to-blue-500 text-white rounded-lg font-semibold hover:from-blue-500 hover:to-cyan-500 transition-all shadow-sm"
+            className="px-4 py-2 accent-gradient-gold text-[#181818] rounded-lg font-bold hover:shadow-lg transition-all glow-hover"
           >
             โหลดใหม่
           </button>
@@ -94,68 +94,68 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen">
-      <div className="max-w-[1600px] mx-auto p-2 sm:p-3 lg:p-4">
-        <div className="mb-3 text-center slide-in">
-          <div className="inline-flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-rose-400 to-rose-500 rounded-lg flex items-center justify-center shadow-sm">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
+        <div className="mb-4 text-center slide-in">
+          <div className="inline-flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 accent-gradient-orange rounded-lg flex items-center justify-center shadow-lg">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-cyan-500 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-bold text-[#F5E8D8]">
               ER Consult Dashboard
             </h1>
           </div>
-          <p className="text-gray-500 text-sm font-medium">MNRH</p>
-          <div className="mt-2 inline-flex items-center gap-2 bg-white px-4 py-1.5 rounded-full shadow-sm border border-gray-100">
-            <span className="text-gray-600 font-semibold text-sm">เคสรอดำเนินการ:</span>
-            <span className={`text-xl font-bold ${totalPendingCases > 0 ? 'text-rose-500 pulse-urgent' : 'text-emerald-500'}`}>
+          <p className="text-[#DAA520] text-sm font-bold mb-3">MNRH</p>
+          <div className="inline-flex items-center gap-3 bg-gradient-to-br from-[#072A40] to-[#0a1929] px-6 py-2 rounded-full shadow-lg border border-[#DAA520]/30">
+            <span className="text-[#F5E8D8] font-bold">เคสรอดำเนินการ:</span>
+            <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#FF4500] pulse-urgent' : 'text-[#DAA520]'}`}>
               {totalPendingCases}
             </span>
           </div>
         </div>
 
-        <div className="flex justify-center gap-2 mb-4 flex-wrap">
+        <div className="flex justify-center gap-3 mb-5 flex-wrap">
           <button
-            className={`px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all duration-200 text-sm
+            className={`px-5 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-sm glow-hover
               ${view === 'surgery' 
-                ? 'bg-gradient-to-r from-blue-400 to-blue-500 text-white' 
-                : 'bg-white text-blue-500 border border-blue-200 hover:border-blue-400 hover:bg-blue-50'}
+                ? 'accent-gradient-orange text-white' 
+                : 'bg-[#072A40] text-[#FF4500] border border-[#FF4500]/50 hover:border-[#FF4500]'}
             `}
             onClick={() => setView('surgery')}
           >
-            <span className="flex items-center gap-1.5">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <span className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
               </svg>
               Surgery
             </span>
           </button>
           <button
-            className={`px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all duration-200 text-sm
+            className={`px-5 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-sm glow-hover
               ${view === 'ortho' 
-                ? 'bg-gradient-to-r from-emerald-400 to-emerald-500 text-white' 
-                : 'bg-white text-emerald-500 border border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50'}
+                ? 'accent-gradient-gold text-[#181818]' 
+                : 'bg-[#072A40] text-[#DAA520] border border-[#DAA520]/50 hover:border-[#DAA520]'}
             `}
             onClick={() => setView('ortho')}
           >
-            <span className="flex items-center gap-1.5">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <span className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5c-3.5 0-6 2.5-6 6v3c0 1.5-1 2.5-2 3.5-.5.5-.5 1 0 1.5.5.5 1 .5 1.5 0 1.5-1.5 2.5-3 2.5-5v-3c0-2 1.5-3.5 4-3.5s4 1.5 4 3.5v3c0 2 1 3.5 2.5 5 .5.5 1 .5 1.5 0s.5-1 0-1.5c-1-1-2-2-2-3.5v-3c0-3.5-2.5-6-6-6z" />
               </svg>
               Ortho
             </span>
           </button>
           <button
-            className={`px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all duration-200 text-sm
+            className={`px-5 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-sm glow-hover
               ${view === 'both' 
-                ? 'bg-gradient-to-r from-purple-400 to-purple-500 text-white' 
-                : 'bg-white text-purple-500 border border-purple-200 hover:border-purple-400 hover:bg-purple-50'}
+                ? 'bg-gradient-to-r from-[#FF4500] to-[#DAA520] text-white' 
+                : 'bg-[#072A40] text-[#FFEB3B] border border-[#FFEB3B]/50 hover:border-[#FFEB3B]'}
             `}
             onClick={() => setView('both')}
           >
-            <span className="flex items-center gap-1.5">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <span className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
               ทั้งสองแผนก
@@ -163,35 +163,35 @@ export default function Dashboard() {
           </button>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-3">
+        <div className="flex flex-col lg:flex-row gap-4">
           {(view === 'surgery' || view === 'both') && (
-            <div className="flex-1 bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-lg slide-in">
-              <div className="bg-gradient-to-r from-blue-400 via-blue-500 to-cyan-500 text-white px-4 py-2">
-                <h2 className="text-lg font-bold flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex-1 bg-gradient-to-br from-[#072A40] to-[#0a1929] rounded-xl shadow-lg border border-[#FF4500]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
+              <div className="accent-gradient-orange text-white px-5 py-3 border-b border-[#FF4500]/20">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                   </svg>
                   Surgery
-                  <span className="text-white/80 text-xs font-normal ml-1">แผนกศัลยกรรม</span>
+                  <span className="text-white/80 text-sm font-normal ml-1">แผนกศัลยกรรม</span>
                 </h2>
               </div>
-              <div className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {SURGERY_DEPTS.map(dept => {
                   const cases = getCasesForDepartment(dept);
                   return (
                     <div key={dept} className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between bg-gradient-to-r from-blue-50/50 to-cyan-50/50 px-3 py-2 rounded-lg border border-blue-100/50">
-                        <h3 className="text-sm font-bold text-gray-600">{dept}</h3>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-rose-100 text-rose-500 pulse-urgent' : 'bg-emerald-100 text-emerald-500'}`}>
+                      <div className="flex items-center justify-between bg-[#181818]/60 px-3 py-2 rounded-lg border border-[#FF4500]/20">
+                        <h3 className="text-sm font-bold text-[#F5E8D8]">{dept}</h3>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#FF4500]/20 text-[#FF4500] pulse-urgent' : 'bg-[#DAA520]/20 text-[#DAA520]'}`}>
                           {cases.length}
                         </span>
                       </div>
                       {cases.length === 0 ? (
-                        <div className="text-center py-3 px-3 bg-gray-50/50 rounded-lg border border-gray-100/50">
-                          <svg className="w-8 h-8 mx-auto text-emerald-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="text-center py-4 px-3 bg-[#181818]/40 rounded-lg border border-[#DAA520]/10">
+                          <svg className="w-10 h-10 mx-auto text-[#DAA520] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="text-gray-400 font-medium text-xs">ไม่มีเคสค้าง</p>
+                          <p className="text-[#DAA520] font-medium text-xs">ไม่มีเคสค้าง</p>
                         </div>
                       ) : (
                         cases.map(caseData => (
@@ -210,33 +210,33 @@ export default function Dashboard() {
             </div>
           )}
           {(view === 'ortho' || view === 'both') && (
-            <div className="flex-1 bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-lg slide-in">
-              <div className="bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500 text-white px-4 py-2">
-                <h2 className="text-lg font-bold flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex-1 bg-gradient-to-br from-[#072A40] to-[#0a1929] rounded-xl shadow-lg border border-[#DAA520]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
+              <div className="accent-gradient-gold text-[#181818] px-5 py-3 border-b border-[#DAA520]/20">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5c-3.5 0-6 2.5-6 6v3c0 1.5-1 2.5-2 3.5-.5.5-.5 1 0 1.5.5.5 1 .5 1.5 0 1.5-1.5 2.5-3 2.5-5v-3c0-2 1.5-3.5 4-3.5s4 1.5 4 3.5v3c0 2 1 3.5 2.5 5 .5.5 1 .5 1.5 0s.5-1 0-1.5c-1-1-2-2-2-3.5v-3c0-3.5-2.5-6-6-6z" />
                   </svg>
                   Ortho
-                  <span className="text-white/80 text-xs font-normal ml-1">ศัลยกรรมกระดูก</span>
+                  <span className="text-[#181818]/70 text-sm font-normal ml-1">ศัลยกรรมกระดูก</span>
                 </h2>
               </div>
-              <div className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {ORTHO_DEPTS.map(dept => {
                   const cases = getCasesForDepartment(dept);
                   return (
                     <div key={dept} className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between bg-gradient-to-r from-emerald-50/50 to-teal-50/50 px-3 py-2 rounded-lg border border-emerald-100/50">
-                        <h3 className="text-sm font-bold text-gray-600">{dept}</h3>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-rose-100 text-rose-500 pulse-urgent' : 'bg-emerald-100 text-emerald-500'}`}>
+                      <div className="flex items-center justify-between bg-[#181818]/60 px-3 py-2 rounded-lg border border-[#DAA520]/20">
+                        <h3 className="text-sm font-bold text-[#F5E8D8]">{dept}</h3>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#FF4500]/20 text-[#FF4500] pulse-urgent' : 'bg-[#DAA520]/20 text-[#DAA520]'}`}>
                           {cases.length}
                         </span>
                       </div>
                       {cases.length === 0 ? (
-                        <div className="text-center py-3 px-3 bg-gray-50/50 rounded-lg border border-gray-100/50">
-                          <svg className="w-8 h-8 mx-auto text-emerald-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="text-center py-4 px-3 bg-[#181818]/40 rounded-lg border border-[#DAA520]/10">
+                          <svg className="w-10 h-10 mx-auto text-[#DAA520] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="text-gray-400 font-medium text-xs">ไม่มีเคสค้าง</p>
+                          <p className="text-[#DAA520] font-medium text-xs">ไม่มีเคสค้าง</p>
                         </div>
                       ) : (
                         cases.map(caseData => (
