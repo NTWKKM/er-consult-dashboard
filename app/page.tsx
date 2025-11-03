@@ -199,7 +199,7 @@ export default function Dashboard() {
 
         <div className="flex flex-col lg:flex-row gap-4">
           {(view === 'surgery' || view === 'both') && (
-            <div className="flex-1 bg-[#C7CFDA] rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
+            <div className={`${view === 'both' ? 'lg:flex-[3]' : 'flex-1'} bg-[#C7CFDA] rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in`}>
               <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -248,7 +248,7 @@ export default function Dashboard() {
             </div>
           )}
           {(view === 'ortho' || view === 'both') && (
-            <div className="flex-1 bg-[#C7CFDA] rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
+            <div className={`${view === 'both' ? 'lg:flex-[1]' : 'flex-1'} bg-[#C7CFDA] rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in`}>
               <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -281,14 +281,16 @@ export default function Dashboard() {
                           <p className="text-[#014167] font-medium text-xs">ไม่มีเคสค้าง</p>
                         </div>
                       ) : (
-                        cases.map(caseData => (
-                          <ConsultCard
-                            key={caseData.id}
-                            caseData={caseData}
-                            caseId={caseData.id}
-                            departmentName={dept}
-                          />
-                        ))
+                        <div className={view === 'ortho' ? 'grid grid-cols-1 md:grid-cols-2 gap-2' : 'flex flex-col gap-2'}>
+                          {cases.map(caseData => (
+                            <ConsultCard
+                              key={caseData.id}
+                              caseData={caseData}
+                              caseId={caseData.id}
+                              departmentName={dept}
+                            />
+                          ))}
+                        </div>
                       )}
                     </div>
                   );
