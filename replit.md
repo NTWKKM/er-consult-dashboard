@@ -15,18 +15,19 @@ Preferred communication style: Simple, everyday language.
 **Framework**: Next.js 16 with React 19 and TypeScript
 - **Rationale**: Next.js provides server-side rendering capabilities, file-based routing, and excellent developer experience. The App Router architecture enables modern React features including React Server Components.
 - **Styling**: Tailwind CSS v4 with professional medical-themed design system
-- **Design Philosophy**: Modern, trustworthy aesthetic appropriate for emergency department use
+- **Design Philosophy**: Modern, trustworthy, compact aesthetic appropriate for emergency department use
 - **Visual Identity**: Blue gradients for trust and professionalism, emerald green for success states, red for urgent items
 - **Animations**: Smooth transitions, pulse effects for urgent cases, slide-in animations for content
 - **Language Support**: Thai language support (lang="th") for local hospital staff
+- **Compact Design**: Reduced spacing, padding, and element sizes throughout for efficient information density while maintaining readability
 
 **Component Structure**:
 - **Page Components**: 
-  - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states
-  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with interactive department selection
+  - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states. Compact design with reduced spacing and padding for efficient information display.
+  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with interactive department selection and room/location field
 - **Shared Components**: 
-  - `ConsultCard`: Enhanced card design with patient icon, status badges, blue accent border, and hover lift effects
-- **Layout**: Professional sticky navigation bar with branded logo, gradient background, and prominent submit button
+  - `ConsultCard`: Compact card design with patient icon, status badges, room location, blue accent border, and hover lift effects
+- **Layout**: Compact sticky navigation bar with branded logo, gradient background, and prominent submit button
 
 **State Management**:
 - Local React state with `useState` for form inputs and UI controls
@@ -50,6 +51,7 @@ Preferred communication style: Simple, everyday language.
 consults collection:
   - id (auto-generated)
   - hn (patient hospital number)
+  - room (examination room: "Resus Team 1" | "Resus Team 2" | "Resus Team 3" | "Resus Team 4" | "Urgent" | "NT")
   - problem (consultation description)
   - status (overall case status: "pending")
   - createdAt (server timestamp)
