@@ -14,13 +14,19 @@ Preferred communication style: Simple, everyday language.
 
 **Framework**: Next.js 16 with React 19 and TypeScript
 - **Rationale**: Next.js provides server-side rendering capabilities, file-based routing, and excellent developer experience. The App Router architecture enables modern React features including React Server Components.
-- **Styling**: Tailwind CSS v4 with custom gradient designs for a modern, medical-themed interface
+- **Styling**: Tailwind CSS v4 with professional medical-themed design system
+- **Design Philosophy**: Modern, trustworthy aesthetic appropriate for emergency department use
+- **Visual Identity**: Blue gradients for trust and professionalism, emerald green for success states, red for urgent items
+- **Animations**: Smooth transitions, pulse effects for urgent cases, slide-in animations for content
 - **Language Support**: Thai language support (lang="th") for local hospital staff
 
 **Component Structure**:
-- **Page Components**: Dashboard (`app/page.tsx`) and Submit form (`app/submit/page.tsx`) using client-side rendering for real-time updates
-- **Shared Components**: `ConsultCard` component for displaying individual consultation cases
-- **Layout**: Root layout with navigation bar including links to dashboard and case submission
+- **Page Components**: 
+  - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states
+  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with interactive department selection
+- **Shared Components**: 
+  - `ConsultCard`: Enhanced card design with patient icon, status badges, blue accent border, and hover lift effects
+- **Layout**: Professional sticky navigation bar with branded logo, gradient background, and prominent submit button
 
 **State Management**:
 - Local React state with `useState` for form inputs and UI controls
@@ -97,8 +103,14 @@ consults collection:
 ### UI Libraries
 
 **Tailwind CSS (v4)**: Utility-first CSS framework with PostCSS integration for styling
-- Custom configuration for content paths covering app, pages, and components directories
-- Gradient backgrounds and modern medical-themed color schemes (blue, purple, green palettes)
+- **Custom CSS**: Professional design utilities in `globals.css` including:
+  - Emergency gradient backgrounds (blue spectrum)
+  - Card shadow effects with hover states
+  - Pulse animation for urgent case indicators
+  - Slide-in animations for smooth content loading
+- **Color Palette**: Medical-themed colors (emergency blue, trust green, urgent red/orange)
+- **Typography**: Inter font family with antialiasing for crisp text rendering
+- **Responsive Design**: Mobile-first approach with tablet and desktop breakpoints
 
 **Next.js Font Optimization**: 
 - Inter font family from Google Fonts
