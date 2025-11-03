@@ -40,7 +40,7 @@ export default function RootLayout({
                   <span className="hidden sm:inline">จัดการเคส</span>
                   <span className="sm:hidden">จัดการ</span>
                 </Link>
-                <Link href="/submit" className="bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-500 hover:to-emerald-600 text-white font-semibold py-1.5 px-3 rounded-lg shadow-sm hover:shadow-md transform hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-1.5 text-sm">
+                <Link href="/submit" className="bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold py-1.5 px-3 rounded-lg shadow-sm hover:shadow-md transform hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-1.5 text-sm">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>

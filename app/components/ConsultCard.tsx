@@ -87,7 +87,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
           </div>
         </div>
         <span
-          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${isCompleted ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}
+          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${isCompleted ? 'bg-emerald-100 text-emerald-500' : 'bg-orange-100 text-orange-500'}`}
         >
           {isCompleted ? '✓' : '⏱'}
         </span>
@@ -123,7 +123,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
             className={`px-3 py-1 rounded-lg font-bold text-xs transition-all duration-200 flex items-center gap-1 ${
               isUpdating
                 ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                : 'bg-gradient-to-r from-emerald-400 to-emerald-500 text-white hover:from-emerald-500 hover:to-emerald-600 shadow-sm hover:shadow-md transform hover:-translate-y-0.5'
+                : 'bg-gradient-to-r from-emerald-400 to-emerald-500 text-white hover:from-emerald-500 hover:to-teal-500 shadow-sm hover:shadow-md transform hover:-translate-y-0.5'
             }`}
           >
             {isUpdating ? (

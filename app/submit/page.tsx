@@ -246,7 +246,7 @@ export default function SubmitPage() {
                   className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 text-white shadow-sm text-sm flex items-center justify-center gap-2
                     ${isLoading
                       ? 'bg-gray-300 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-500 hover:to-emerald-600 hover:shadow-md transform hover:-translate-y-0.5'
+                      : 'bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 hover:shadow-md transform hover:-translate-y-0.5'
                     }`}
                 >
                   {isLoading ? (
@@ -270,7 +270,7 @@ export default function SubmitPage() {
                   className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 text-white shadow-sm text-sm flex items-center justify-center gap-2
                     ${isLoading
                       ? 'bg-gray-300 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 hover:shadow-md transform hover:-translate-y-0.5'
+                      : 'bg-gradient-to-r from-rose-400 to-rose-500 hover:from-rose-500 hover:to-pink-500 hover:shadow-md transform hover:-translate-y-0.5'
                     }`}
                 >
                   {isLoading ? (

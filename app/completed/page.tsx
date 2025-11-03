@@ -133,7 +133,7 @@ export default function CompletedPage() {
           <p className="text-gray-500 mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-gradient-to-r from-blue-400 to-blue-500 text-white rounded-lg font-semibold hover:from-blue-500 hover:to-blue-600 transition-all shadow-sm"
+            className="px-4 py-2 bg-gradient-to-r from-blue-400 to-blue-500 text-white rounded-lg font-semibold hover:from-blue-500 hover:to-cyan-500 transition-all shadow-sm"
           >
             โหลดใหม่
           </button>
@@ -212,7 +212,7 @@ export default function CompletedPage() {
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => openReConsultModal(caseData)}
-                          className="px-3 py-1.5 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-lg text-xs font-bold hover:from-orange-500 hover:to-orange-600 shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto"
+                          className="px-3 py-1.5 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-lg text-xs font-bold hover:from-orange-500 hover:to-amber-500 shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -347,7 +347,7 @@ export default function CompletedPage() {
                 className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
                   isUpdating || !newProblem.trim() || selectedDepartments.length === 0
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-orange-400 to-orange-500 text-white hover:from-orange-500 hover:to-orange-600 shadow-sm hover:shadow-md'
+                    : 'bg-gradient-to-r from-orange-400 to-orange-500 text-white hover:from-orange-500 hover:to-amber-500 shadow-sm hover:shadow-md'
                 }`}
               >
                 {isUpdating ? (

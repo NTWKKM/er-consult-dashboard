@@ -81,7 +81,7 @@ export default function Dashboard() {
           <p className="text-gray-500 mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-gradient-to-r from-blue-400 to-blue-500 text-white rounded-lg font-semibold hover:from-blue-500 hover:to-blue-600 transition-all shadow-sm"
+            className="px-4 py-2 bg-gradient-to-r from-blue-400 to-blue-500 text-white rounded-lg font-semibold hover:from-blue-500 hover:to-cyan-500 transition-all shadow-sm"
           >
             โหลดใหม่
           </button>
@@ -120,7 +120,7 @@ export default function Dashboard() {
             className={`px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all duration-200 text-sm
               ${view === 'surgery' 
                 ? 'bg-gradient-to-r from-blue-400 to-blue-500 text-white' 
-                : 'bg-white text-blue-600 border border-blue-200 hover:border-blue-400 hover:bg-blue-50'}
+                : 'bg-white text-blue-500 border border-blue-200 hover:border-blue-400 hover:bg-blue-50'}
             `}
             onClick={() => setView('surgery')}
           >
@@ -135,7 +135,7 @@ export default function Dashboard() {
             className={`px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all duration-200 text-sm
               ${view === 'ortho' 
                 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500 text-white' 
-                : 'bg-white text-emerald-600 border border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50'}
+                : 'bg-white text-emerald-500 border border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50'}
             `}
             onClick={() => setView('ortho')}
           >
@@ -150,7 +150,7 @@ export default function Dashboard() {
             className={`px-4 py-1.5 rounded-lg font-bold shadow-sm transition-all duration-200 text-sm
               ${view === 'both' 
                 ? 'bg-gradient-to-r from-purple-400 to-purple-500 text-white' 
-                : 'bg-white text-purple-600 border border-purple-200 hover:border-purple-400 hover:bg-purple-50'}
+                : 'bg-white text-purple-500 border border-purple-200 hover:border-purple-400 hover:bg-purple-50'}
             `}
             onClick={() => setView('both')}
           >
@@ -182,7 +182,7 @@ export default function Dashboard() {
                     <div key={dept} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between bg-gradient-to-r from-blue-50/50 to-cyan-50/50 px-3 py-2 rounded-lg border border-blue-100/50">
                         <h3 className="text-sm font-bold text-gray-700">{dept}</h3>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-rose-100 text-rose-600 pulse-urgent' : 'bg-emerald-100 text-emerald-600'}`}>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-rose-100 text-rose-500 pulse-urgent' : 'bg-emerald-100 text-emerald-500'}`}>
                           {cases.length}
                         </span>
                       </div>
@@ -227,7 +227,7 @@ export default function Dashboard() {
                     <div key={dept} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between bg-gradient-to-r from-emerald-50/50 to-teal-50/50 px-3 py-2 rounded-lg border border-emerald-100/50">
                         <h3 className="text-sm font-bold text-gray-700">{dept}</h3>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-rose-100 text-rose-600 pulse-urgent' : 'bg-emerald-100 text-emerald-600'}`}>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-rose-100 text-rose-500 pulse-urgent' : 'bg-emerald-100 text-emerald-500'}`}>
                           {cases.length}
                         </span>
                       </div>
