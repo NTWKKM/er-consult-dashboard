@@ -115,8 +115,8 @@ export default function CompletedPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block w-16 h-16 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-xl text-gray-600 font-semibold">กำลังโหลดข้อมูล...</p>
+          <div className="inline-block w-16 h-16 border-4 border-[#e0cda7] border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-xl text-[#e0cda7] font-semibold">กำลังโหลดข้อมูล...</p>
         </div>
       </div>
     );
@@ -125,15 +125,15 @@ export default function CompletedPage() {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center bg-white rounded-xl shadow-md p-8 max-w-md">
-          <svg className="w-16 h-16 mx-auto text-rose-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="text-center bg-[#2a344f] rounded-xl shadow-md p-8 max-w-md border border-[#8b8b8b]/30">
+          <svg className="w-16 h-16 mx-auto text-[#bb1515] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">เกิดข้อผิดพลาด</h2>
-          <p className="text-gray-500 mb-4">{error}</p>
+          <h2 className="text-xl font-bold text-[#e0cda7] mb-2">เกิดข้อผิดพลาด</h2>
+          <p className="text-[#8b8b8b] mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-gradient-to-r from-blue-400 to-blue-500 text-white rounded-lg font-semibold hover:from-blue-500 hover:to-cyan-500 transition-all shadow-sm"
+            className="px-4 py-2 accent-gradient-red text-white rounded-lg font-semibold hover:shadow-md transition-all"
           >
             โหลดใหม่
           </button>
@@ -146,21 +146,21 @@ export default function CompletedPage() {
     <div className="min-h-screen">
       <div className="max-w-[1800px] mx-auto p-4">
         <div className="mb-4 text-center">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-cyan-500 bg-clip-text text-transparent mb-2">
+          <h1 className="text-2xl font-bold text-[#e0cda7] mb-2">
             เคสที่ปรึกษาเสร็จแล้ว
           </h1>
-          <p className="text-gray-500 text-sm">แสดง 100 เคสล่าสุด</p>
-          <div className="mt-2 inline-flex items-center gap-2 bg-white px-4 py-1.5 rounded-full shadow-sm border border-gray-100">
-            <span className="text-gray-600 font-semibold text-sm">ทั้งหมด:</span>
-            <span className="text-xl font-bold text-blue-500">{cases.length}</span>
-            <span className="text-gray-400 text-sm">เคส</span>
+          <p className="text-[#8b8b8b] text-sm">แสดง 100 เคสล่าสุด</p>
+          <div className="mt-2 inline-flex items-center gap-2 bg-[#2a344f] px-4 py-1.5 rounded-full shadow-sm border border-[#8b8b8b]/30">
+            <span className="text-[#e0cda7] font-semibold text-sm">ทั้งหมด:</span>
+            <span className="text-xl font-bold text-[#e0cda7]">{cases.length}</span>
+            <span className="text-[#8b8b8b] text-sm">เคส</span>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
+        <div className="bg-[#2a344f] rounded-xl shadow-md overflow-hidden border border-[#8b8b8b]/30">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gradient-to-r from-blue-400 via-blue-500 to-cyan-500 text-white">
+              <thead className="accent-gradient-red text-white">
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-bold">HN</th>
                   <th className="px-4 py-3 text-left text-sm font-bold">ห้อง</th>
@@ -170,35 +170,35 @@ export default function CompletedPage() {
                   <th className="px-4 py-3 text-center text-sm font-bold">จัดการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#8b8b8b]/20">
                 {currentCases.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={6} className="px-4 py-8 text-center text-[#8b8b8b]">
                       ไม่มีข้อมูล
                     </td>
                   </tr>
                 ) : (
                   currentCases.map((caseData) => (
-                    <tr key={caseData.id} className="hover:bg-blue-50/50 transition-colors">
-                      <td className="px-4 py-3 text-sm font-semibold text-gray-800">
+                    <tr key={caseData.id} className="hover:bg-[#000000]/20 transition-colors">
+                      <td className="px-4 py-3 text-sm font-semibold text-[#e0cda7]">
                         {caseData.hn}
                       </td>
-                      <td className="px-4 py-3 text-sm text-blue-500 font-medium">
+                      <td className="px-4 py-3 text-sm text-[#e0cda7] font-medium">
                         {caseData.room}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 max-w-md">
+                      <td className="px-4 py-3 text-sm text-[#e0cda7] max-w-md">
                         <div className="line-clamp-2">{caseData.problem}</div>
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <div className="flex flex-wrap gap-1">
                           {Object.keys(caseData.departments).map(dept => (
-                            <span key={dept} className="inline-block px-2 py-0.5 bg-gray-100/60 text-gray-600 rounded text-xs font-medium">
+                            <span key={dept} className="inline-block px-2 py-0.5 bg-[#000000]/40 text-[#e0cda7] rounded text-xs font-medium border border-[#8b8b8b]/30">
                               {dept}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
+                      <td className="px-4 py-3 text-sm text-[#8b8b8b]">
                         {caseData.createdAt
                           ? new Date(caseData.createdAt.seconds * 1000).toLocaleDateString("th-TH", {
                               year: "numeric",
@@ -212,7 +212,7 @@ export default function CompletedPage() {
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => openReConsultModal(caseData)}
-                          className="px-3 py-1.5 bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded-lg text-xs font-bold hover:from-orange-500 hover:to-amber-500 shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto"
+                          className="px-3 py-1.5 accent-gradient-cream text-[#000000] rounded-lg text-xs font-bold hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -228,8 +228,8 @@ export default function CompletedPage() {
           </div>
 
           {totalPages > 1 && (
-            <div className="bg-gray-50/60 px-4 py-3 border-t border-gray-100 flex items-center justify-between">
-              <div className="text-sm text-gray-500">
+            <div className="bg-[#000000]/20 px-4 py-3 border-t border-[#8b8b8b]/30 flex items-center justify-between">
+              <div className="text-sm text-[#8b8b8b]">
                 แสดง {startIndex + 1}-{Math.min(endIndex, cases.length)} จาก {cases.length} เคส
               </div>
               <div className="flex gap-2">
@@ -238,8 +238,8 @@ export default function CompletedPage() {
                   disabled={currentPage === 1}
                   className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
                     currentPage === 1
-                      ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                      : 'bg-white text-blue-500 border border-blue-200 hover:bg-blue-50'
+                      ? 'bg-[#8b8b8b]/20 text-[#8b8b8b] cursor-not-allowed'
+                      : 'bg-[#2a344f] text-[#e0cda7] border border-[#8b8b8b]/30 hover:bg-[#000000]/40'
                   }`}
                 >
                   ← ก่อนหน้า
@@ -251,8 +251,8 @@ export default function CompletedPage() {
                       onClick={() => setCurrentPage(page)}
                       className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
                         currentPage === page
-                          ? 'bg-gradient-to-r from-blue-400 to-blue-500 text-white shadow-sm'
-                          : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                          ? 'accent-gradient-cream text-[#000000] shadow-sm'
+                          : 'bg-[#2a344f] text-[#e0cda7] border border-[#8b8b8b]/30 hover:bg-[#000000]/40'
                       }`}
                     >
                       {page}
@@ -264,8 +264,8 @@ export default function CompletedPage() {
                   disabled={currentPage === totalPages}
                   className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
                     currentPage === totalPages
-                      ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                      : 'bg-white text-blue-500 border border-blue-200 hover:bg-blue-50'
+                      ? 'bg-[#8b8b8b]/20 text-[#8b8b8b] cursor-not-allowed'
+                      : 'bg-[#2a344f] text-[#e0cda7] border border-[#8b8b8b]/30 hover:bg-[#000000]/40'
                   }`}
                 >
                   ถัดไป →
@@ -277,13 +277,13 @@ export default function CompletedPage() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6">
+        <div className="fixed inset-0 bg-[#000000]/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-[#2a344f] to-[#1a1f2e] rounded-xl shadow-xl max-w-2xl w-full p-6 border border-[#8b8b8b]/30">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-800">Re-consult เคส HN: {selectedCase?.hn}</h2>
+              <h2 className="text-xl font-bold text-[#e0cda7]">Re-consult เคส HN: {selectedCase?.hn}</h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-gray-300 hover:text-gray-500 transition-colors"
+                className="text-[#8b8b8b] hover:text-[#e0cda7] transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -291,14 +291,14 @@ export default function CompletedPage() {
               </button>
             </div>
 
-            <div className="mb-4 p-3 bg-gray-50/60 rounded-lg border border-gray-100">
-              <p className="text-xs text-gray-500 font-semibold mb-1">ปัญหาเดิม:</p>
-              <p className="text-sm text-gray-600">{selectedCase?.problem}</p>
+            <div className="mb-4 p-3 bg-[#000000]/40 rounded-lg border border-[#8b8b8b]/30">
+              <p className="text-xs text-[#8b8b8b] font-semibold mb-1">ปัญหาเดิม:</p>
+              <p className="text-sm text-[#e0cda7]">{selectedCase?.problem}</p>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-bold text-gray-600 mb-2">
-                แผนกที่ต้องการส่งปรึกษา <span className="text-rose-500">*</span>
+              <label className="block text-sm font-bold text-[#e0cda7] mb-2">
+                แผนกที่ต้องการส่งปรึกษา <span className="text-[#bb1515]">*</span>
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {ALL_DEPARTMENTS.map(dept => (
@@ -308,27 +308,27 @@ export default function CompletedPage() {
                     onClick={() => toggleDepartment(dept)}
                     className={`px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
                       selectedDepartments.includes(dept)
-                        ? 'bg-gradient-to-r from-blue-400 to-blue-500 text-white shadow-sm'
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        ? 'accent-gradient-cream text-[#000000] shadow-sm'
+                        : 'bg-[#000000]/40 text-[#e0cda7] hover:bg-[#000000]/60 border border-[#8b8b8b]/30'
                     }`}
                   >
                     {dept}
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-[#8b8b8b] mt-2">
                 เลือกได้หลายแผนก (คลิกเพื่อเลือก/ยกเลิก)
               </p>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-bold text-gray-600 mb-2">
-                ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-rose-500">*</span>
+              <label className="block text-sm font-bold text-[#e0cda7] mb-2">
+                ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-[#bb1515]">*</span>
               </label>
               <textarea
                 value={newProblem}
                 onChange={(e) => setNewProblem(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all duration-200 min-h-[120px] text-sm"
+                className="w-full px-3 py-2 border border-[#8b8b8b]/30 rounded-lg bg-[#000000]/40 text-[#e0cda7] placeholder-[#8b8b8b] focus:outline-none focus:border-[#e0cda7] focus:ring-2 focus:ring-[#e0cda7]/20 transition-all duration-200 min-h-[120px] text-sm"
                 placeholder="ระบุปัญหาใหม่หรืออาการเพิ่มเติมที่ต้องการปรึกษา..."
                 required
               />
@@ -337,7 +337,7 @@ export default function CompletedPage() {
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg font-semibold hover:bg-gray-200 transition-all text-sm"
+                className="px-4 py-2 bg-[#8b8b8b]/30 text-[#e0cda7] rounded-lg font-semibold hover:bg-[#8b8b8b]/50 transition-all text-sm"
               >
                 ยกเลิก
               </button>
@@ -346,13 +346,13 @@ export default function CompletedPage() {
                 disabled={isUpdating || !newProblem.trim() || selectedDepartments.length === 0}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
                   isUpdating || !newProblem.trim() || selectedDepartments.length === 0
-                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-orange-400 to-orange-500 text-white hover:from-orange-500 hover:to-amber-500 shadow-sm hover:shadow-md'
+                    ? 'bg-[#8b8b8b]/30 text-[#8b8b8b] cursor-not-allowed'
+                    : 'accent-gradient-cream text-[#000000] hover:shadow-md'
                 }`}
               >
                 {isUpdating ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div className="w-4 h-4 border-2 border-[#000000] border-t-transparent rounded-full animate-spin"></div>
                     <span>กำลังส่ง...</span>
                   </>
                 ) : (
