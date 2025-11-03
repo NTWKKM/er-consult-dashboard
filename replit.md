@@ -23,10 +23,10 @@ Preferred communication style: Simple, everyday language.
 
 **Component Structure**:
 - **Page Components**: 
-  - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states. Compact design with reduced spacing and padding for efficient information display.
-  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with interactive department selection and room/location field
+  - Dashboard (`app/page.tsx`): Real-time dashboard with department filtering, pending case counter, and professional loading states. Surgery department displays in responsive 3-column grid (1 col mobile, 2 col tablet, 3 col desktop) for efficient space usage. Uses scalpel icon for Surgery and bone icon for Ortho. Compact design with reduced spacing and padding for efficient information display.
+  - Submit form (`app/submit/page.tsx`): Modern consultation submission form with dual submission buttons (normal green and urgent red with lightning icon) placed side-by-side, interactive department selection, and room/location field
 - **Shared Components**: 
-  - `ConsultCard`: Compact card design with patient icon, status badges, room location, blue accent border, and hover lift effects
+  - `ConsultCard`: Compact card design with patient icon, status badges, room location, and hover lift effects. Regular cases display blue accent border; urgent cases display red border, red pulsing icon with lightning bolt, and "ด่วน" (urgent) badge
 - **Layout**: Compact sticky navigation bar with branded logo, gradient background, and prominent submit button
 
 **State Management**:
@@ -54,6 +54,7 @@ consults collection:
   - room (examination room: "Resus Team 1" | "Resus Team 2" | "Resus Team 3" | "Resus Team 4" | "Urgent" | "NT")
   - problem (consultation description)
   - status (overall case status: "pending")
+  - isUrgent (boolean: true for urgent cases submitted via red button, false for normal cases)
   - createdAt (server timestamp)
   - departments (map object):
       [departmentName]: {
