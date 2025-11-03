@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, orderBy, limit } from "firebase/firestore";
 import ConsultCard from "@/app/components/ConsultCard";
@@ -13,6 +13,12 @@ export default function Dashboard() {
 
   const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
   const ORTHO_DEPTS = ["Ortho"];
+  
+  const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  
+  const scrollToDepartment = (deptName: string) => {
+    deptRefs.current[deptName]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   useEffect(() => {
     const q = query(
@@ -170,6 +176,34 @@ export default function Dashboard() {
           </button>
         </div>
 
+        {(view === 'surgery' || view === 'both') && (
+          <div className="mb-4 bg-[#C7CFDA] rounded-xl shadow-md p-4 border border-[#E55143]/20">
+            <h3 className="text-sm font-bold text-[#014167] mb-3 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              ลัดไปยังแผนก Surgery
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
+              {SURGERY_DEPTS.map(dept => {
+                const cases = getCasesForDepartment(dept);
+                return (
+                  <button
+                    key={dept}
+                    onClick={() => scrollToDepartment(dept)}
+                    className="bg-white hover:bg-[#E55143] hover:text-white text-[#014167] border border-[#E55143]/30 rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow-md group"
+                  >
+                    <div className="text-xs font-bold mb-1">{dept}</div>
+                    <div className={`text-lg font-bold ${cases.length > 0 ? 'text-[#E55143] group-hover:text-white' : 'text-[#699D5D] group-hover:text-white'}`}>
+                      {cases.length}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col lg:flex-row gap-4">
           {(view === 'surgery' || view === 'both') && (
             <div className="flex-1 bg-[#C7CFDA] rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in">
@@ -186,7 +220,11 @@ export default function Dashboard() {
                 {SURGERY_DEPTS.map(dept => {
                   const cases = getCasesForDepartment(dept);
                   return (
-                    <div key={dept} className="flex flex-col gap-2">
+                    <div 
+                      key={dept} 
+                      className="flex flex-col gap-2"
+                      ref={(el) => { deptRefs.current[dept] = el; }}
+                    >
                       <div className="flex items-center justify-between bg-[#014167] px-3 py-2 rounded-lg border border-[#E55143]/20">
                         <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
