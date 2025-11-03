@@ -1,4 +1,8 @@
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
+import { db } from "@/lib/firebase";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 interface ConsultCardProps {
   caseData: any;
@@ -7,6 +11,8 @@ interface ConsultCardProps {
 }
 
 export default function ConsultCard({ caseData, caseId, departmentName }: ConsultCardProps) {
+  const [isUpdating, setIsUpdating] = useState(false);
+  
   const hn = caseData.hn || "-";
   const room = caseData.room || "-";
   const problem = caseData.problem || "-";
@@ -18,6 +24,36 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
   const timeAgo = caseData.createdAt
     ? new Date(caseData.createdAt.seconds * 1000).toLocaleString("th-TH")
     : "-";
+
+  const handleCompleteCase = async () => {
+    if (isUpdating || isCompleted) return;
+    
+    setIsUpdating(true);
+    
+    try {
+      const updatedDepartments = { ...caseData.departments };
+      updatedDepartments[departmentName] = {
+        status: "completed",
+        completedAt: serverTimestamp()
+      };
+
+      const allCompleted = Object.values(updatedDepartments).every(
+        (dept: any) => dept.status === "completed"
+      );
+
+      const caseRef = doc(db, "consults", caseId);
+      await updateDoc(caseRef, {
+        departments: updatedDepartments,
+        ...(allCompleted && { status: "completed" })
+      });
+
+    } catch (error) {
+      console.error("Error updating case:", error);
+      alert("เกิดข้อผิดพลาดในการปิดเคส");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   return (
     <div className={`card-shadow hover:card-shadow-hover transition-all duration-200 bg-white rounded-lg p-3 hover:-translate-y-1 ${isUrgent ? 'border-l-4 border-red-600 ring-2 ring-red-200' : 'border-l-4 border-blue-500'}`}>
@@ -62,20 +98,48 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
         <p className="text-sm text-gray-800 leading-snug">{problem}</p>
       </div>
       
-      <div className="flex items-center gap-3 text-xs">
-        <div className="flex items-center gap-1 text-gray-600">
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span className="font-medium">{timeAgo}</span>
-        </div>
-        {isCompleted && (
-          <div className="flex items-center gap-1 text-emerald-600">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 text-gray-600">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span className="font-semibold">ปิด: {completedTime}</span>
+            <span className="font-medium">{timeAgo}</span>
           </div>
+          {isCompleted && (
+            <div className="flex items-center gap-1 text-emerald-600">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="font-semibold">ปิด: {completedTime}</span>
+            </div>
+          )}
+        </div>
+        
+        {!isCompleted && (
+          <button
+            onClick={handleCompleteCase}
+            disabled={isUpdating}
+            className={`px-3 py-1 rounded-lg font-bold text-xs transition-all duration-200 flex items-center gap-1 ${
+              isUpdating
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white hover:from-emerald-700 hover:to-emerald-800 shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
+            }`}
+          >
+            {isUpdating ? (
+              <>
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span>กำลังปิด...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span>ปิดเคส</span>
+              </>
+            )}
+          </button>
         )}
       </div>
     </div>
