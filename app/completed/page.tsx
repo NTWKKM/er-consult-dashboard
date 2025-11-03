@@ -130,7 +130,7 @@ export default function CompletedPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <h2 className="text-xl font-bold text-[#014167] mb-2">เกิดข้อผิดพลาด</h2>
-          <p className="text-[#014167]/70 mb-4">{error}</p>
+          <p className="text-[#014167] font-medium mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
             className="px-4 py-2 bg-[#E55143] text-white rounded-lg font-semibold hover:shadow-md transition-all"
@@ -149,7 +149,7 @@ export default function CompletedPage() {
           <h1 className="text-2xl font-bold text-[#FDFCDF] mb-2">
             เคสที่ปรึกษาเสร็จแล้ว
           </h1>
-          <p className="text-[#FDFCDF]/70 text-sm">แสดง 100 เคสล่าสุด</p>
+          <p className="text-[#C7CFDA] text-sm font-medium">แสดง 100 เคสล่าสุด</p>
           <div className="mt-2 inline-flex items-center gap-2 bg-[#C7CFDA] px-4 py-1.5 rounded-full shadow-sm border border-[#C7CFDA]/30">
             <span className="text-[#014167] font-semibold text-sm">ทั้งหมด:</span>
             <span className="text-xl font-bold text-[#014167]">{cases.length}</span>
@@ -198,7 +198,7 @@ export default function CompletedPage() {
                           ))}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-[#014167]/70">
+                      <td className="px-4 py-3 text-sm text-[#014167] font-medium">
                         {caseData.createdAt
                           ? new Date(caseData.createdAt.seconds * 1000).toLocaleDateString("th-TH", {
                               year: "numeric",
