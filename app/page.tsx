@@ -119,45 +119,43 @@ export default function Dashboard() {
               ER-MNRH Consult Dashboard
             </h1>
           </div>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div className="flex flex-row flex-wrap items-center justify-center gap-2">
             <div className="inline-flex items-center gap-3 bg-[#C7CFDA] px-6 py-2 rounded-full shadow-lg border border-[#014167]/30">
               <span className="text-[#014167] font-bold">เคสรอดำเนินการ:</span>
               <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#E55143] pulse-urgent' : 'text-[#014167]'}`}>
                 {totalPendingCases}
               </span>
             </div>
-            <div className="flex gap-2">
-              <button
-                className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                  ${view === 'surgery' 
-                    ? 'bg-[#E55143] text-white' 
-                    : 'bg-[#C7CFDA] text-[#E55143] border border-[#E55143]/50 hover:border-[#E55143]'}
-                `}
-                onClick={() => setView('surgery')}
-              >
-                Surgery
-              </button>
-              <button
-                className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                  ${view === 'ortho' 
-                    ? 'bg-[#699D5D] text-[#FDFCDF]' 
-                    : 'bg-[#C7CFDA] text-[#699D5D] border border-[#699D5D]/50 hover:border-[#699D5D]'}
-                `}
-                onClick={() => setView('ortho')}
-              >
-                Ortho
-              </button>
-              <button
-                className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                  ${view === 'both' 
-                    ? 'bg-[#F1AE9E] text-[#014167]' 
-                    : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
-                `}
-                onClick={() => setView('both')}
-              >
-                Both
-              </button>
-            </div>
+            <button
+              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
+                ${view === 'surgery' 
+                  ? 'bg-[#E55143] text-white' 
+                  : 'bg-[#C7CFDA] text-[#E55143] border border-[#E55143]/50 hover:border-[#E55143]'}
+              `}
+              onClick={() => setView('surgery')}
+            >
+              Surgery
+            </button>
+            <button
+              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
+                ${view === 'ortho' 
+                  ? 'bg-[#699D5D] text-[#FDFCDF]' 
+                  : 'bg-[#C7CFDA] text-[#699D5D] border border-[#699D5D]/50 hover:border-[#699D5D]'}
+              `}
+              onClick={() => setView('ortho')}
+            >
+              Ortho
+            </button>
+            <button
+              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
+                ${view === 'both' 
+                  ? 'bg-[#F1AE9E] text-[#014167]' 
+                  : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
+              `}
+              onClick={() => setView('both')}
+            >
+              Both
+            </button>
           </div>
         </div>
 
@@ -174,45 +172,27 @@ export default function Dashboard() {
             </svg>
           </summary>
           <div className="p-4 border-t border-[#014167]/10">
-            <div className="mb-4">
-              <h4 className="text-xs font-bold text-[#014167] mb-2 uppercase">Surgery Departments</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
-                {SURGERY_DEPTS.map(dept => {
-                  const cases = getCasesForDepartment(dept);
-                  return (
-                    <button
-                      key={dept}
-                      onClick={() => scrollToDepartment(dept)}
-                      className="bg-white hover:bg-[#E55143] hover:text-white text-[#014167] border border-[#E55143]/30 rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow-md group"
-                    >
-                      <div className="text-xs font-bold mb-1">{dept}</div>
-                      <div className={`text-lg font-bold ${cases.length > 0 ? 'text-[#E55143] group-hover:text-white' : 'text-[#699D5D] group-hover:text-white'}`}>
-                        {cases.length}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-[#014167] mb-2 uppercase">Orthopedic Department</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
-                {ORTHO_DEPTS.map(dept => {
-                  const cases = getCasesForDepartment(dept);
-                  return (
-                    <button
-                      key={dept}
-                      onClick={() => scrollToDepartment(dept)}
-                      className="bg-white hover:bg-[#699D5D] hover:text-white text-[#014167] border border-[#699D5D]/30 rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow-md group"
-                    >
-                      <div className="text-xs font-bold mb-1">{dept}</div>
-                      <div className={`text-lg font-bold ${cases.length > 0 ? 'text-[#E55143] group-hover:text-white' : 'text-[#699D5D] group-hover:text-white'}`}>
-                        {cases.length}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2">
+              {[...SURGERY_DEPTS, ...ORTHO_DEPTS].map(dept => {
+                const cases = getCasesForDepartment(dept);
+                const isSurgery = SURGERY_DEPTS.includes(dept);
+                return (
+                  <button
+                    key={dept}
+                    onClick={() => scrollToDepartment(dept)}
+                    className={`bg-white hover:text-white text-[#014167] rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
+                      isSurgery 
+                        ? 'border border-[#E55143]/30 hover:bg-[#E55143]' 
+                        : 'border border-[#699D5D]/30 hover:bg-[#699D5D]'
+                    }`}
+                  >
+                    <div className="text-xs font-bold mb-1">{dept}</div>
+                    <div className={`text-lg font-bold ${cases.length > 0 ? 'text-[#E55143] group-hover:text-white' : 'text-[#699D5D] group-hover:text-white'}`}>
+                      {cases.length}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </details>
