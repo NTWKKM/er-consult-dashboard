@@ -48,7 +48,16 @@ export default function SubmitPage() {
     });
 
     try {
-      await addDoc(collection(db, "consults"), {
+      console.log("📤 Submitting case to Firestore...");
+      console.log("Data:", {
+        hn,
+        room,
+        problem: problem.substring(0, 50) + "...",
+        isUrgent,
+        departments: Object.keys(departmentsMap)
+      });
+
+      const docRef = await addDoc(collection(db, "consults"), {
         hn: hn,
         room: room,
         problem: problem,
@@ -57,6 +66,8 @@ export default function SubmitPage() {
         isUrgent: isUrgent,
         departments: departmentsMap
       });
+
+      console.log("✓ Document written with ID:", docRef.id);
 
       setSubmitStatus({
         type: 'success',
@@ -73,7 +84,12 @@ export default function SubmitPage() {
       }, 1500);
 
     } catch (error) {
-      console.error("Error adding document: ", error);
+      console.error("❌ Error adding document:", error);
+      if (error instanceof Error) {
+        console.error("Error name:", error.name);
+        console.error("Error message:", error.message);
+        console.error("Error stack:", error.stack);
+      }
       setSubmitStatus({
         type: 'error',
         message: error instanceof Error ? `เกิดข้อผิดพลาด: ${error.message}` : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'

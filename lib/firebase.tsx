@@ -1,18 +1,22 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
+import { getFirestore, Firestore } from "firebase/firestore";
 
 // ข้อมูล Firebase ของคุณ (เอามาจากหน้า Firebase Console > Project Settings)
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  apiKey: "AIzaSyCPe0VuVAtIjQMbOLmMu2hht2yGZfww7hE",
+  authDomain: "er-mnrh-consultingform.firebaseapp.com",
+  projectId: "er-mnrh-consultingform",
+  storageBucket: "er-mnrh-consultingform.firebasestorage.app",
+  messagingSenderId: "759379378215",
+  appId: "1:759379378215:web:5f26209516b14a68080e02",
+  measurementId: "G-QQG87YV85F"
 };
 
 // Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
+const app: FirebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const db: Firestore = getFirestore(app);
+
+console.log("✓ Firebase initialized successfully");
+console.log("Project ID:", firebaseConfig.projectId);
 
 export { db };
