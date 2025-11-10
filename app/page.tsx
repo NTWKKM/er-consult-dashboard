@@ -18,15 +18,27 @@ export default function Dashboard() {
   const ORTHO_DEPTS = ["Ortho"];
   
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const audioContextRef = useRef<AudioContext | null>(null);
   
   const scrollToDepartment = (deptName: string) => {
     deptRefs.current[deptName]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const initAudioContext = () => {
+    if (!audioContextRef.current && typeof window !== 'undefined') {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+  };
+
   const playNotificationSound = () => {
     if (!soundEnabled) return;
     
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (!audioContextRef.current) {
+      initAudioContext();
+    }
+    if (!audioContextRef.current) return;
+
+    const audioContext = audioContextRef.current;
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
     
@@ -68,6 +80,9 @@ export default function Dashboard() {
     setSoundEnabled(newValue);
     if (typeof window !== 'undefined') {
       localStorage.setItem('soundEnabled', String(newValue));
+    }
+    if (newValue && !audioContextRef.current) {
+      initAudioContext();
     }
   };
 
@@ -337,6 +352,7 @@ export default function Dashboard() {
                             caseData={caseData}
                             caseId={caseData.id}
                             departmentName={dept}
+                            darkMode={darkMode}
                           />
                         ))
                       )}
@@ -387,6 +403,7 @@ export default function Dashboard() {
                               caseData={caseData}
                               caseId={caseData.id}
                               departmentName={dept}
+                              darkMode={darkMode}
                             />
                           ))}
                         </div>

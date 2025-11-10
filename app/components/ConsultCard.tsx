@@ -8,9 +8,10 @@ interface ConsultCardProps {
   caseData: any;
   caseId: string;
   departmentName: string;
+  darkMode?: boolean;
 }
 
-export default function ConsultCard({ caseData, caseId, departmentName }: ConsultCardProps) {
+export default function ConsultCard({ caseData, caseId, departmentName, darkMode = false }: ConsultCardProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
   
@@ -100,7 +101,11 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
   };
 
   return (
-    <div className={`card-shadow hover:card-shadow-hover transition-all duration-200 bg-[#C7CFDA] rounded-lg p-3 hover:-translate-y-1 ${isUrgent ? 'border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent bg-[#E55143]/10' : 'border-l-4 border-[#699D5D]/50'}`}>
+    <div className={`card-shadow hover:card-shadow-hover transition-all duration-200 rounded-lg p-3 hover:-translate-y-1 ${
+      darkMode 
+        ? `bg-gray-800 ${isUrgent ? 'border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent bg-[#E55143]/10' : 'border-l-4 border-gray-700'}` 
+        : `bg-[#C7CFDA] ${isUrgent ? 'border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent bg-[#E55143]/10' : 'border-l-4 border-[#699D5D]/50'}`
+    }`}>
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-center gap-2">
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${isUrgent ? 'bg-[#E55143] pulse-urgent' : 'bg-[#699D5D]'}`}>
@@ -116,7 +121,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-[#014167]">HN: {hn}</h3>
+              <h3 className={`text-base font-bold ${darkMode ? 'text-gray-100' : 'text-[#014167]'}`}>HN: {hn}</h3>
               {isUrgent && (
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-[#E55143] text-white shadow-md">
                   ด่วน
@@ -124,14 +129,14 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
               )}
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-[#014167] font-semibold">{departmentName}</span>
-              <span className="text-[#C7CFDA]">•</span>
-              <span className="text-[#014167] font-semibold">{room}</span>
+              <span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>{departmentName}</span>
+              <span className={darkMode ? 'text-gray-600' : 'text-[#C7CFDA]'}>•</span>
+              <span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>{room}</span>
             </div>
             {Object.keys(caseData.departments).filter(d => d !== departmentName && caseData.departments[d].status === 'pending').length > 0 && (
               <div className="flex items-center gap-1 text-xs mt-1">
-                <span className="text-[#014167] font-medium">แผนกอื่น:</span>
-                <span className="text-[#014167] font-semibold underline">
+                <span className={`font-medium ${darkMode ? 'text-gray-400' : 'text-[#014167]'}`}>แผนกอื่น:</span>
+                <span className={`font-semibold underline ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
                   {Object.keys(caseData.departments).filter(d => d !== departmentName && caseData.departments[d].status === 'pending').join(', ')}
                 </span>
               </div>
@@ -152,14 +157,14 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
       
       <div className="flex flex-col gap-2 text-xs">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1 text-[#014167] font-medium">
+          <div className={`flex items-center gap-1 font-medium ${darkMode ? 'text-gray-400' : 'text-[#014167]'}`}>
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="font-medium">{timeAgo}</span>
           </div>
           {isCompleted && (
-            <div className="flex items-center gap-1 text-[#014167]">
+            <div className={`flex items-center gap-1 ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -167,7 +172,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
             </div>
           )}
           {isAccepted && (
-            <div className="flex items-center gap-1 text-[#014167]">
+            <div className={`flex items-center gap-1 ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -184,7 +189,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
                 disabled={isAccepting}
                 className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
                   isAccepting
-                    ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
+                    ? darkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
                     : 'bg-[#699D5D] text-[#FDFCDF] hover:shadow-lg glow-hover transform hover:-translate-y-0.5'
                 }`}
               >
@@ -208,7 +213,7 @@ export default function ConsultCard({ caseData, caseId, departmentName }: Consul
               disabled={isUpdating}
               className={`${isAccepted ? 'flex-1' : 'flex-1'} px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
                 isUpdating
-                  ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
+                  ? darkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed'
                   : 'bg-[#E55143] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5'
               }`}
             >
