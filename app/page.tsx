@@ -288,7 +288,9 @@ export default function Dashboard() {
 
         <div className="flex flex-col lg:flex-row gap-4">
           {(view === 'surgery' || view === 'both') && (
-            <div className={`${view === 'both' ? 'lg:flex-[3]' : 'flex-1'} bg-[#C7CFDA] rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in`}>
+            <div className={`${view === 'both' ? 'lg:flex-[3]' : 'flex-1'} rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${
+              darkMode ? 'bg-gray-900' : 'bg-[#b0bac7]'
+            }`}>
               <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,8 +311,8 @@ export default function Dashboard() {
                     >
                       <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                         darkMode 
-                          ? SURGERY_DEPTS.indexOf(dept) % 2 === 0 ? 'bg-gray-950 border-gray-800' : 'bg-gray-900 border-gray-700'
-                          : SURGERY_DEPTS.indexOf(dept) % 2 === 0 ? 'bg-[#012a47] border-[#E55143]/20' : 'bg-[#013a5f] border-[#E55143]/20'
+                          ? 'bg-gray-950 border-gray-800'
+                          : 'bg-[#012a47] border-[#E55143]/20'
                       }`}>
                         <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
@@ -342,7 +344,9 @@ export default function Dashboard() {
             </div>
           )}
           {(view === 'ortho' || view === 'both') && (
-            <div className={`${view === 'both' ? 'lg:flex-[1]' : 'flex-1'} bg-[#C7CFDA] rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in`}>
+            <div className={`${view === 'both' ? 'lg:flex-[1]' : 'flex-1'} rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${
+              darkMode ? 'bg-gray-900' : 'bg-[#b0bac7]'
+            }`}>
               <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
