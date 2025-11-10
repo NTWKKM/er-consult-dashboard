@@ -230,46 +230,6 @@ export default function Dashboard() {
             >
               Both
             </button>
-            <button
-              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover flex items-center gap-2
-                ${soundEnabled 
-                  ? 'bg-[#699D5D] text-[#FDFCDF]' 
-                  : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
-              `}
-              onClick={toggleSound}
-              title={soundEnabled ? 'ปิดเสียงแจ้งเตือน' : 'เปิดเสียงแจ้งเตือน'}
-            >
-              {soundEnabled ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                </svg>
-              )}
-              <span className="hidden sm:inline">เสียง</span>
-            </button>
-            <button
-              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover flex items-center gap-2
-                ${darkMode 
-                  ? 'bg-yellow-500 text-gray-900' 
-                  : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
-              `}
-              onClick={toggleDarkMode}
-              title={darkMode ? 'โหมดกลางวัน' : 'โหมดกลางคืน'}
-            >
-              {darkMode ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-              )}
-              <span className="hidden sm:inline">{darkMode ? 'Day' : 'Night'}</span>
-            </button>
           </div>
         </div>
 
@@ -332,7 +292,11 @@ export default function Dashboard() {
                       className="flex flex-col gap-2"
                       ref={(el) => { deptRefs.current[dept] = el; }}
                     >
-                      <div className="flex items-center justify-between bg-[#014167] px-3 py-2 rounded-lg border border-[#E55143]/20">
+                      <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
+                        darkMode 
+                          ? 'bg-gray-950 border-gray-800' 
+                          : 'bg-[#012a47] border-[#E55143]/20'
+                      }`}>
                         <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
                           {cases.length}
@@ -382,7 +346,11 @@ export default function Dashboard() {
                       className="flex flex-col gap-2 max-w-full"
                       ref={(el) => { deptRefs.current[dept] = el; }}
                     >
-                      <div className="flex items-center justify-between bg-[#014167] px-3 py-2 rounded-lg border border-[#699D5D]/20">
+                      <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
+                        darkMode 
+                          ? 'bg-gray-950 border-gray-800' 
+                          : 'bg-[#012a47] border-[#699D5D]/20'
+                      }`}>
                         <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
                           {cases.length}
