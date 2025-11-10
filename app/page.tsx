@@ -10,6 +10,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'both' | 'surgery' | 'ortho'>('both');
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [previousCaseCount, setPreviousCaseCount] = useState(0);
+  const [darkMode, setDarkMode] = useState(false);
 
   const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
   const ORTHO_DEPTS = ["Ortho"];
@@ -18,6 +21,62 @@ export default function Dashboard() {
   
   const scrollToDepartment = (deptName: string) => {
     deptRefs.current[deptName]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const playNotificationSound = () => {
+    if (!soundEnabled) return;
+    
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.value = 800;
+    oscillator.type = 'sine';
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.5);
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('soundEnabled');
+      if (saved !== null) {
+        setSoundEnabled(saved === 'true');
+      }
+      const savedDarkMode = localStorage.getItem('darkMode');
+      if (savedDarkMode !== null) {
+        setDarkMode(savedDarkMode === 'true');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (allCases.length > previousCaseCount && previousCaseCount > 0) {
+      playNotificationSound();
+    }
+    setPreviousCaseCount(allCases.length);
+  }, [allCases.length]);
+
+  const toggleSound = () => {
+    const newValue = !soundEnabled;
+    setSoundEnabled(newValue);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('soundEnabled', String(newValue));
+    }
+  };
+
+  const toggleDarkMode = () => {
+    const newValue = !darkMode;
+    setDarkMode(newValue);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('darkMode', String(newValue));
+    }
   };
 
   useEffect(() => {
@@ -106,7 +165,7 @@ export default function Dashboard() {
   const totalPendingCases = allCases.length;
 
   return (
-    <div className="min-h-screen">
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : ''}`}>
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         <div className="mb-4 text-center slide-in">
           <div className="inline-flex items-center gap-3 mb-3">
@@ -115,14 +174,14 @@ export default function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <h1 className="text-3xl font-bold text-[#FDFCDF]">
+            <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-[#FDFCDF]'}`}>
               ER-MNRH Consult Dashboard
             </h1>
           </div>
           <div className="flex flex-row flex-wrap items-center justify-center gap-2">
-            <div className="inline-flex items-center gap-3 bg-[#C7CFDA] px-6 py-2 rounded-full shadow-lg border border-[#014167]/30">
-              <span className="text-[#014167] font-bold">เคสรอดำเนินการ:</span>
-              <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#E55143] pulse-urgent' : 'text-[#014167]'}`}>
+            <div className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-[#C7CFDA] border-[#014167]/30'} border`}>
+              <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>เคสรอดำเนินการ:</span>
+              <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#E55143] pulse-urgent' : darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
                 {totalPendingCases}
               </span>
             </div>
@@ -156,11 +215,51 @@ export default function Dashboard() {
             >
               Both
             </button>
+            <button
+              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover flex items-center gap-2
+                ${soundEnabled 
+                  ? 'bg-[#699D5D] text-[#FDFCDF]' 
+                  : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
+              `}
+              onClick={toggleSound}
+              title={soundEnabled ? 'ปิดเสียงแจ้งเตือน' : 'เปิดเสียงแจ้งเตือน'}
+            >
+              {soundEnabled ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                </svg>
+              )}
+              <span className="hidden sm:inline">เสียง</span>
+            </button>
+            <button
+              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover flex items-center gap-2
+                ${darkMode 
+                  ? 'bg-yellow-500 text-gray-900' 
+                  : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
+              `}
+              onClick={toggleDarkMode}
+              title={darkMode ? 'โหมดกลางวัน' : 'โหมดกลางคืน'}
+            >
+              {darkMode ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              )}
+              <span className="hidden sm:inline">{darkMode ? 'Day' : 'Night'}</span>
+            </button>
           </div>
         </div>
 
-        <details className="mb-4 bg-[#C7CFDA] rounded-xl shadow-md border border-[#014167]/20 overflow-hidden">
-          <summary className="cursor-pointer px-4 py-3 font-bold text-[#014167] hover:bg-[#014167]/10 transition-all flex items-center justify-between">
+        <details className={`mb-4 rounded-xl shadow-md border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#014167]/20'}`}>
+          <summary className={`cursor-pointer px-4 py-3 font-bold transition-all flex items-center justify-between ${darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-[#014167] hover:bg-[#014167]/10'}`}>
             <span className="flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
