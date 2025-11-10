@@ -33,6 +33,7 @@ export default function NavbarControls({ onSoundChange, onDarkModeChange }: Navb
     setSoundEnabled(newValue);
     if (typeof window !== 'undefined') {
       localStorage.setItem('soundEnabled', String(newValue));
+      window.dispatchEvent(new CustomEvent('soundChanged', { detail: newValue }));
     }
     onSoundChange?.(newValue);
   };
@@ -42,6 +43,7 @@ export default function NavbarControls({ onSoundChange, onDarkModeChange }: Navb
     setDarkMode(newValue);
     if (typeof window !== 'undefined') {
       localStorage.setItem('darkMode', String(newValue));
+      window.dispatchEvent(new CustomEvent('darkModeChanged', { detail: newValue }));
     }
     onDarkModeChange?.(newValue);
   };

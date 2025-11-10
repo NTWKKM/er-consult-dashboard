@@ -65,6 +65,21 @@ export default function Dashboard() {
       if (savedDarkMode !== null) {
         setDarkMode(savedDarkMode === 'true');
       }
+
+      const handleSoundChange = (e: any) => {
+        setSoundEnabled(e.detail);
+      };
+      const handleDarkModeChange = (e: any) => {
+        setDarkMode(e.detail);
+      };
+
+      window.addEventListener('soundChanged', handleSoundChange);
+      window.addEventListener('darkModeChanged', handleDarkModeChange);
+
+      return () => {
+        window.removeEventListener('soundChanged', handleSoundChange);
+        window.removeEventListener('darkModeChanged', handleDarkModeChange);
+      };
     }
   }, []);
 
@@ -294,8 +309,8 @@ export default function Dashboard() {
                     >
                       <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                         darkMode 
-                          ? 'bg-gray-950 border-gray-800' 
-                          : 'bg-[#012a47] border-[#E55143]/20'
+                          ? SURGERY_DEPTS.indexOf(dept) % 2 === 0 ? 'bg-gray-950 border-gray-800' : 'bg-gray-900 border-gray-700'
+                          : SURGERY_DEPTS.indexOf(dept) % 2 === 0 ? 'bg-[#012a47] border-[#E55143]/20' : 'bg-[#013a5f] border-[#E55143]/20'
                       }`}>
                         <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
@@ -349,7 +364,7 @@ export default function Dashboard() {
                       <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                         darkMode 
                           ? 'bg-gray-950 border-gray-800' 
-                          : 'bg-[#012a47] border-[#699D5D]/20'
+                          : 'bg-[#014a3d] border-[#699D5D]/20'
                       }`}>
                         <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
