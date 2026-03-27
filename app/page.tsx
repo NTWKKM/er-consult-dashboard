@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy, limit } from "firebase/firestore";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import ConsultCard from "@/app/components/ConsultCard";
 
 export default function Dashboard() {
@@ -16,10 +14,10 @@ export default function Dashboard() {
 
   const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
   const ORTHO_DEPTS = ["Ortho"];
-  
+
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
-  
+
   const scrollToDepartment = (deptName: string) => {
     deptRefs.current[deptName]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -32,7 +30,7 @@ export default function Dashboard() {
 
   const playNotificationSound = () => {
     if (!soundEnabled) return;
-    
+
     if (!audioContextRef.current) {
       initAudioContext();
     }
@@ -41,16 +39,16 @@ export default function Dashboard() {
     const audioContext = audioContextRef.current;
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
-    
+
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
-    
+
     oscillator.frequency.value = 800;
     oscillator.type = 'sine';
-    
+
     gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-    
+
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.5);
   };
@@ -109,51 +107,44 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => {
-    const q = query(
-      collection(db, "consults"),
-      where("status", "==", "pending"),
-      orderBy("createdAt", "desc"),
-      limit(30)
-    );
-    const unsubscribe = onSnapshot(
-      q,
-      (querySnapshot) => {
-        const cases: any[] = [];
-        querySnapshot.forEach((doc) => {
-          cases.push({ id: doc.id, ...doc.data() });
-        });
-        setAllCases(cases);
-        setLoading(false);
-        setError(null);
-      },
-      (err) => {
-        console.error("Firestore error:", err);
-        setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาตรวจสอบการตั้งค่า Firebase");
-        setLoading(false);
-      }
-    );
-    return () => unsubscribe();
+  const fetchCases = useCallback(async () => {
+    try {
+      const res = await fetch('/api/consults?status=pending');
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data = await res.json();
+      setAllCases(data);
+      setLoading(false);
+      setError(null);
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchCases();
+    const interval = setInterval(fetchCases, 5000);
+    return () => clearInterval(interval);
+  }, [fetchCases]);
 
   const departmentCasesMap = useMemo(() => {
     const map: { [key: string]: any[] } = {};
     const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
-    
+
     allDepts.forEach(dept => {
       const filtered = allCases.filter(caseData =>
         caseData.departments[dept]
         && caseData.departments[dept].status === 'pending'
       );
-      
-      // เรียงลำดับ: เคสด่วนขึ้นก่อน จากนั้นเรียงตามเวลา (เคสที่มาก่อนขึ้นก่อน)
+
       map[dept] = filtered.sort((a, b) => {
         if (a.isUrgent && !b.isUrgent) return -1;
         if (!a.isUrgent && b.isUrgent) return 1;
-        return b.createdAt?.seconds - a.createdAt?.seconds;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
     });
-    
+
     return map;
   }, [allCases]);
 
@@ -217,8 +208,8 @@ export default function Dashboard() {
             </div>
             <button
               className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                ${view === 'surgery' 
-                  ? 'bg-[#E55143] text-white' 
+                ${view === 'surgery'
+                  ? 'bg-[#E55143] text-white'
                   : 'bg-[#C7CFDA] text-[#E55143] border border-[#E55143]/50 hover:border-[#E55143]'}
               `}
               onClick={() => setView('surgery')}
@@ -227,8 +218,8 @@ export default function Dashboard() {
             </button>
             <button
               className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                ${view === 'ortho' 
-                  ? 'bg-[#699D5D] text-[#FDFCDF]' 
+                ${view === 'ortho'
+                  ? 'bg-[#699D5D] text-[#FDFCDF]'
                   : 'bg-[#C7CFDA] text-[#699D5D] border border-[#699D5D]/50 hover:border-[#699D5D]'}
               `}
               onClick={() => setView('ortho')}
@@ -237,8 +228,8 @@ export default function Dashboard() {
             </button>
             <button
               className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                ${view === 'both' 
-                  ? 'bg-[#F1AE9E] text-[#014167]' 
+                ${view === 'both'
+                  ? 'bg-[#F1AE9E] text-[#014167]'
                   : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
               `}
               onClick={() => setView('both')}
@@ -269,11 +260,10 @@ export default function Dashboard() {
                   <button
                     key={dept}
                     onClick={() => scrollToDepartment(dept)}
-                    className={`bg-white hover:text-white text-[#014167] rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
-                      isSurgery 
-                        ? 'border border-[#E55143]/30 hover:bg-[#E55143]' 
+                    className={`bg-white hover:text-white text-[#014167] rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${isSurgery
+                        ? 'border border-[#E55143]/30 hover:bg-[#E55143]'
                         : 'border border-[#699D5D]/30 hover:bg-[#699D5D]'
-                    }`}
+                      }`}
                   >
                     <div className="text-xs font-bold mb-1">{dept}</div>
                     <div className={`text-lg font-bold ${cases.length > 0 ? 'text-[#E55143] group-hover:text-white' : 'text-[#699D5D] group-hover:text-white'}`}>
@@ -288,9 +278,8 @@ export default function Dashboard() {
 
         <div className="flex flex-col lg:flex-row gap-4">
           {(view === 'surgery' || view === 'both') && (
-            <div className={`${view === 'both' ? 'lg:flex-[3]' : 'flex-1'} rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${
-              darkMode ? 'bg-gray-900' : 'bg-[#b0bac7]'
-            }`}>
+            <div className={`${view === 'both' ? 'lg:flex-[3]' : 'flex-1'} rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${darkMode ? 'bg-gray-900' : 'bg-[#b0bac7]'
+              }`}>
               <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -304,16 +293,15 @@ export default function Dashboard() {
                 {SURGERY_DEPTS.map(dept => {
                   const cases = getCasesForDepartment(dept);
                   return (
-                    <div 
-                      key={dept} 
+                    <div
+                      key={dept}
                       className="flex flex-col gap-2"
                       ref={(el) => { deptRefs.current[dept] = el; }}
                     >
-                      <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
-                        darkMode 
+                      <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${darkMode
                           ? 'bg-gray-950 border-gray-800'
                           : 'bg-[#012a47] border-[#E55143]/20'
-                      }`}>
+                        }`}>
                         <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
                           {cases.length}
@@ -334,6 +322,7 @@ export default function Dashboard() {
                             caseId={caseData.id}
                             departmentName={dept}
                             darkMode={darkMode}
+                            onUpdate={fetchCases}
                           />
                         ))
                       )}
@@ -344,9 +333,8 @@ export default function Dashboard() {
             </div>
           )}
           {(view === 'ortho' || view === 'both') && (
-            <div className={`${view === 'both' ? 'lg:flex-[1]' : 'flex-1'} rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${
-              darkMode ? 'bg-gray-900' : 'bg-[#b0bac7]'
-            }`}>
+            <div className={`${view === 'both' ? 'lg:flex-[1]' : 'flex-1'} rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${darkMode ? 'bg-gray-900' : 'bg-[#b0bac7]'
+              }`}>
               <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -360,16 +348,15 @@ export default function Dashboard() {
                 {ORTHO_DEPTS.map(dept => {
                   const cases = getCasesForDepartment(dept);
                   return (
-                    <div 
-                      key={dept} 
+                    <div
+                      key={dept}
                       className="flex flex-col gap-2 max-w-full"
                       ref={(el) => { deptRefs.current[dept] = el; }}
                     >
-                      <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
-                        darkMode 
-                          ? 'bg-gray-950 border-gray-800' 
+                      <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${darkMode
+                          ? 'bg-gray-950 border-gray-800'
                           : 'bg-[#014a3d] border-[#699D5D]/20'
-                      }`}>
+                        }`}>
                         <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cases.length > 0 ? 'bg-[#E55143]/20 text-[#E55143] pulse-urgent' : 'bg-[#699D5D]/20 text-[#699D5D]'}`}>
                           {cases.length}
@@ -391,6 +378,7 @@ export default function Dashboard() {
                               caseId={caseData.id}
                               departmentName={dept}
                               darkMode={darkMode}
+                              onUpdate={fetchCases}
                             />
                           ))}
                         </div>
