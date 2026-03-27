@@ -3,8 +3,10 @@
 import React, { useState } from "react";
 import { updateConsult } from "@/lib/db";
 
+import { Consult, ConsultDepartment } from "@/lib/db";
+
 interface ConsultCardProps {
-  caseData: any;
+  caseData: Consult;
   caseId: string;
   departmentName: string;
   darkMode?: boolean;
@@ -65,7 +67,7 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
         status: "completed",
         completedAt: new Date().toISOString(),
       };
-      const allCompleted = Object.values(updatedDepartments).every((dept: any) => dept.status === "completed");
+      const allCompleted = Object.values(updatedDepartments).every((dept: ConsultDepartment) => dept.status === "completed");
       await updateConsult(caseId, {
           departments: updatedDepartments,
           ...(allCompleted && { status: "completed" }),

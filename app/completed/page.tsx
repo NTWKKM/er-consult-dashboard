@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { subscribeToConsultsByStatus, updateConsult } from "@/lib/db";
+import { subscribeToConsultsByStatus, updateConsult, Consult, ConsultDepartment } from "@/lib/db";
 
 export default function CompletedPage() {
-  const [cases, setCases] = useState<any[]>([]);
+  const [cases, setCases] = useState<Consult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedCase, setSelectedCase] = useState<any>(null);
+  const [selectedCase, setSelectedCase] = useState<Consult | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [newProblem, setNewProblem] = useState("");
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
@@ -39,7 +39,7 @@ export default function CompletedPage() {
     if (selectedDepartments.length === 0) { alert("กรุณาเลือกอย่างน้อย 1 แผนก"); return; }
     setIsUpdating(true);
     try {
-      const updatedDepartments: any = {};
+      const updatedDepartments: Record<string, ConsultDepartment> = {};
       selectedDepartments.forEach(dept => { updatedDepartments[dept] = { status: "pending", completedAt: null }; });
       await updateConsult(selectedCase.id, {
           status: "pending",
@@ -55,7 +55,7 @@ export default function CompletedPage() {
     } finally { setIsUpdating(false); }
   };
 
-  const openReConsultModal = (caseData: any) => {
+  const openReConsultModal = (caseData: Consult) => {
     setSelectedCase(caseData); setNewProblem(""); setSelectedDepartments(Object.keys(caseData.departments)); setShowModal(true);
   };
 

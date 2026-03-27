@@ -1,21 +1,21 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import ConsultCard from "@/app/components/ConsultCard";
-import { subscribeToConsultsByStatus } from "@/lib/db";
+import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
+
+const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
+const ORTHO_DEPTS = ["Ortho"];
 
 export default function Dashboard() {
-  const [allCases, setAllCases] = useState<any[]>([]);
+  const [allCases, setAllCases] = useState<Consult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'both' | 'surgery' | 'ortho'>('both');
   const [soundEnabled, setSoundEnabled] = useState(false);
-  const [previousCaseCount, setPreviousCaseCount] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
 
-  const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
-  const ORTHO_DEPTS = ["Ortho"];
-
+  const previousCaseCountRef = useRef(0);
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -25,11 +25,11 @@ export default function Dashboard() {
 
   const initAudioContext = () => {
     if (!audioContextRef.current && typeof window !== 'undefined') {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     }
   };
 
-  const playNotificationSound = () => {
+  const playNotificationSound = useCallback(() => {
     if (!soundEnabled) return;
 
     if (!audioContextRef.current) {
@@ -52,24 +52,26 @@ export default function Dashboard() {
 
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.5);
-  };
+  }, [soundEnabled]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('soundEnabled');
-      if (saved !== null) {
-        setSoundEnabled(saved === 'true');
-      }
-      const savedDarkMode = localStorage.getItem('darkMode');
-      if (savedDarkMode !== null) {
-        setDarkMode(savedDarkMode === 'true');
-      }
+      Promise.resolve().then(() => {
+        const saved = localStorage.getItem('soundEnabled');
+        if (saved !== null) {
+          setSoundEnabled(saved === 'true');
+        }
+        const savedDarkMode = localStorage.getItem('darkMode');
+        if (savedDarkMode !== null) {
+          setDarkMode(savedDarkMode === 'true');
+        }
+      });
 
-      const handleSoundChange = (e: any) => {
-        setSoundEnabled(e.detail);
+      const handleSoundChange = (e: Event) => {
+        setSoundEnabled((e as CustomEvent).detail);
       };
-      const handleDarkModeChange = (e: any) => {
-        setDarkMode(e.detail);
+      const handleDarkModeChange = (e: Event) => {
+        setDarkMode((e as CustomEvent).detail);
       };
 
       window.addEventListener('soundChanged', handleSoundChange);
@@ -83,30 +85,13 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (allCases.length > previousCaseCount && previousCaseCount > 0) {
+    if (allCases.length > previousCaseCountRef.current && previousCaseCountRef.current > 0) {
       playNotificationSound();
     }
-    setPreviousCaseCount(allCases.length);
-  }, [allCases.length]);
+    previousCaseCountRef.current = allCases.length;
+  }, [allCases.length, playNotificationSound]);
 
-  const toggleSound = () => {
-    const newValue = !soundEnabled;
-    setSoundEnabled(newValue);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('soundEnabled', String(newValue));
-    }
-    if (newValue && !audioContextRef.current) {
-      initAudioContext();
-    }
-  };
-
-  const toggleDarkMode = () => {
-    const newValue = !darkMode;
-    setDarkMode(newValue);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('darkMode', String(newValue));
-    }
-  };
+  // (toggleSound and toggleDarkMode functions removed as they are currently unused)
 
   useEffect(() => {
     const unsubscribe = subscribeToConsultsByStatus(
@@ -126,7 +111,7 @@ export default function Dashboard() {
   }, []);
 
   const departmentCasesMap = useMemo(() => {
-    const map: { [key: string]: any[] } = {};
+    const map: { [key: string]: Consult[] } = {};
     const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
 
     allDepts.forEach(dept => {
