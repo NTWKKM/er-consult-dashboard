@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { addConsult } from "@/lib/db";
 
 export default function SubmitPage() {
   const router = useRouter();
@@ -32,12 +33,14 @@ export default function SubmitPage() {
     selectedDepts.forEach(dept => { departmentsMap[dept] = { status: "pending", completedAt: null }; });
 
     try {
-      const res = await fetch('/api/consults', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hn, room, problem, isUrgent, departments: departmentsMap }),
+      await addConsult({
+        hn,
+        room,
+        problem,
+        isUrgent,
+        departments: departmentsMap,
+        status: "pending"
       });
-      if (!res.ok) { const errData = await res.json(); throw new Error(errData.error || 'Failed to submit'); }
 
       setSubmitStatus({ type: 'success', message: isUrgent ? '✓ ส่งเคสปรึกษาด่วนสำเร็จ!' : '✓ ส่งเคสปรึกษาสำเร็จ!' });
       setHn(""); setRoom(""); setProblem(""); setSelectedDepts([]);

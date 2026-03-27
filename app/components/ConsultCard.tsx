@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { updateConsult } from "@/lib/db";
 
 interface ConsultCardProps {
   caseData: any;
@@ -46,12 +47,7 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
           updatedDepartments[dept] = { ...updatedDepartments[dept], acceptedAt: now };
         }
       });
-      const res = await fetch(`/api/consults/${caseId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ departments: updatedDepartments }),
-      });
-      if (!res.ok) throw new Error('Failed to accept');
+      await updateConsult(caseId, { departments: updatedDepartments });
       onUpdate?.();
     } catch (error) {
       console.error("Error accepting case:", error);
@@ -70,15 +66,10 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
         completedAt: new Date().toISOString(),
       };
       const allCompleted = Object.values(updatedDepartments).every((dept: any) => dept.status === "completed");
-      const res = await fetch(`/api/consults/${caseId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      await updateConsult(caseId, {
           departments: updatedDepartments,
           ...(allCompleted && { status: "completed" }),
-        }),
       });
-      if (!res.ok) throw new Error('Failed to complete');
       onUpdate?.();
     } catch (error) {
       console.error("Error updating case:", error);

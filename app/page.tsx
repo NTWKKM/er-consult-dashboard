@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import ConsultCard from "@/app/components/ConsultCard";
+import { subscribeToConsultsByStatus } from "@/lib/db";
 
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<any[]>([]);
@@ -107,26 +108,22 @@ export default function Dashboard() {
     }
   };
 
-  const fetchCases = useCallback(async () => {
-    try {
-      const res = await fetch('/api/consults?status=pending');
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
-      setAllCases(data);
-      setLoading(false);
-      setError(null);
-    } catch (err) {
-      console.error("Fetch error:", err);
-      setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchCases();
-    const interval = setInterval(fetchCases, 5000);
-    return () => clearInterval(interval);
-  }, [fetchCases]);
+    const unsubscribe = subscribeToConsultsByStatus(
+      'pending',
+      (data) => {
+        setAllCases(data);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error("Subscription error:", err);
+        setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+        setLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   const departmentCasesMap = useMemo(() => {
     const map: { [key: string]: any[] } = {};
@@ -316,14 +313,13 @@ export default function Dashboard() {
                         </div>
                       ) : (
                         cases.map(caseData => (
-                          <ConsultCard
-                            key={caseData.id}
-                            caseData={caseData}
-                            caseId={caseData.id}
-                            departmentName={dept}
-                            darkMode={darkMode}
-                            onUpdate={fetchCases}
-                          />
+                            <ConsultCard
+                              key={caseData.id}
+                              caseData={caseData}
+                              caseId={caseData.id}
+                              departmentName={dept}
+                              darkMode={darkMode}
+                            />
                         ))
                       )}
                     </div>
@@ -372,14 +368,13 @@ export default function Dashboard() {
                       ) : (
                         <div className={view === 'ortho' ? 'grid grid-cols-1 md:grid-cols-2 gap-2' : 'flex flex-col gap-2'}>
                           {cases.map(caseData => (
-                            <ConsultCard
-                              key={caseData.id}
-                              caseData={caseData}
-                              caseId={caseData.id}
-                              departmentName={dept}
-                              darkMode={darkMode}
-                              onUpdate={fetchCases}
-                            />
+                              <ConsultCard
+                                key={caseData.id}
+                                caseData={caseData}
+                                caseId={caseData.id}
+                                departmentName={dept}
+                                darkMode={darkMode}
+                              />
                           ))}
                         </div>
                       )}

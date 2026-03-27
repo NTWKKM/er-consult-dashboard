@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { subscribeToConsultsByStatus, updateConsult } from "@/lib/db";
 
 export default function CompletedPage() {
   const [cases, setCases] = useState<any[]>([]);
@@ -16,26 +17,22 @@ export default function CompletedPage() {
   const ITEMS_PER_PAGE = 25;
   const ALL_DEPARTMENTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "Ortho"];
 
-  const fetchCases = useCallback(async () => {
-    try {
-      const res = await fetch('/api/consults?status=completed');
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
-      setCases(data);
-      setLoading(false);
-      setError(null);
-    } catch (err) {
-      console.error("Fetch error:", err);
-      setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchCases();
-    const interval = setInterval(fetchCases, 10000);
-    return () => clearInterval(interval);
-  }, [fetchCases]);
+    const unsubscribe = subscribeToConsultsByStatus(
+      'completed',
+      (data) => {
+        setCases(data);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error("Subscription error:", err);
+        setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+        setLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   const handleReConsult = async () => {
     if (!selectedCase || !newProblem.trim()) { alert("กรุณาระบุปัญหาใหม่"); return; }
@@ -44,20 +41,14 @@ export default function CompletedPage() {
     try {
       const updatedDepartments: any = {};
       selectedDepartments.forEach(dept => { updatedDepartments[dept] = { status: "pending", completedAt: null }; });
-      const res = await fetch(`/api/consults/${selectedCase.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      await updateConsult(selectedCase.id, {
           status: "pending",
           departments: updatedDepartments,
           problem: `${selectedCase.problem}\n\n[Re-consult]: ${newProblem}`,
           createdAt: new Date().toISOString(),
-        }),
       });
-      if (!res.ok) throw new Error('Failed to update');
       setShowModal(false); setSelectedCase(null); setNewProblem(""); setSelectedDepartments([]);
       alert("✓ ส่งปรึกษาใหม่สำเร็จ!");
-      fetchCases();
     } catch (error) {
       console.error("Error re-consulting:", error);
       alert("เกิดข้อผิดพลาด");
