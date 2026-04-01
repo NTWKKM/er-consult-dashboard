@@ -13,8 +13,8 @@ export default function SubmitPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
-  const rooms = ["Resus Team 1", "Resus Team 2", "Resus Team 3", "Resus Team 4", "Urgent", "NT"];
-  const allDepartments = ["Gen Sx", "Sx Trauma", "Ortho", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
+  const rooms = ["Resus Team 1", "Resus Team 2", "Resus Team 3", "Resus Team 4", "Urgent", "NT", "SSW"];
+  const allDepartments = ["Gen Sx", "Sx Trauma", "Ortho", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "PED SX"];
 
   const handleCheckboxChange = (dept: string) => {
     setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
@@ -29,7 +29,7 @@ export default function SubmitPage() {
     setIsLoading(true);
     setSubmitStatus(null);
 
-    const departmentsMap: { [key: string]: any } = {};
+    const departmentsMap: Record<string, { status: "pending" | "completed"; completedAt: string | null }> = {};
     selectedDepts.forEach(dept => { departmentsMap[dept] = { status: "pending", completedAt: null }; });
 
     try {

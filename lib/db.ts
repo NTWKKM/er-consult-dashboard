@@ -1,10 +1,11 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, getDocs, updateDoc, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot } from "firebase/firestore";
 
 export interface ConsultDepartment {
     status: "pending" | "completed";
     completedAt: string | null;
     acceptedAt?: string | null;
+    actionStatus?: string;
 }
 
 export interface Consult {

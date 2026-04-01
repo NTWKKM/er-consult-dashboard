@@ -15,7 +15,6 @@ interface ConsultCardProps {
 
 export default function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate }: ConsultCardProps) {
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isAccepting, setIsAccepting] = useState(false);
 
   const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
   const ORTHO_DEPTS = ["Ortho"];
@@ -36,9 +35,11 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
     ? new Date(caseData.createdAt).toLocaleString("th-TH")
     : "-";
 
-  const handleAcceptCase = async () => {
-    if (isAccepting || isAccepted) return;
-    setIsAccepting(true);
+  const actionStatus = caseData.departments[departmentName]?.actionStatus || "";
+
+  const handleActionStatusChange = async (newStatus: string) => {
+    if (isUpdating) return;
+    setIsUpdating(true);
     try {
       const updatedDepartments = { ...caseData.departments };
       const isSurgeryDept = SURGERY_DEPTS.includes(departmentName);
@@ -46,15 +47,19 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
       const now = new Date().toISOString();
       Object.keys(updatedDepartments).forEach(dept => {
         if (targetDepts.includes(dept) && updatedDepartments[dept].status === 'pending') {
-          updatedDepartments[dept] = { ...updatedDepartments[dept], acceptedAt: now };
+          updatedDepartments[dept] = { 
+            ...updatedDepartments[dept], 
+            acceptedAt: updatedDepartments[dept].acceptedAt || now,
+            actionStatus: newStatus
+          };
         }
       });
       await updateConsult(caseId, { departments: updatedDepartments });
       onUpdate?.();
     } catch (error) {
-      console.error("Error accepting case:", error);
-      alert("เกิดข้อผิดพลาดในการรับเคส");
-    } finally { setIsAccepting(false); }
+      console.error("Error updating status:", error);
+      alert("เกิดข้อผิดพลาดในการอัปเดตสถานะ");
+    } finally { setIsUpdating(false); }
   };
 
   const handleCompleteCase = async () => {
@@ -138,18 +143,32 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
           {isAccepted && (
             <div className={`flex items-center gap-1 ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-              <span className="font-semibold">รับแล้ว {acceptedTime}</span>
+              <span className="font-semibold">{actionStatus || "รับเคส"} {acceptedTime}</span>
             </div>
           )}
         </div>
 
         {!isCompleted && (
           <div className="flex gap-2">
-            {!isAccepted && (
-              <button onClick={handleAcceptCase} disabled={isAccepting} className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${isAccepting ? (darkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed') : 'bg-[#699D5D] text-[#FDFCDF] hover:shadow-lg glow-hover transform hover:-translate-y-0.5'}`}>
-                {isAccepting ? (<><div className="w-3 h-3 border-2 border-[#FDFCDF] border-t-transparent rounded-full animate-spin"></div><span>กำลังรับ...</span></>) : (<><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><span>รับเคส</span></>)}
-              </button>
-            )}
+            <div className={`flex-1 relative ${isUpdating ? 'opacity-50 pointer-events-none' : ''}`}>
+              <select
+                value={actionStatus || (isAccepted ? "รับเคส" : "")}
+                onChange={(e) => handleActionStatusChange(e.target.value)}
+                className={`w-full h-full px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${
+                  actionStatus || isAccepted
+                    ? (darkMode ? 'bg-[#699D5D]/20 text-gray-200 border border-[#699D5D]' : 'bg-[#699D5D]/10 text-[#014167] border border-[#699D5D]')
+                    : (darkMode ? 'bg-[#699D5D] text-white hover:shadow-lg glow-hover' : 'bg-[#699D5D] text-white hover:shadow-lg glow-hover')
+                }`}
+              >
+                <option value="" disabled>เลือกสถานะ</option>
+                {['รับเคส', 'Admit', 'คืน ER', 'D/C'].map(status => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+              <div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 ${actionStatus || isAccepted ? (darkMode ? 'text-[#699D5D]' : 'text-[#014167]') : 'text-white'}`}>
+                <svg className="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+              </div>
+            </div>
             <button onClick={handleCompleteCase} disabled={isUpdating} className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${isUpdating ? (darkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed') : 'bg-[#E55143] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5'}`}>
               {isUpdating ? (<><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div><span>กำลังปิด...</span></>) : (<><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><span>ปิดเคส</span></>)}
             </button>
