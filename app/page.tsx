@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import ConsultCard from "@/app/components/ConsultCard";
 import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
 
-const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
+const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "PED SX"];
 const ORTHO_DEPTS = ["Ortho"];
 
 export default function Dashboard() {

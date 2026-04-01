@@ -16,7 +16,7 @@ interface ConsultCardProps {
 export default function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate }: ConsultCardProps) {
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT"];
+  const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "PED SX"];
   const ORTHO_DEPTS = ["Ortho"];
 
   const hn = caseData.hn || "-";

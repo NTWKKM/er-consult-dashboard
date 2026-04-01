@@ -15,7 +15,7 @@ export default function CompletedPage() {
   const [isUpdating, setIsUpdating] = useState(false);
 
   const ITEMS_PER_PAGE = 25;
-  const ALL_DEPARTMENTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "Ortho"];
+  const ALL_DEPARTMENTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "Ortho", "PED SX"];
 
   useEffect(() => {
     const unsubscribe = subscribeToConsultsByStatus(
