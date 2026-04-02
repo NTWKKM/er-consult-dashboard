@@ -12,6 +12,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'both' | 'surgery' | 'ortho'>('both');
+  const [roomFilter, setRoomFilter] = useState<'all' | 'resus' | 'non-resus'>('all');
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
@@ -115,10 +116,15 @@ export default function Dashboard() {
     const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
 
     allDepts.forEach(dept => {
-      const filtered = allCases.filter(caseData =>
-        caseData.departments[dept]
-        && caseData.departments[dept].status === 'pending'
-      );
+      const filtered = allCases.filter(caseData => {
+        if (!caseData.departments[dept] || caseData.departments[dept].status !== 'pending') return false;
+        
+        const isResus = caseData.room && caseData.room.toLowerCase().includes('resus');
+        if (roomFilter === 'resus' && !isResus) return false;
+        if (roomFilter === 'non-resus' && isResus) return false;
+        
+        return true;
+      });
 
       map[dept] = filtered.sort((a, b) => {
         if (a.isUrgent && !b.isUrgent) return -1;
@@ -128,11 +134,22 @@ export default function Dashboard() {
     });
 
     return map;
-  }, [allCases]);
+  }, [allCases, roomFilter]);
 
   const getCasesForDepartment = (deptName: string) => {
     return departmentCasesMap[deptName] || [];
   };
+
+  const filteredAllCases = useMemo(() => {
+    return allCases.filter(caseData => {
+      const isResus = caseData.room && caseData.room.toLowerCase().includes('resus');
+      if (roomFilter === 'resus' && !isResus) return false;
+      if (roomFilter === 'non-resus' && isResus) return false;
+      return true;
+    });
+  }, [allCases, roomFilter]);
+
+  const totalPendingCases = filteredAllCases.length;
 
   if (loading) {
     return (
@@ -165,7 +182,7 @@ export default function Dashboard() {
     );
   }
 
-  const totalPendingCases = allCases.length;
+
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : ''}`}>
@@ -183,41 +200,53 @@ export default function Dashboard() {
           </div>
           <div className="flex flex-row flex-wrap items-center justify-center gap-2">
             <div className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-[#C7CFDA] border-[#014167]/30'} border`}>
-              <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>เคสรอดำเนินการ:</span>
+              <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>เคสรอปรึกษา:</span>
               <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#E55143] pulse-urgent' : darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
                 {totalPendingCases}
               </span>
             </div>
-            <button
-              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                ${view === 'surgery'
-                  ? 'bg-[#E55143] text-white'
-                  : 'bg-[#C7CFDA] text-[#E55143] border border-[#E55143]/50 hover:border-[#E55143]'}
-              `}
-              onClick={() => setView('surgery')}
-            >
-              Surgery
-            </button>
-            <button
-              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                ${view === 'ortho'
-                  ? 'bg-[#699D5D] text-[#FDFCDF]'
-                  : 'bg-[#C7CFDA] text-[#699D5D] border border-[#699D5D]/50 hover:border-[#699D5D]'}
-              `}
-              onClick={() => setView('ortho')}
-            >
-              Ortho
-            </button>
-            <button
-              className={`px-4 py-2 rounded-lg font-bold shadow-md transition-all duration-200 text-xs glow-hover
-                ${view === 'both'
-                  ? 'bg-[#F1AE9E] text-[#014167]'
-                  : 'bg-[#C7CFDA] text-[#014167] border border-[#014167]/50 hover:border-[#014167]'}
-              `}
-              onClick={() => setView('both')}
-            >
-              Both
-            </button>
+            
+            <div className={`flex items-center p-1 rounded-lg shadow-md border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#014167]/30'}`}>
+              <button
+                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${roomFilter === 'resus' ? 'bg-[#E55143] text-white' : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-[#014167] hover:bg-white/50'}`}
+                onClick={() => setRoomFilter('resus')}
+              >
+                Resus
+              </button>
+              <button
+                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${roomFilter === 'non-resus' ? 'bg-[#699D5D] text-white' : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-[#014167] hover:bg-white/50'}`}
+                onClick={() => setRoomFilter('non-resus')}
+              >
+                Non-Resus
+              </button>
+              <button
+                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${roomFilter === 'all' ? 'bg-[#014167] text-white' : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-[#014167] hover:bg-white/50'}`}
+                onClick={() => setRoomFilter('all')}
+              >
+                ทั้งหมด
+              </button>
+            </div>
+
+            <div className={`flex items-center p-1 rounded-lg shadow-md border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#014167]/30'}`}>
+              <button
+                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${view === 'surgery' ? 'bg-[#E55143] text-white' : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-[#E55143] hover:bg-white/50'}`}
+                onClick={() => setView('surgery')}
+              >
+                Surgery
+              </button>
+              <button
+                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${view === 'ortho' ? 'bg-[#699D5D] text-[#FDFCDF]' : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-[#699D5D] hover:bg-white/50'}`}
+                onClick={() => setView('ortho')}
+              >
+                Ortho
+              </button>
+              <button
+                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${view === 'both' ? 'bg-[#F1AE9E] text-[#014167]' : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-[#014167] hover:bg-white/50'}`}
+                onClick={() => setView('both')}
+              >
+                Both
+              </button>
+            </div>
           </div>
         </div>
 

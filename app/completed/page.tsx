@@ -14,9 +14,29 @@ export default function CompletedPage() {
   const [newProblem, setNewProblem] = useState("");
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
 
   const ITEMS_PER_PAGE = 25;
   const ALL_DEPARTMENTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "Ortho", "PED SX"];
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedDarkMode = localStorage.getItem('darkMode');
+      if (savedDarkMode !== null) {
+        setDarkMode(savedDarkMode === 'true');
+      }
+
+      const handleDarkModeChange = (e: Event) => {
+        setDarkMode((e as CustomEvent).detail);
+      };
+
+      window.addEventListener('darkModeChanged', handleDarkModeChange);
+
+      return () => {
+        window.removeEventListener('darkModeChanged', handleDarkModeChange);
+      };
+    }
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeToConsultsByStatus(
@@ -105,7 +125,7 @@ export default function CompletedPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#014167] flex items-center justify-center">
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-[#014167]'}`}>
         <div className="text-center">
           <div className="inline-block w-16 h-16 border-4 border-[#E55143] border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-xl text-[#FDFCDF] font-semibold">กำลังโหลดข้อมูล...</p>
@@ -116,11 +136,11 @@ export default function CompletedPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#014167] flex items-center justify-center p-4">
-        <div className="text-center bg-[#C7CFDA] rounded-xl shadow-md p-8 max-w-md border border-[#C7CFDA]/30">
+      <div className={`min-h-screen flex items-center justify-center p-4 ${darkMode ? 'bg-gray-900' : 'bg-[#014167]'}`}>
+        <div className={`text-center rounded-xl shadow-md p-8 max-w-md border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#C7CFDA]/30'}`}>
           <svg className="w-16 h-16 mx-auto text-[#E55143] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          <h2 className="text-xl font-bold text-[#014167] mb-2">เกิดข้อผิดพลาด</h2>
-          <p className="text-[#014167] font-medium mb-4">{error}</p>
+          <h2 className={`text-xl font-bold mb-2 ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>เกิดข้อผิดพลาด</h2>
+          <p className={`font-medium mb-4 ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>{error}</p>
           <button onClick={() => window.location.reload()} className="px-4 py-2 bg-[#E55143] text-white rounded-lg font-semibold hover:shadow-md transition-all">โหลดใหม่</button>
         </div>
       </div>
@@ -128,16 +148,16 @@ export default function CompletedPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#014167]">
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-[#014167]'}`}>
       <div className="max-w-[1800px] mx-auto p-4">
         <div className="mb-4 text-center">
-          <h1 className="text-2xl font-bold text-[#FDFCDF] mb-2">เคสที่ปรึกษาเสร็จแล้ว</h1>
-          <p className="text-[#C7CFDA] text-sm font-medium">แสดง 100 เคสล่าสุด</p>
+          <h1 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-gray-100' : 'text-[#FDFCDF]'}`}>เคสที่ปรึกษาเสร็จแล้ว</h1>
+          <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-[#C7CFDA]'}`}>แสดง 100 เคสล่าสุด</p>
           <div className="mt-2 flex items-center justify-center gap-4">
-            <div className="inline-flex items-center gap-2 bg-[#C7CFDA] px-4 py-1.5 rounded-full shadow-sm border border-[#C7CFDA]/30">
-              <span className="text-[#014167] font-semibold text-sm">ทั้งหมด:</span>
-              <span className="text-xl font-bold text-[#014167]">{cases.length}</span>
-              <span className="text-[#014167] text-sm font-medium">เคส</span>
+            <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#C7CFDA]/30'}`}>
+              <span className={`font-semibold text-sm ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>ทั้งหมด:</span>
+              <span className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-[#014167]'}`}>{cases.length}</span>
+              <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>เคส</span>
             </div>
             <button 
               onClick={handleExportExcel}
@@ -149,10 +169,10 @@ export default function CompletedPage() {
           </div>
         </div>
 
-        <div className="bg-[#C7CFDA] rounded-xl shadow-md overflow-hidden border border-[#C7CFDA]/30">
+        <div className={`rounded-xl shadow-md overflow-hidden border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#C7CFDA]/30'}`}>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-[#E55143] text-white">
+              <thead className={`text-white ${darkMode ? 'bg-gray-700' : 'bg-[#E55143]'}`}>
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-bold w-[10%]">HN</th>
                   <th className="px-4 py-3 text-left text-sm font-bold w-[10%]">ห้อง</th>
@@ -163,35 +183,35 @@ export default function CompletedPage() {
                   <th className="px-4 py-3 text-center text-sm font-bold w-[10%]">จัดการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#014167]/10">
+              <tbody className={`divide-y ${darkMode ? 'divide-gray-700' : 'divide-[#014167]/10'}`}>
                 {currentCases.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-[#014167] font-medium">ไม่มีข้อมูล</td></tr>
+                  <tr><td colSpan={7} className={`px-4 py-8 text-center font-medium ${darkMode ? 'text-gray-400' : 'text-[#014167]'}`}>ไม่มีข้อมูล</td></tr>
                 ) : (
                   currentCases.map((caseData) => (
-                    <tr key={caseData.id} className="hover:bg-[#014167]/10 transition-colors align-top">
-                      <td className="px-4 py-3 text-sm font-semibold text-[#014167]">{caseData.hn}</td>
-                      <td className="px-4 py-3 text-sm text-[#014167] font-medium">{caseData.room}</td>
-                      <td className="px-4 py-3 text-sm text-[#014167]"><div className="whitespace-pre-wrap">{caseData.problem}</div></td>
+                    <tr key={caseData.id} className={`transition-colors align-top ${darkMode ? 'hover:bg-gray-700/50' : 'hover:bg-[#014167]/10'}`}>
+                      <td className={`px-4 py-3 text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>{caseData.hn}</td>
+                      <td className={`px-4 py-3 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>{caseData.room}</td>
+                      <td className={`px-4 py-3 text-sm flex-wrap whitespace-pre-wrap ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>{caseData.problem}</td>
                       <td className="px-4 py-3 text-sm">
                         <div className="flex flex-wrap gap-1">
                           {Object.keys(caseData.departments).map(dept => (
-                            <span key={dept} className="inline-block px-2 py-0.5 bg-[#F1AE9E] text-[#014167] rounded text-xs font-medium border border-[#F1AE9E]/30">{dept}</span>
+                            <span key={dept} className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${darkMode ? 'bg-gray-700 text-gray-200 border-gray-600' : 'bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30'}`}>{dept}</span>
                           ))}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-[#014167] font-medium">
+                      <td className={`px-4 py-3 text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
                         {caseData.createdAt ? new Date(caseData.createdAt).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}
                       </td>
-                      <td className="px-4 py-3 text-sm text-[#014167]">
+                      <td className="px-4 py-3 text-sm">
                         <div className="flex flex-col gap-1.5 text-[11px] font-medium">
                           {Object.entries(caseData.departments).map(([dept, data]) => (
-                            <div key={dept} className="bg-white/60 p-1.5 rounded shadow-sm border border-[#014167]/10">
-                              <span className="font-bold border-b border-[#014167]/10 pb-0.5 mb-0.5 block">{dept}</span>
-                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-black/70">
-                                {data.acceptedAt && <div><span className="text-[#014167] font-semibold">รับ:</span> {new Date(data.acceptedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
-                                {data.admittedAt && <div><span className="text-[#014167] font-semibold">Admit:</span> {new Date(data.admittedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
-                                {data.returnedAt && <div><span className="text-[#014167] font-semibold">คืน ER:</span> {new Date(data.returnedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
-                                {data.dischargedAt && <div><span className="text-[#014167] font-semibold">D/C:</span> {new Date(data.dischargedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                            <div key={dept} className={`p-1.5 rounded shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 border-[#014167]/10'}`}>
+                              <span className={`font-bold border-b pb-0.5 mb-0.5 block ${darkMode ? 'border-gray-700 text-gray-200' : 'border-[#014167]/10 text-black'}`}>{dept}</span>
+                              <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 ${darkMode ? 'text-gray-400' : 'text-black/70'}`}>
+                                {data.acceptedAt && <div><span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>รับ:</span> {new Date(data.acceptedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                                {data.admittedAt && <div><span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>Admit:</span> {new Date(data.admittedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                                {data.returnedAt && <div><span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>คืน ER:</span> {new Date(data.returnedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                                {data.dischargedAt && <div><span className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>D/C:</span> {new Date(data.dischargedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
                                 {data.completedAt && <div><span className="text-[#E55143] font-semibold">ปิด:</span> {new Date(data.completedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
                               </div>
                             </div>
@@ -199,7 +219,7 @@ export default function CompletedPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <button onClick={() => openReConsultModal(caseData)} className="px-3 py-1.5 bg-[#F1AE9E] text-[#014167] rounded-lg text-xs font-bold hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto mt-1">
+                        <button onClick={() => openReConsultModal(caseData)} className={`px-3 py-1.5 rounded-lg text-xs font-bold hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto mt-1 ${darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-[#F1AE9E] text-[#014167]'}`}>
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                           Re-consult
                         </button>
@@ -211,16 +231,16 @@ export default function CompletedPage() {
             </table>
           </div>
           {totalPages > 1 && (
-            <div className="bg-[#014167]/10 px-4 py-3 border-t border-[#014167]/20 flex items-center justify-between">
-              <div className="text-sm text-[#014167] font-medium">แสดง {startIndex + 1}-{Math.min(endIndex, cases.length)} จาก {cases.length} เคส</div>
+            <div className={`px-4 py-3 border-t flex items-center justify-between ${darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-[#014167]/10 border-[#014167]/20'}`}>
+              <div className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>แสดง {startIndex + 1}-{Math.min(endIndex, cases.length)} จาก {cases.length} เคส</div>
               <div className="flex gap-2">
-                <button onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1} className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${currentPage === 1 ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed' : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30'}`}>← ก่อนหน้า</button>
+                <button onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1} className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${currentPage === 1 ? (darkMode ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed') : (darkMode ? 'bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700' : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30')}`}>← ก่อนหน้า</button>
                 <div className="flex items-center gap-1">
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                    <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${currentPage === page ? 'bg-[#699D5D] text-white shadow-sm' : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30'}`}>{page}</button>
+                    <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${currentPage === page ? 'bg-[#699D5D] text-white shadow-sm' : (darkMode ? 'bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700' : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30')}`}>{page}</button>
                   ))}
                 </div>
-                <button onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages} className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${currentPage === totalPages ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed' : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30'}`}>ถัดไป →</button>
+                <button onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages} className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${currentPage === totalPages ? (darkMode ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed') : (darkMode ? 'bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700' : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30')}`}>ถัดไป →</button>
               </div>
             </div>
           )}
@@ -229,33 +249,33 @@ export default function CompletedPage() {
 
       {showModal && (
         <div className="fixed inset-0 bg-[#000000]/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#C7CFDA] rounded-xl shadow-xl max-w-2xl w-full p-6 border border-[#C7CFDA]/30">
+          <div className={`rounded-xl shadow-xl max-w-2xl w-full p-6 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#C7CFDA]/30'}`}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-[#014167]">Re-consult เคส HN: {selectedCase?.hn}</h2>
-              <button onClick={() => setShowModal(false)} className="text-[#014167] hover:text-[#E55143] transition-colors">
+              <h2 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-[#014167]'}`}>Re-consult เคส HN: {selectedCase?.hn}</h2>
+              <button onClick={() => setShowModal(false)} className={`transition-colors ${darkMode ? 'text-gray-400 hover:text-red-400' : 'text-[#014167] hover:text-[#E55143]'}`}>
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="mb-4 p-3 bg-white rounded-lg border border-[#C7CFDA]">
-              <p className="text-xs text-[#014167] font-semibold mb-1">ปัญหาเดิม:</p>
-              <p className="text-sm text-[#014167]">{selectedCase?.problem}</p>
+            <div className={`mb-4 p-3 rounded-lg border ${darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-[#C7CFDA]'}`}>
+              <p className={`text-xs font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-[#014167]'}`}>ปัญหาเดิม:</p>
+              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>{selectedCase?.problem}</p>
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-bold text-[#014167] mb-2">แผนกที่ต้องการส่งปรึกษา <span className="text-[#E55143]">*</span></label>
+              <label className={`block text-sm font-bold mb-2 ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>แผนกที่ต้องการส่งปรึกษา <span className="text-[#E55143]">*</span></label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {ALL_DEPARTMENTS.map(dept => (
-                  <button key={dept} type="button" onClick={() => toggleDepartment(dept)} className={`px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${selectedDepartments.includes(dept) ? 'bg-[#699D5D] text-white shadow-sm' : 'bg-white text-[#014167] hover:bg-[#C7CFDA]/30 border border-[#C7CFDA]'}`}>{dept}</button>
+                  <button key={dept} type="button" onClick={() => toggleDepartment(dept)} className={`px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${selectedDepartments.includes(dept) ? 'bg-[#699D5D] text-white shadow-sm' : (darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600 border border-gray-600' : 'bg-white text-[#014167] hover:bg-[#C7CFDA]/30 border border-[#C7CFDA]')}`}>{dept}</button>
                 ))}
               </div>
-              <p className="text-xs text-[#014167] font-medium mt-2">เลือกได้หลายแผนก (คลิกเพื่อเลือก/ยกเลิก)</p>
+              <p className={`text-xs font-medium mt-2 ${darkMode ? 'text-gray-400' : 'text-[#014167]'}`}>เลือกได้หลายแผนก (คลิกเพื่อเลือก/ยกเลิก)</p>
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-bold text-[#014167] mb-2">ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-[#E55143]">*</span></label>
-              <textarea value={newProblem} onChange={(e) => setNewProblem(e.target.value)} className="w-full px-3 py-2 border border-[#C7CFDA] rounded-lg bg-white text-[#014167] placeholder-[#C7CFDA] focus:outline-none focus:border-[#699D5D] focus:ring-2 focus:ring-[#699D5D]/20 transition-all duration-200 min-h-[120px] text-sm" placeholder="ระบุปัญหาใหม่หรืออาการเพิ่มเติมที่ต้องการปรึกษา..." required />
+              <label className={`block text-sm font-bold mb-2 ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-[#E55143]">*</span></label>
+              <textarea value={newProblem} onChange={(e) => setNewProblem(e.target.value)} className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-[#699D5D] focus:ring-2 focus:ring-[#699D5D]/20 transition-all duration-200 min-h-[120px] text-sm ${darkMode ? 'bg-gray-900 border-gray-700 text-gray-200 placeholder-gray-500' : 'bg-white border-[#C7CFDA] text-[#014167] placeholder-[#C7CFDA]'}`} placeholder="ระบุปัญหาใหม่หรืออาการเพิ่มเติมที่ต้องการปรึกษา..." required />
             </div>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setShowModal(false)} className="px-4 py-2 bg-white text-[#014167] border border-[#C7CFDA] rounded-lg font-semibold hover:bg-[#C7CFDA]/30 transition-all text-sm">ยกเลิก</button>
-              <button onClick={handleReConsult} disabled={isUpdating || !newProblem.trim() || selectedDepartments.length === 0} className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${isUpdating || !newProblem.trim() || selectedDepartments.length === 0 ? 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed' : 'bg-[#699D5D] text-white hover:shadow-md'}`}>
+              <button onClick={() => setShowModal(false)} className={`px-4 py-2 rounded-lg font-semibold transition-all text-sm ${darkMode ? 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600' : 'bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30'}`}>ยกเลิก</button>
+              <button onClick={handleReConsult} disabled={isUpdating || !newProblem.trim() || selectedDepartments.length === 0} className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${isUpdating || !newProblem.trim() || selectedDepartments.length === 0 ? (darkMode ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-[#C7CFDA] text-[#014167] cursor-not-allowed') : 'bg-[#699D5D] text-white hover:shadow-md'}`}>
                 {isUpdating ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div><span>กำลังส่ง...</span></>) : (<><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg><span>ส่งปรึกษาใหม่</span></>)}
               </button>
             </div>
