@@ -1,5 +1,6 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { sortConsults } from "./utils";
 
 export interface ConsultDepartment {
     status: "pending" | "completed";
@@ -55,20 +56,55 @@ export function subscribeToConsultsByStatus(
             } as Consult);
         });
         
-        // Perform memory sort to prioritize urgent cases first
-        const sortedConsults = consults.sort((a, b) => {
-            if (a.isUrgent && !b.isUrgent) return -1;
-            if (!a.isUrgent && b.isUrgent) return 1;
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        });
-
-        onData(sortedConsults);
+        onData(sortConsults(consults));
     }, (error) => {
         if (onError) onError(error);
         else console.error("Firestore subscription error:", error);
     });
 
     return unsubscribe;
+}
+
+/**
+ * Firestore cursor-based pagination for completed cases.
+ * Fetches `pageSize` documents at a time using startAfter cursor.
+ * Returns the fetched consults and the last document snapshot for the next page.
+ */
+export async function fetchCompletedConsultsPage(
+    pageSize: number,
+    lastDoc?: QueryDocumentSnapshot<DocumentData>
+): Promise<{ consults: Consult[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
+    let q = query(
+        collection(db, COLLECTION_NAME),
+        where("status", "==", "completed"),
+        orderBy("createdAt", "desc"),
+        limit(pageSize + 1) // fetch one extra to check if there are more
+    );
+
+    if (lastDoc) {
+        q = query(q, startAfter(lastDoc));
+    }
+
+    const snapshot = await getDocs(q);
+    const docs = snapshot.docs;
+    const hasMore = docs.length > pageSize;
+    const pageDocs = hasMore ? docs.slice(0, pageSize) : docs;
+
+    const consults: Consult[] = pageDocs.map((document) => {
+        const data = document.data();
+        return {
+            id: document.id,
+            firstName: data.firstName || "",
+            lastName: data.lastName || "",
+            ...data,
+        } as Consult;
+    });
+
+    return {
+        consults,
+        lastDoc: pageDocs.length > 0 ? pageDocs[pageDocs.length - 1] : null,
+        hasMore,
+    };
 }
 
 export async function getConsultById(id: string): Promise<Consult | undefined> {

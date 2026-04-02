@@ -6,6 +6,7 @@ import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
 import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
+import { sortConsults, findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
 
 export default function Dashboard() {
@@ -17,7 +18,8 @@ export default function Dashboard() {
 
   const { darkMode, soundEnabled } = useSettings();
 
-  const previousCaseCountRef = useRef(0);
+  const previousCaseIdsRef = useRef<Set<string>>(new Set());
+  const isInitialLoadRef = useRef(true);
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -94,11 +96,16 @@ export default function Dashboard() {
   }, [soundEnabled, initAudioContext]);
 
   useEffect(() => {
-    if (allCases.length > previousCaseCountRef.current && previousCaseCountRef.current > 0) {
-      playNotificationSound();
+    const currentIds = new Set(allCases.map((c) => c.id));
+    if (!isInitialLoadRef.current) {
+      const newIds = findNewCaseIds(currentIds, previousCaseIdsRef.current);
+      if (newIds.length > 0) {
+        playNotificationSound();
+      }
     }
-    previousCaseCountRef.current = allCases.length;
-  }, [allCases.length, playNotificationSound]);
+    previousCaseIdsRef.current = currentIds;
+    isInitialLoadRef.current = false;
+  }, [allCases, playNotificationSound]);
 
   useEffect(() => {
     const unsubscribe = subscribeToConsultsByStatus(
@@ -133,11 +140,7 @@ export default function Dashboard() {
         return true;
       });
 
-      map[dept] = filtered.sort((a, b) => {
-        if (a.isUrgent && !b.isUrgent) return -1;
-        if (!a.isUrgent && b.isUrgent) return 1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
+      map[dept] = sortConsults(filtered);
     });
 
     return map;

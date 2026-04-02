@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { subscribeToConsultsByStatus, updateConsult, Consult, ConsultDepartment } from "@/lib/db";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment } from "@/lib/db";
+import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS } from "@/lib/constants";
 import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
@@ -9,6 +10,7 @@ import { useToast } from "../contexts/ToastContext";
 export default function CompletedPage() {
   const [cases, setCases] = useState<Consult[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedCase, setSelectedCase] = useState<Consult | null>(null);
@@ -16,6 +18,7 @@ export default function CompletedPage() {
   const [newProblem, setNewProblem] = useState("");
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
 
   // Search & Filter
   const [searchHN, setSearchHN] = useState("");
@@ -27,23 +30,45 @@ export default function CompletedPage() {
 
   const ITEMS_PER_PAGE = 25;
 
-  useEffect(() => {
-    const unsubscribe = subscribeToConsultsByStatus(
-      "completed",
-      (data) => {
-        setCases(data);
-        setLoading(false);
-        setError(null);
-      },
-      (err) => {
-        console.error("Subscription error:", err);
-        setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
-        setLoading(false);
-      },
-      200 // Limit to 200 most recent
-    );
-    return () => unsubscribe();
+  // Store Firestore cursor snapshots for each page boundary
+  const cursorMapRef = useRef<Map<number, QueryDocumentSnapshot<DocumentData>>>(new Map());
+
+  // Fetch a specific page of completed cases using Firestore cursors
+  const fetchPage = useCallback(async (page: number) => {
+    setLoadingMore(true);
+    try {
+      // For page 1, no cursor is needed. For subsequent pages, use the stored cursor.
+      const cursor = page > 1 ? cursorMapRef.current.get(page - 1) : undefined;
+      const result = await fetchCompletedConsultsPage(ITEMS_PER_PAGE, cursor);
+
+      setCases(result.consults);
+      setHasMore(result.hasMore);
+      setError(null);
+
+      // Store the lastDoc as cursor for the next page
+      if (result.lastDoc) {
+        cursorMapRef.current.set(page, result.lastDoc);
+      }
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
   }, []);
+
+  // Initial load
+  useEffect(() => {
+    fetchPage(1);
+  }, [fetchPage]);
+
+  // Navigate to a specific page
+  const goToPage = useCallback((page: number) => {
+    setCurrentPage(page);
+    fetchPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [fetchPage]);
 
   // Filtered cases
   const filteredCases = useMemo(() => {
@@ -151,14 +176,15 @@ export default function CompletedPage() {
     );
   };
 
-  const totalPages = Math.ceil(filteredCases.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const currentCases = filteredCases.slice(startIndex, endIndex);
+  // With cursor pagination, display the current page's filtered cases directly
+  const currentCases = filteredCases;
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 and re-fetch when filters change
   useEffect(() => {
     setCurrentPage(1);
+    fetchPage(1);
+    cursorMapRef.current.clear();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchHN, filterDept, filterDate]);
 
   if (loading) {
@@ -196,22 +222,6 @@ export default function CompletedPage() {
     );
   }
 
-  // Ellipsis pagination
-  const getPageNumbers = () => {
-    const pages: (number | "...")[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (currentPage > 3) pages.push("...");
-      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
-        pages.push(i);
-      }
-      if (currentPage < totalPages - 2) pages.push("...");
-      pages.push(totalPages);
-    }
-    return pages;
-  };
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : "bg-[#014167]"}`}>
@@ -559,21 +569,22 @@ export default function CompletedPage() {
           </div>
 
           {/* Pagination */}
-          {totalPages > 1 && (
+          {(currentPage > 1 || hasMore) && (
             <div
               className={`px-4 py-3 border-t flex items-center justify-between ${
                 darkMode ? "bg-gray-800/50 border-gray-700" : "bg-[#014167]/10 border-[#014167]/20"
               }`}
             >
               <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                แสดง {startIndex + 1}-{Math.min(endIndex, filteredCases.length)} จาก {filteredCases.length} เคส
+                หน้า {currentPage} — แสดง {filteredCases.length} เคส
+                {loadingMore && " (กำลังโหลด...)"}
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-2">
                 <button
-                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    currentPage === 1
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1 || loadingMore}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    currentPage === 1 || loadingMore
                       ? darkMode
                         ? "bg-gray-700 text-gray-500 cursor-not-allowed"
                         : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
@@ -582,34 +593,20 @@ export default function CompletedPage() {
                       : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
                   }`}
                 >
-                  ←
+                  ← ก่อนหน้า
                 </button>
-                {getPageNumbers().map((page, idx) =>
-                  page === "..." ? (
-                    <span key={`dots-${idx}`} className={`px-2 py-1 text-xs ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
-                      ...
-                    </span>
-                  ) : (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page as number)}
-                      className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
-                        currentPage === page
-                          ? "bg-[#699D5D] text-white shadow-sm"
-                          : darkMode
-                          ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
-                          : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  )
-                )}
+                <span
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                    darkMode ? "bg-gray-700 text-gray-200" : "bg-[#699D5D] text-white"
+                  }`}
+                >
+                  {currentPage}
+                </span>
                 <button
-                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    currentPage === totalPages
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={!hasMore || loadingMore}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    !hasMore || loadingMore
                       ? darkMode
                         ? "bg-gray-700 text-gray-500 cursor-not-allowed"
                         : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
@@ -618,7 +615,7 @@ export default function CompletedPage() {
                       : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
                   }`}
                 >
-                  →
+                  ถัดไป →
                 </button>
               </div>
             </div>
