@@ -24,11 +24,39 @@ export default function Dashboard() {
     deptRefs.current[deptName]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const initAudioContext = () => {
-    if (!audioContextRef.current && typeof window !== 'undefined') {
-      audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+  const initAudioContext = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      if (!audioContextRef.current) {
+        const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) {
+          audioContextRef.current = new AudioCtx();
+        }
+      }
+      if (audioContextRef.current?.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      initAudioContext();
+      // Remove listeners once unlocked to improve performance
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+
+    document.addEventListener('click', unlockAudio);
+    document.addEventListener('touchstart', unlockAudio);
+    document.addEventListener('keydown', unlockAudio);
+
+    return () => {
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+  }, [initAudioContext]);
 
   const playNotificationSound = useCallback(() => {
     if (!soundEnabled) return;
@@ -61,7 +89,7 @@ export default function Dashboard() {
     playBeep(now);           // First beep
     playBeep(now + 0.6);     // Second beep (starts right after the first one ends + 0.1s gap)
     playBeep(now + 1.2);     // Third beep
-  }, [soundEnabled]);
+  }, [soundEnabled, initAudioContext]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
