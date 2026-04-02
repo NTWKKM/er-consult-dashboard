@@ -39,20 +39,28 @@ export default function Dashboard() {
     if (!audioContextRef.current) return;
 
     const audioContext = audioContextRef.current;
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+    
+    const playBeep = (startTime: number) => {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
 
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
 
-    oscillator.frequency.value = 800;
-    oscillator.type = 'sine';
+      oscillator.frequency.value = 800;
+      oscillator.type = 'sine';
 
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+      gainNode.gain.setValueAtTime(0.8, startTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
 
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.5);
+      oscillator.start(startTime);
+      oscillator.stop(startTime + 0.5);
+    };
+
+    const now = audioContext.currentTime;
+    playBeep(now);           // First beep
+    playBeep(now + 0.6);     // Second beep (starts right after the first one ends + 0.1s gap)
+    playBeep(now + 1.2);     // Third beep
   }, [soundEnabled]);
 
   useEffect(() => {
