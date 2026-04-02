@@ -12,21 +12,24 @@ export default function NavbarControls({ onSoundChange, onDarkModeChange }: Navb
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('soundEnabled');
-      if (saved !== null) {
-        const value = saved === 'true';
-        setSoundEnabled(value);
-        onSoundChange?.(value);
+    const timer = setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('soundEnabled');
+        if (saved !== null) {
+          const value = saved === 'true';
+          setSoundEnabled(value);
+          onSoundChange?.(value);
+        }
+        const savedDarkMode = localStorage.getItem('darkMode');
+        if (savedDarkMode !== null) {
+          const value = savedDarkMode === 'true';
+          setDarkMode(value);
+          onDarkModeChange?.(value);
+        }
       }
-      const savedDarkMode = localStorage.getItem('darkMode');
-      if (savedDarkMode !== null) {
-        const value = savedDarkMode === 'true';
-        setDarkMode(value);
-        onDarkModeChange?.(value);
-      }
-    }
-  }, []);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [onSoundChange, onDarkModeChange]);
 
   const toggleSound = () => {
     const newValue = !soundEnabled;
@@ -51,7 +54,7 @@ export default function NavbarControls({ onSoundChange, onDarkModeChange }: Navb
   return (
     <>
       <button
-        className={`p-2 rounded-lg font-bold shadow-md transition-all duration-200 glow-hover flex items-center gap-1 ${
+        className={`p-1.5 sm:p-2 rounded-lg font-bold shadow-md transition-all duration-200 glow-hover flex items-center gap-1 ${
           soundEnabled 
             ? 'bg-[#699D5D] text-[#FDFCDF]' 
             : 'bg-[#C7CFDA] text-[#014167] hover:bg-[#C7CFDA]/80'
@@ -70,7 +73,7 @@ export default function NavbarControls({ onSoundChange, onDarkModeChange }: Navb
         )}
       </button>
       <button
-        className={`p-2 rounded-lg font-bold shadow-md transition-all duration-200 glow-hover flex items-center gap-1 ${
+        className={`p-1.5 sm:p-2 rounded-lg font-bold shadow-md transition-all duration-200 glow-hover flex items-center gap-1 ${
           darkMode 
             ? 'bg-yellow-500 text-gray-900' 
             : 'bg-[#C7CFDA] text-[#014167] hover:bg-[#C7CFDA]/80'
