@@ -6,6 +6,9 @@ export interface ConsultDepartment {
     completedAt: string | null;
     acceptedAt?: string | null;
     actionStatus?: string;
+    admittedAt?: string | null;
+    returnedAt?: string | null;
+    dischargedAt?: string | null;
 }
 
 export interface Consult {

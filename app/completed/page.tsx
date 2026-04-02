@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { subscribeToConsultsByStatus, updateConsult, Consult, ConsultDepartment } from "@/lib/db";
+import * as XLSX from "xlsx";
 
 export default function CompletedPage() {
   const [cases, setCases] = useState<Consult[]>([]);
@@ -59,6 +60,40 @@ export default function CompletedPage() {
     setSelectedCase(caseData); setNewProblem(""); setSelectedDepartments(Object.keys(caseData.departments)); setShowModal(true);
   };
 
+  const handleExportExcel = () => {
+    const exportData = cases.map(c => {
+      const depts = Object.keys(c.departments).join(', ');
+      
+      const getTimesFor = (key: keyof ConsultDepartment) => {
+        return Object.entries(c.departments)
+          .map(([dept, data]) => {
+            const time = data[key] as string | undefined;
+            return time ? `${dept}: ${new Date(time).toLocaleString('th-TH')}` : null;
+          })
+          .filter(Boolean)
+          .join('\n');
+      };
+
+      return {
+        'HN': c.hn || '-',
+        'ห้อง': c.room || '-',
+        'Dx': c.problem || '-',
+        'แผนก': depts,
+        'วันที่ส่ง': c.createdAt ? new Date(c.createdAt).toLocaleString('th-TH') : '-',
+        'รับเคส': getTimesFor('acceptedAt') || '-',
+        'Admit': getTimesFor('admittedAt') || '-',
+        'คืน ER': getTimesFor('returnedAt') || '-',
+        'D/C': getTimesFor('dischargedAt') || '-',
+        'ปิดเคส': getTimesFor('completedAt') || '-',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Completed Cases');
+    XLSX.writeFile(workbook, `completed-cases-${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   const toggleDepartment = (dept: string) => {
     setSelectedDepartments(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
   };
@@ -98,10 +133,19 @@ export default function CompletedPage() {
         <div className="mb-4 text-center">
           <h1 className="text-2xl font-bold text-[#FDFCDF] mb-2">เคสที่ปรึกษาเสร็จแล้ว</h1>
           <p className="text-[#C7CFDA] text-sm font-medium">แสดง 100 เคสล่าสุด</p>
-          <div className="mt-2 inline-flex items-center gap-2 bg-[#C7CFDA] px-4 py-1.5 rounded-full shadow-sm border border-[#C7CFDA]/30">
-            <span className="text-[#014167] font-semibold text-sm">ทั้งหมด:</span>
-            <span className="text-xl font-bold text-[#014167]">{cases.length}</span>
-            <span className="text-[#014167] text-sm font-medium">เคส</span>
+          <div className="mt-2 flex items-center justify-center gap-4">
+            <div className="inline-flex items-center gap-2 bg-[#C7CFDA] px-4 py-1.5 rounded-full shadow-sm border border-[#C7CFDA]/30">
+              <span className="text-[#014167] font-semibold text-sm">ทั้งหมด:</span>
+              <span className="text-xl font-bold text-[#014167]">{cases.length}</span>
+              <span className="text-[#014167] text-sm font-medium">เคส</span>
+            </div>
+            <button 
+              onClick={handleExportExcel}
+              className="inline-flex items-center gap-2 bg-[#699D5D] hover:bg-[#58854D] text-white px-4 py-1.5 rounded-full shadow-sm font-semibold text-sm transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              Export Excel
+            </button>
           </div>
         </div>
 
@@ -110,23 +154,24 @@ export default function CompletedPage() {
             <table className="w-full">
               <thead className="bg-[#E55143] text-white">
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-bold">HN</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold">ห้อง</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold">ปัญหา</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold">แผนก</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold">วันที่ส่ง</th>
-                  <th className="px-4 py-3 text-center text-sm font-bold">จัดการ</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold w-[10%]">HN</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold w-[10%]">ห้อง</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold w-[20%]">Dx</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold w-[15%]">แผนก</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold w-[10%]">วันที่ส่ง</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold w-[25%]">สถานะ / เวลา</th>
+                  <th className="px-4 py-3 text-center text-sm font-bold w-[10%]">จัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#014167]/10">
                 {currentCases.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-[#014167] font-medium">ไม่มีข้อมูล</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-[#014167] font-medium">ไม่มีข้อมูล</td></tr>
                 ) : (
                   currentCases.map((caseData) => (
-                    <tr key={caseData.id} className="hover:bg-[#014167]/10 transition-colors">
+                    <tr key={caseData.id} className="hover:bg-[#014167]/10 transition-colors align-top">
                       <td className="px-4 py-3 text-sm font-semibold text-[#014167]">{caseData.hn}</td>
                       <td className="px-4 py-3 text-sm text-[#014167] font-medium">{caseData.room}</td>
-                      <td className="px-4 py-3 text-sm text-[#014167] max-w-md"><div className="line-clamp-2">{caseData.problem}</div></td>
+                      <td className="px-4 py-3 text-sm text-[#014167]"><div className="whitespace-pre-wrap">{caseData.problem}</div></td>
                       <td className="px-4 py-3 text-sm">
                         <div className="flex flex-wrap gap-1">
                           {Object.keys(caseData.departments).map(dept => (
@@ -137,8 +182,24 @@ export default function CompletedPage() {
                       <td className="px-4 py-3 text-sm text-[#014167] font-medium">
                         {caseData.createdAt ? new Date(caseData.createdAt).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}
                       </td>
+                      <td className="px-4 py-3 text-sm text-[#014167]">
+                        <div className="flex flex-col gap-1.5 text-[11px] font-medium">
+                          {Object.entries(caseData.departments).map(([dept, data]) => (
+                            <div key={dept} className="bg-white/60 p-1.5 rounded shadow-sm border border-[#014167]/10">
+                              <span className="font-bold border-b border-[#014167]/10 pb-0.5 mb-0.5 block">{dept}</span>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-black/70">
+                                {data.acceptedAt && <div><span className="text-[#014167] font-semibold">รับ:</span> {new Date(data.acceptedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                                {data.admittedAt && <div><span className="text-[#014167] font-semibold">Admit:</span> {new Date(data.admittedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                                {data.returnedAt && <div><span className="text-[#014167] font-semibold">คืน ER:</span> {new Date(data.returnedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                                {data.dischargedAt && <div><span className="text-[#014167] font-semibold">D/C:</span> {new Date(data.dischargedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                                {data.completedAt && <div><span className="text-[#E55143] font-semibold">ปิด:</span> {new Date(data.completedAt).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-center">
-                        <button onClick={() => openReConsultModal(caseData)} className="px-3 py-1.5 bg-[#F1AE9E] text-[#014167] rounded-lg text-xs font-bold hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto">
+                        <button onClick={() => openReConsultModal(caseData)} className="px-3 py-1.5 bg-[#F1AE9E] text-[#014167] rounded-lg text-xs font-bold hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto mt-1">
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                           Re-consult
                         </button>

@@ -52,6 +52,16 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
             acceptedAt: updatedDepartments[dept].acceptedAt || now,
             actionStatus: newStatus
           };
+          
+          if (newStatus === 'รับเคส' && !updatedDepartments[dept].acceptedAt) {
+            updatedDepartments[dept].acceptedAt = now;
+          } else if (newStatus === 'Admit') {
+            updatedDepartments[dept].admittedAt = now;
+          } else if (newStatus === 'คืน ER') {
+            updatedDepartments[dept].returnedAt = now;
+          } else if (newStatus === 'D/C') {
+            updatedDepartments[dept].dischargedAt = now;
+          }
         }
       });
       await updateConsult(caseId, { departments: updatedDepartments });
@@ -124,7 +134,7 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
       </div>
 
       <div className="mb-2 bg-[#014167]/40 p-2 rounded-lg border border-[#FDFCDF]/10">
-        <p className="text-xs text-[#FDFCDF] font-semibold mb-0.5">ปัญหา:</p>
+        <p className="text-xs text-[#FDFCDF] font-semibold mb-0.5">Dx:</p>
         <p className="text-sm text-[#FDFCDF] leading-snug">{problem}</p>
       </div>
 
