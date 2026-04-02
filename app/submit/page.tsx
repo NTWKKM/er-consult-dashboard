@@ -101,7 +101,7 @@ export default function SubmitPage() {
 
       addToast({
         type: "success",
-        message: isUrgent ? "✓ ส่งเคสปรึกษาด่วนสำเร็จ!" : "✓ ส่งเคสปรึกษาสำเร็จ!",
+        message: isUrgent ? "✓ ส่งเคสปรึกษา FAST TRACK สำเร็จ!" : "✓ ส่งเคสปรึกษาสำเร็จ!",
         duration: 3000,
       });
 
@@ -142,37 +142,32 @@ export default function SubmitPage() {
   }, [hn, firstName, lastName, room, problem, selectedDepts]);
 
   const inputClasses = (fieldName: string) =>
-    `w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all duration-200 text-sm ${
-      errors[fieldName]
-        ? "border-[#E55143] focus:border-[#E55143] focus:ring-[#E55143]/20 bg-[#E55143]/5"
-        : darkMode
+    `w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all duration-200 text-sm ${errors[fieldName]
+      ? "border-[#E55143] focus:border-[#E55143] focus:ring-[#E55143]/20 bg-[#E55143]/5"
+      : darkMode
         ? "border-gray-600 bg-gray-700 text-gray-100 placeholder-gray-400 focus:border-[#699D5D] focus:ring-[#699D5D]/20"
         : "border-[#C7CFDA]/30 bg-white text-[#014167] placeholder-[#C7CFDA] focus:border-[#699D5D] focus:ring-[#699D5D]/20"
     }`;
 
-  const labelClasses = `flex items-center gap-1.5 text-xs font-bold mb-2 ${
-    darkMode ? "text-gray-200" : "text-[#014167]"
-  }`;
+  const labelClasses = `flex items-center gap-1.5 text-xs font-bold mb-2 ${darkMode ? "text-gray-200" : "text-[#014167]"
+    }`;
 
   return (
     <div
-      className={`min-h-screen flex items-center justify-center p-3 py-6 transition-colors duration-300 ${
-        darkMode ? "bg-gray-900" : "bg-[#014167]"
-      }`}
+      className={`min-h-screen flex items-center justify-center p-3 py-6 transition-colors duration-300 ${darkMode ? "bg-gray-900" : "bg-[#014167]"
+        }`}
     >
       <div className="relative max-w-4xl w-full">
         <div
-          className={`p-2.5 rounded-xl shadow-md mb-3 z-10 relative border transition-colors ${
-            darkMode
+          className={`p-2.5 rounded-xl shadow-md mb-3 z-10 relative border transition-colors ${darkMode
               ? "bg-gray-700 text-gray-100 border-gray-600"
               : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
-          }`}
+            }`}
         >
           <div className="flex items-center justify-center gap-2">
             <div
-              className={`w-8 h-8 backdrop-blur-sm rounded-lg flex items-center justify-center ${
-                darkMode ? "bg-gray-600" : "bg-[#014167]/20"
-              }`}
+              className={`w-8 h-8 backdrop-blur-sm rounded-lg flex items-center justify-center ${darkMode ? "bg-gray-600" : "bg-[#014167]/20"
+                }`}
             >
               <svg
                 className={`w-4 h-4 ${darkMode ? "text-gray-200" : "text-[#014167]"}`}
@@ -196,9 +191,8 @@ export default function SubmitPage() {
         </div>
 
         <div
-          className={`p-5 md:p-6 rounded-xl shadow-md relative z-0 border transition-colors ${
-            darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
-          }`}
+          className={`p-5 md:p-6 rounded-xl shadow-md relative z-0 border transition-colors ${darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
+            }`}
         >
           <form className="space-y-4">
             {/* HN + Name row */}
@@ -334,9 +328,8 @@ export default function SubmitPage() {
                 {ALL_DEPARTMENTS.map((dept) => (
                   <div
                     key={dept}
-                    className={`relative cursor-pointer transition-all duration-200 ${
-                      selectedDepts.includes(dept) ? "scale-105" : ""
-                    }`}
+                    className={`relative cursor-pointer transition-all duration-200 ${selectedDepts.includes(dept) ? "scale-105" : ""
+                      }`}
                   >
                     <input
                       type="checkbox"
@@ -348,13 +341,12 @@ export default function SubmitPage() {
                     />
                     <label
                       htmlFor={dept}
-                      className={`flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer transition-all duration-200 font-semibold text-xs ${
-                        selectedDepts.includes(dept)
+                      className={`flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer transition-all duration-200 font-semibold text-xs ${selectedDepts.includes(dept)
                           ? "bg-[#699D5D] text-white border-[#699D5D] shadow-sm"
                           : darkMode
-                          ? "bg-gray-700 text-gray-200 border-gray-600 hover:border-[#699D5D]/50 hover:bg-gray-600"
-                          : "bg-white text-[#014167] border-[#C7CFDA] hover:border-[#699D5D]/50 hover:bg-[#C7CFDA]/30"
-                      }`}
+                            ? "bg-gray-700 text-gray-200 border-gray-600 hover:border-[#699D5D]/50 hover:bg-gray-600"
+                            : "bg-white text-[#014167] border-[#C7CFDA] hover:border-[#699D5D]/50 hover:bg-[#C7CFDA]/30"
+                        }`}
                     >
                       {selectedDepts.includes(dept) && (
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -369,11 +361,10 @@ export default function SubmitPage() {
               {errors.departments && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.departments}</p>}
               {selectedDepts.length > 0 && (
                 <div
-                  className={`mt-2 p-2 rounded-lg border ${
-                    darkMode
+                  className={`mt-2 p-2 rounded-lg border ${darkMode
                       ? "bg-[#699D5D]/10 border-[#699D5D]/30"
                       : "bg-[#699D5D]/10 border-[#699D5D]/30"
-                  }`}
+                    }`}
                 >
                   <p className={`text-xs font-medium ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
                     ✓ {selectedDepts.length} แผนก:{" "}
@@ -393,11 +384,10 @@ export default function SubmitPage() {
                   type="button"
                   onClick={() => handleSubmit(false)}
                   disabled={isLoading}
-                  className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${
-                    isLoading
+                  className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
                       ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
                       : "bg-[#699D5D] text-white hover:shadow-md transform hover:-translate-y-0.5"
-                  }`}
+                    }`}
                 >
                   {isLoading ? (
                     <>
@@ -417,11 +407,10 @@ export default function SubmitPage() {
                   type="button"
                   onClick={() => handleSubmit(true)}
                   disabled={isLoading}
-                  className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${
-                    isLoading
+                  className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
                       ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
                       : "bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5 pulse-urgent"
-                  }`}
+                    }`}
                 >
                   {isLoading ? (
                     <>

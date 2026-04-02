@@ -191,7 +191,7 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
                 </h3>
                 {isUrgent && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-[#E55143] text-white shadow-md">
-                    ด่วน
+                    FAST
                   </span>
                 )}
               </div>
