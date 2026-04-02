@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { updateConsult } from "@/lib/db";
 
-import { Consult, ConsultDepartment } from "@/lib/db";
+import { Consult, ConsultDepartment, getConsultById } from "@/lib/db";
 
 interface ConsultCardProps {
   caseData: Consult;
@@ -41,7 +41,10 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
     if (isUpdating) return;
     setIsUpdating(true);
     try {
-      const updatedDepartments = { ...caseData.departments };
+      const latestCaseData = await getConsultById(caseId);
+      if (!latestCaseData) throw new Error("Case not found");
+      
+      const updatedDepartments = { ...latestCaseData.departments };
       const isSurgeryDept = SURGERY_DEPTS.includes(departmentName);
       const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
       const now = new Date().toISOString();
@@ -76,7 +79,10 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
     if (isUpdating || isCompleted) return;
     setIsUpdating(true);
     try {
-      const updatedDepartments = { ...caseData.departments };
+      const latestCaseData = await getConsultById(caseId);
+      if (!latestCaseData) throw new Error("Case not found");
+      
+      const updatedDepartments = { ...latestCaseData.departments };
       updatedDepartments[departmentName] = {
         ...updatedDepartments[departmentName],
         status: "completed",
