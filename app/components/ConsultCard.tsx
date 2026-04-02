@@ -156,12 +156,12 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
           darkMode
             ? `bg-gray-800 ${
                 isUrgent
-                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent bg-[#E55143]/10"
+                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent"
                   : "border-l-4 border-gray-700"
               }`
             : `bg-[#C7CFDA] ${
                 isUrgent
-                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent bg-[#E55143]/10"
+                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent"
                   : "border-l-4 border-[#699D5D]/50"
               }`
         }`}
