@@ -17,7 +17,6 @@ export default function Dashboard() {
   const [roomFilter, setRoomFilter] = useState<'all' | 'resus' | 'non-resus'>('all');
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
-  const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   const previousCaseCountRef = useRef(0);
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -125,19 +124,6 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const handleOnline = () => setIsOnline(true);
-      const handleOffline = () => setIsOnline(false);
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
-      return () => {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
-      };
-    }
-  }, []);
-
-  useEffect(() => {
     if (allCases.length > previousCaseCountRef.current && previousCaseCountRef.current > 0) {
       playNotificationSound();
     }
@@ -227,14 +213,6 @@ export default function Dashboard() {
               <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-[#FDFCDF]'}`}>
                 ER-MNRH Consult Dashboard
               </h1>
-            </div>
-            
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA]/20 border-[#FDFCDF]/30'} shadow-md backdrop-blur-sm self-center ml-0 sm:ml-2`}>
-              <span className="relative flex h-3 w-3">
-                {isOnline && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>}
-                <span className={`relative inline-flex rounded-full h-3 w-3 ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></span>
-              </span>
-              <span className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-[#FDFCDF]'}`}>{isOnline ? 'Live' : 'Offline'}</span>
             </div>
           </div>
           <div className="flex flex-row flex-wrap items-center justify-center gap-2">            <div className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-[#C7CFDA] border-[#014167]/30'} border`}>

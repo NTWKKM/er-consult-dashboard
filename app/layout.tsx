@@ -4,6 +4,7 @@ import "./globals.css";
 import Link from "next/link";
 import BottomNav from "./components/BottomNav";
 import NavbarControls from "./components/NavbarControls";
+import ConnectionStatus from "./components/ConnectionStatus";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -30,7 +31,10 @@ export default function RootLayout({
                   </svg>
                 </div>
                 <div>
-                  <div className="text-lg font-bold text-[#FDFCDF] drop-shadow-sm">ER Consult</div>
+                  <div className="text-lg font-bold text-[#FDFCDF] drop-shadow-sm flex items-center gap-2">
+                    ER Consult
+                    <ConnectionStatus />
+                  </div>
                   <div className="text-xs text-[#C7CFDA] font-medium">MNRH</div>
                 </div>
               </Link>
