@@ -223,7 +223,7 @@ export default function Dashboard() {
                 className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${roomFilter === 'all' ? 'bg-[#014167] text-white' : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-[#014167] hover:bg-white/50'}`}
                 onClick={() => setRoomFilter('all')}
               >
-                ทั้งหมด
+                All
               </button>
             </div>
 
