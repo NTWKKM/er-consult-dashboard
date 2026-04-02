@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import ConsultCard from "@/app/components/ConsultCard";
+import LoadingSpinner from "@/app/components/LoadingSpinner";
+import ErrorState from "@/app/components/ErrorState";
 import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
 
 const SURGERY_DEPTS = ["Gen Sx", "Sx Trauma", "Neuro Sx", "Sx Vascular", "Sx Plastic", "Uro Sx", "CVT", "PED SX"];
@@ -15,6 +17,7 @@ export default function Dashboard() {
   const [roomFilter, setRoomFilter] = useState<'all' | 'resus' | 'non-resus'>('all');
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   const previousCaseCountRef = useRef(0);
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -122,6 +125,19 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handleOnline = () => setIsOnline(true);
+      const handleOffline = () => setIsOnline(false);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
     if (allCases.length > previousCaseCountRef.current && previousCaseCountRef.current > 0) {
       playNotificationSound();
     }
@@ -188,34 +204,11 @@ export default function Dashboard() {
   const totalPendingCases = filteredAllCases.length;
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block w-16 h-16 border-4 border-[#E55143] border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-xl text-[#FDFCDF] font-semibold">กำลังโหลดข้อมูล...</p>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner />;
   }
 
   if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center bg-[#C7CFDA] rounded-xl shadow-lg p-8 max-w-md border border-[#E55143]/30">
-          <svg className="w-16 h-16 mx-auto text-[#E55143] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h2 className="text-xl font-bold text-[#014167] mb-2">เกิดข้อผิดพลาด</h2>
-          <p className="text-[#014167] mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-[#699D5D] text-[#FDFCDF] rounded-lg font-bold hover:shadow-lg transition-all glow-hover"
-          >
-            โหลดใหม่
-          </button>
-        </div>
-      </div>
-    );
+    return <ErrorState error={error} onRetry={() => window.location.reload()} />;
   }
 
 
@@ -235,6 +228,14 @@ export default function Dashboard() {
             </h1>
           </div>
           <div className="flex flex-row flex-wrap items-center justify-center gap-2">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#014167]/30'} shadow-md`}>
+              <span className="relative flex h-3 w-3">
+                {isOnline && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>}
+                <span className={`relative inline-flex rounded-full h-3 w-3 ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></span>
+              </span>
+              <span className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>{isOnline ? 'Live' : 'Offline'}</span>
+            </div>
+
             <div className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-[#C7CFDA] border-[#014167]/30'} border`}>
               <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>เคสรอปรึกษา:</span>
               <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#E55143] pulse-urgent' : darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
@@ -355,11 +356,11 @@ export default function Dashboard() {
                         </span>
                       </div>
                       {cases.length === 0 ? (
-                        <div className="text-center py-4 px-3 bg-[#014167]/40 rounded-lg border border-[#FDFCDF]/10">
-                          <svg className="w-10 h-10 mx-auto text-[#FDFCDF] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className={`text-center py-4 px-3 rounded-lg border flex flex-col items-center justify-center ${darkMode ? 'bg-gray-800/80 border-gray-700 shadow-inner' : 'bg-[#FDFCDF]/90 border-[#014167]/20 shadow-inner'}`}>
+                          <svg className={`w-10 h-10 mx-auto mb-2 opacity-80 ${darkMode ? 'text-gray-400' : 'text-[#014167]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="text-[#014167] font-medium text-xs">ไม่มีเคสค้าง</p>
+                          <p className={`font-medium text-xs ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>ไม่มีเคสค้าง</p>
                         </div>
                       ) : (
                         cases.map(caseData => (
@@ -409,11 +410,11 @@ export default function Dashboard() {
                         </span>
                       </div>
                       {cases.length === 0 ? (
-                        <div className="text-center py-4 px-3 bg-[#014167]/40 rounded-lg border border-[#FDFCDF]/10">
-                          <svg className="w-10 h-10 mx-auto text-[#FDFCDF] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className={`text-center py-4 px-3 rounded-lg border flex flex-col items-center justify-center ${darkMode ? 'bg-gray-800/80 border-gray-700 shadow-inner' : 'bg-[#FDFCDF]/90 border-[#014167]/20 shadow-inner'}`}>
+                          <svg className={`w-10 h-10 mx-auto mb-2 opacity-80 ${darkMode ? 'text-gray-400' : 'text-[#014167]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="text-[#014167] font-medium text-xs">ไม่มีเคสค้าง</p>
+                          <p className={`font-medium text-xs ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>ไม่มีเคสค้าง</p>
                         </div>
                       ) : (
                         <div className={view === 'ortho' ? 'grid grid-cols-1 md:grid-cols-2 gap-2' : 'flex flex-col gap-2'}>

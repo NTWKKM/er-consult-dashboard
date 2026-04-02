@@ -77,6 +77,10 @@ export default function ConsultCard({ caseData, caseId, departmentName, darkMode
 
   const handleCompleteCase = async () => {
     if (isUpdating || isCompleted) return;
+    
+    const confirmMessage = `คุณแน่ใจหรือไม่ที่จะปิดเคสของ HN: ${hn} แผนก: ${departmentName}?`;
+    if (!window.confirm(confirmMessage)) return;
+
     setIsUpdating(true);
     try {
       const latestCaseData = await getConsultById(caseId);
