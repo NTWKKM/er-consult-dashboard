@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
 
 export interface ConsultDepartment {
     status: "pending" | "completed";
@@ -14,6 +14,8 @@ export interface ConsultDepartment {
 export interface Consult {
     id: string;
     hn: string;
+    firstName: string;
+    lastName: string;
     room: string;
     problem: string;
     createdAt: string; // ISO string
@@ -28,18 +30,29 @@ const COLLECTION_NAME = "consults";
 export function subscribeToConsultsByStatus(
     status: "pending" | "completed",
     onData: (consults: Consult[]) => void,
-    onError?: (error: Error) => void
+    onError?: (error: Error) => void,
+    maxResults?: number
 ): () => void {
-    const q = query(
+    let q = query(
         collection(db, COLLECTION_NAME),
         where("status", "==", status),
         orderBy("createdAt", "desc")
     );
+    
+    if (maxResults) {
+        q = query(q, limit(maxResults));
+    }
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const consults: Consult[] = [];
         querySnapshot.forEach((document) => {
-            consults.push({ id: document.id, ...document.data() } as Consult);
+            const data = document.data();
+            consults.push({
+                id: document.id,
+                firstName: data.firstName || "",
+                lastName: data.lastName || "",
+                ...data,
+            } as Consult);
         });
         
         // Perform memory sort to prioritize urgent cases first
@@ -62,7 +75,13 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
     const docRef = doc(db, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-        return { id: docSnap.id, ...docSnap.data() } as Consult;
+        const data = docSnap.data();
+        return {
+            id: docSnap.id,
+            firstName: data.firstName || "",
+            lastName: data.lastName || "",
+            ...data,
+        } as Consult;
     }
     return undefined;
 }

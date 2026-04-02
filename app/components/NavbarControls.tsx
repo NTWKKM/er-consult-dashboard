@@ -1,66 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSettings } from "../contexts/SettingsContext";
 
-interface NavbarControlsProps {
-  onSoundChange?: (enabled: boolean) => void;
-  onDarkModeChange?: (enabled: boolean) => void;
-}
-
-export default function NavbarControls({ onSoundChange, onDarkModeChange }: NavbarControlsProps) {
-  const [soundEnabled, setSoundEnabled] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem('soundEnabled');
-        if (saved !== null) {
-          const value = saved === 'true';
-          setSoundEnabled(value);
-          onSoundChange?.(value);
-        }
-        const savedDarkMode = localStorage.getItem('darkMode');
-        if (savedDarkMode !== null) {
-          const value = savedDarkMode === 'true';
-          setDarkMode(value);
-          onDarkModeChange?.(value);
-        }
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [onSoundChange, onDarkModeChange]);
-
-  const toggleSound = () => {
-    const newValue = !soundEnabled;
-    setSoundEnabled(newValue);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('soundEnabled', String(newValue));
-      window.dispatchEvent(new CustomEvent('soundChanged', { detail: newValue }));
-    }
-    onSoundChange?.(newValue);
-  };
-
-  const toggleDarkMode = () => {
-    const newValue = !darkMode;
-    setDarkMode(newValue);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('darkMode', String(newValue));
-      window.dispatchEvent(new CustomEvent('darkModeChanged', { detail: newValue }));
-    }
-    onDarkModeChange?.(newValue);
-  };
+export default function NavbarControls() {
+  const { soundEnabled, darkMode, toggleSound, toggleDarkMode } = useSettings();
 
   return (
     <>
       <button
         className={`p-1.5 sm:p-2 rounded-lg font-bold shadow-md transition-all duration-200 glow-hover flex items-center gap-1 ${
-          soundEnabled 
-            ? 'bg-[#699D5D] text-[#FDFCDF]' 
-            : 'bg-[#C7CFDA] text-[#014167] hover:bg-[#C7CFDA]/80'
+          soundEnabled
+            ? "bg-[#699D5D] text-[#FDFCDF]"
+            : darkMode
+            ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
+            : "bg-[#C7CFDA] text-[#014167] hover:bg-[#C7CFDA]/80"
         }`}
         onClick={toggleSound}
-        title={soundEnabled ? 'ปิดเสียงแจ้งเตือน' : 'เปิดเสียงแจ้งเตือน'}
+        title={soundEnabled ? "ปิดเสียงแจ้งเตือน" : "เปิดเสียงแจ้งเตือน"}
       >
         {soundEnabled ? (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -74,12 +30,12 @@ export default function NavbarControls({ onSoundChange, onDarkModeChange }: Navb
       </button>
       <button
         className={`p-1.5 sm:p-2 rounded-lg font-bold shadow-md transition-all duration-200 glow-hover flex items-center gap-1 ${
-          darkMode 
-            ? 'bg-yellow-500 text-gray-900' 
-            : 'bg-[#C7CFDA] text-[#014167] hover:bg-[#C7CFDA]/80'
+          darkMode
+            ? "bg-yellow-500 text-gray-900"
+            : "bg-[#C7CFDA] text-[#014167] hover:bg-[#C7CFDA]/80"
         }`}
         onClick={toggleDarkMode}
-        title={darkMode ? 'โหมดกลางวัน' : 'โหมดกลางคืน'}
+        title={darkMode ? "โหมดกลางวัน" : "โหมดกลางคืน"}
       >
         {darkMode ? (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

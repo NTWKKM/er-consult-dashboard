@@ -27,6 +27,11 @@ body {
   color: #FDFCDF;
 }
 
+.dark body {
+  background: #111827;
+}
+
+/* Card shadows */
 .card-shadow {
   box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.3), 
               0 2px 4px -2px rgba(1, 65, 103, 0.2);
@@ -38,6 +43,7 @@ body {
               0 0 20px rgba(253, 252, 223, 0.1);
 }
 
+/* Urgent pulse */
 .pulse-urgent {
   animation: pulse-urgent 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
@@ -53,6 +59,7 @@ body {
   }
 }
 
+/* Slide in */
 .slide-in {
   animation: slideIn 0.3s ease-out;
 }
@@ -68,7 +75,94 @@ body {
   }
 }
 
+/* Glow hover */
 .glow-hover:hover {
   box-shadow: 0 0 20px rgba(253, 252, 223, 0.3);
   transition: all 0.3s ease;
+}
+
+/* Toast slide-in animation */
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Fade in */
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Scale in for modals */
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Staggered card animation */
+.animate-stagger-in {
+  animation: staggerIn 0.4s ease-out both;
+}
+
+@keyframes staggerIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Skeleton loading shimmer */
+.skeleton {
+  background: linear-gradient(90deg, #C7CFDA 25%, #dfe4eb 50%, #C7CFDA 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite ease-in-out;
+  border-radius: 8px;
+}
+
+.dark .skeleton {
+  background: linear-gradient(90deg, #374151 25%, #4B5563 50%, #374151 75%);
+  background-size: 200% 100%;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Elapsed time ticker */
+@keyframes tick {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
+}
+
+.elapsed-tick {
+  animation: tick 1s ease-in-out infinite alternate;
 }
