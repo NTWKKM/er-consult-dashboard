@@ -217,26 +217,27 @@ export default function Dashboard() {
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : ''}`}>
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         <div className="mb-4 text-center slide-in">
-          <div className="inline-flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-[#E55143] rounded-lg flex items-center justify-center shadow-lg">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-3">
+            <div className="inline-flex items-center gap-3">
+              <div className="w-10 h-10 bg-[#E55143] rounded-lg flex items-center justify-center shadow-lg">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </div>
+              <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-[#FDFCDF]'}`}>
+                ER-MNRH Consult Dashboard
+              </h1>
             </div>
-            <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-[#FDFCDF]'}`}>
-              ER-MNRH Consult Dashboard
-            </h1>
-          </div>
-          <div className="flex flex-row flex-wrap items-center justify-center gap-2">
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA] border-[#014167]/30'} shadow-md`}>
+            
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#C7CFDA]/20 border-[#FDFCDF]/30'} shadow-md backdrop-blur-sm self-center ml-0 sm:ml-2`}>
               <span className="relative flex h-3 w-3">
                 {isOnline && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>}
                 <span className={`relative inline-flex rounded-full h-3 w-3 ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></span>
               </span>
-              <span className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>{isOnline ? 'Live' : 'Offline'}</span>
+              <span className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-[#FDFCDF]'}`}>{isOnline ? 'Live' : 'Offline'}</span>
             </div>
-
-            <div className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-[#C7CFDA] border-[#014167]/30'} border`}>
+          </div>
+          <div className="flex flex-row flex-wrap items-center justify-center gap-2">            <div className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-[#C7CFDA] border-[#014167]/30'} border`}>
               <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-[#014167]'}`}>เคสรอปรึกษา:</span>
               <span className={`text-2xl font-bold ${totalPendingCases > 0 ? 'text-[#E55143] pulse-urgent' : darkMode ? 'text-gray-300' : 'text-[#014167]'}`}>
                 {totalPendingCases}
