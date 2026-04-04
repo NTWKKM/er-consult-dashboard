@@ -25,7 +25,9 @@ export const ROOMS = [
   "SSW",
 ] as const;
 
-export const ACTION_STATUSES = ["รับเคส", "Admit", "คืน ER", "D/C"] as const;
+export const ACCEPT_STATUS = "รับเคส" as const;
+export const POST_ACCEPT_STATUSES = ["Admit", "คืน ER", "D/C"] as const;
+export const ACTION_STATUSES = [ACCEPT_STATUS, ...POST_ACCEPT_STATUSES] as const;
 
 export type DepartmentName = (typeof ALL_DEPARTMENTS)[number];
 export type RoomName = (typeof ROOMS)[number];

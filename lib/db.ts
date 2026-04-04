@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 
 export interface ConsultDepartment {
@@ -146,4 +146,9 @@ export async function updateConsult(
     await updateDoc(docRef, updates);
     
     return { id, ...docSnap.data(), ...updates } as Consult;
+}
+
+export async function deleteConsult(id: string): Promise<void> {
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await deleteDoc(docRef);
 }
