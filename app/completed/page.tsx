@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment } from "@/lib/db";
+import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport } from "@/lib/db";
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS } from "@/lib/constants";
 import { useSettings } from "../contexts/SettingsContext";
@@ -20,10 +20,20 @@ export default function CompletedPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
+  // Server-side Search
+  const [searchResults, setSearchResults] = useState<Consult[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+
   // Search & Filter
   const [searchHN, setSearchHN] = useState("");
   const [filterDept, setFilterDept] = useState("");
   const [filterDate, setFilterDate] = useState("");
+
+  // Export
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   const { darkMode } = useSettings();
   const { addToast } = useToast();
@@ -72,22 +82,24 @@ export default function CompletedPage() {
 
   // Filtered cases
   const filteredCases = useMemo(() => {
-    return cases.filter((c) => {
-      // HN search
+    const baseCases = searchResults !== null ? searchResults : cases;
+    return baseCases.filter((c) => {
+      // HN search (client side fallback if searchResults isn't exact or if using cases)
       if (searchHN && !c.hn.includes(searchHN)) return false;
 
       // Department filter
       if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
 
-      // Date filter
+      // Date filter (client side fallback)
       if (filterDate) {
+        if (!c.createdAt) return false;
         const caseDate = new Date(c.createdAt).toISOString().split("T")[0];
         if (caseDate !== filterDate) return false;
       }
 
       return true;
     });
-  }, [cases, searchHN, filterDept, filterDate]);
+  }, [cases, searchResults, searchHN, filterDept, filterDate]);
 
   const handleReConsult = async () => {
     if (!selectedCase || !newProblem.trim()) {
@@ -131,43 +143,65 @@ export default function CompletedPage() {
   };
 
   const handleExportExcel = async () => {
-    // Dynamic import to reduce bundle size
-    const XLSX = (await import("xlsx")).default;
+    if (!exportStartDate || !exportEndDate) {
+      addToast({ type: "error", message: "กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด" });
+      return;
+    }
 
-    const exportData = filteredCases.map((c) => {
-      const depts = Object.keys(c.departments).join(", ");
+    setIsExporting(true);
+    try {
+      const exportList = await fetchAllCompletedConsultsForExport(exportStartDate, exportEndDate);
+      
+      if (exportList.length === 0) {
+        addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
+        setIsExporting(false);
+        return;
+      }
 
-      const getTimesFor = (key: keyof ConsultDepartment) => {
-        return Object.entries(c.departments)
-          .map(([dept, data]) => {
-            const time = data[key] as string | undefined;
-            return time ? `${dept}: ${new Date(time).toLocaleString("th-TH")}` : null;
-          })
-          .filter(Boolean)
-          .join("\n");
-      };
+      // Dynamic import to reduce bundle size
+      const XLSX = (await import("xlsx")).default;
 
-      return {
-        HN: c.hn || "-",
-        ชื่อ: c.firstName || "-",
-        นามสกุล: c.lastName || "-",
-        ห้อง: c.room || "-",
-        Dx: c.problem || "-",
-        แผนก: depts,
-        วันที่ส่ง: c.createdAt ? new Date(c.createdAt).toLocaleString("th-TH") : "-",
-        รับเคส: getTimesFor("acceptedAt") || "-",
-        Admit: getTimesFor("admittedAt") || "-",
-        "คืน ER": getTimesFor("returnedAt") || "-",
-        "D/C": getTimesFor("dischargedAt") || "-",
-        ปิดเคส: getTimesFor("completedAt") || "-",
-      };
-    });
+      const exportData = exportList.map((c) => {
+        const depts = Object.keys(c.departments).join(", ");
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Cases");
-    XLSX.writeFile(workbook, `completed-cases-${new Date().toISOString().split("T")[0]}.xlsx`);
-    addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
+        const getTimesFor = (key: keyof ConsultDepartment) => {
+          return Object.entries(c.departments)
+            .map(([dept, data]) => {
+              const time = data[key] as string | undefined;
+              return time ? `${dept}: ${new Date(time).toLocaleString("th-TH")}` : null;
+            })
+            .filter(Boolean)
+            .join("\n");
+        };
+
+        return {
+          HN: c.hn || "-",
+          ชื่อ: c.firstName || "-",
+          นามสกุล: c.lastName || "-",
+          ห้อง: c.room || "-",
+          Dx: c.problem || "-",
+          แผนก: depts,
+          วันที่ส่ง: c.createdAt ? new Date(c.createdAt).toLocaleString("th-TH") : "-",
+          รับเคส: getTimesFor("acceptedAt") || "-",
+          Admit: getTimesFor("admittedAt") || "-",
+          "คืน ER": getTimesFor("returnedAt") || "-",
+          "D/C": getTimesFor("dischargedAt") || "-",
+          ปิดเคส: getTimesFor("completedAt") || "-",
+        };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Cases");
+      XLSX.writeFile(workbook, `completed-cases-${exportStartDate}-to-${exportEndDate}.xlsx`);
+      addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการ Export" });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const toggleDepartment = (dept: string) => {
@@ -179,13 +213,27 @@ export default function CompletedPage() {
   // With cursor pagination, display the current page's filtered cases directly
   const currentCases = filteredCases;
 
-  // Reset to page 1 and re-fetch when filters change
+  // Server-side search when searchHN or filterDate changes
   useEffect(() => {
-    setCurrentPage(1);
-    fetchPage(1);
-    cursorMapRef.current.clear();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchHN, filterDept, filterDate]);
+    if (!searchHN && !filterDate) {
+      setSearchResults(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await searchCompletedConsults(searchHN, filterDate);
+        setSearchResults(results);
+      } catch (err) {
+        console.error("Search error:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [searchHN, filterDate]);
 
   if (loading) {
     return (
@@ -238,12 +286,12 @@ export default function CompletedPage() {
             >
               <span className={`font-semibold text-sm ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>ผลการค้นหา:</span>
               <span className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
-                {filteredCases.length}
+                {isSearching ? "..." : filteredCases.length}
               </span>
               <span className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>เคส</span>
             </div>
             <button
-              onClick={handleExportExcel}
+              onClick={() => setShowExportModal(true)}
               className="inline-flex items-center gap-2 bg-[#699D5D] hover:bg-[#58854D] text-white px-4 py-1.5 rounded-full shadow-sm font-semibold text-sm transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -733,6 +781,107 @@ export default function CompletedPage() {
                       />
                     </svg>
                     <span>ส่งปรึกษาใหม่</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Options Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-[#000000]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div
+            className={`rounded-xl shadow-xl max-w-md w-full p-6 border animate-scale-in ${
+              darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
+                Export ข้อมูล Excel
+              </h2>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className={`transition-colors ${darkMode ? "text-gray-400 hover:text-red-400" : "text-[#014167] hover:text-[#E55143]"}`}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <p className={`text-sm ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+                กรุณาเลือกช่วงวันที่เริ่มต้นและสิ้นสุดของข้อมูลที่ต้องการ Export
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                    ตั้งแต่วันที่
+                  </label>
+                  <input
+                    type="date"
+                    value={exportStartDate}
+                    onChange={(e) => setExportStartDate(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
+                      darkMode
+                        ? "bg-gray-900 border-gray-700 text-gray-200"
+                        : "bg-white border-[#C7CFDA] text-[#014167]"
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                    ถึงวันที่
+                  </label>
+                  <input
+                    type="date"
+                    value={exportEndDate}
+                    onChange={(e) => setExportEndDate(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
+                      darkMode
+                        ? "bg-gray-900 border-gray-700 text-gray-200"
+                        : "bg-white border-[#C7CFDA] text-[#014167]"
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowExportModal(false)}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all text-sm ${
+                  darkMode
+                    ? "bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600"
+                    : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
+                }`}
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={isExporting || !exportStartDate || !exportEndDate}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
+                  isExporting || !exportStartDate || !exportEndDate
+                    ? darkMode
+                      ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                      : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
+                    : "bg-[#699D5D] text-white hover:shadow-md"
+                }`}
+              >
+                {isExporting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>กำลังดึงข้อมูล...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Export</span>
                   </>
                 )}
               </button>

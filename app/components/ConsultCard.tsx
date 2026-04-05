@@ -371,9 +371,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           </div>
 
           {!isCompleted && (
-            <div className="flex gap-2">
-              {!isAccepted ? (
-                <>
+            <div className="flex flex-col gap-1">
+              <div className="flex gap-2">
+                {!isAccepted ? (
+                  <>
                   <button
                     onClick={handleAcceptCase}
                     disabled={isUpdating}
@@ -403,8 +404,8 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     disabled
                     className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs cursor-not-allowed flex items-center justify-center gap-1 ${
                       darkMode
-                        ? "bg-gray-700/50 text-gray-500"
-                        : "bg-[#C7CFDA]/50 text-[#014167]/30"
+                        ? "bg-gray-800 border border-gray-700 text-gray-500"
+                        : "bg-gray-200 border border-gray-300 text-gray-400 shadow-inner"
                     }`}
                     title="ต้องรับเคสก่อนจึงจะปิดเคสได้"
                   >
@@ -475,6 +476,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     )}
                   </button>
                 </>
+              )}
+              </div>
+              {!isAccepted && (
+                <div className={`text-center text-[10px] w-full pt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+                  * ต้องรับเคสก่อนจึงจะปิดเคสได้
+                </div>
               )}
             </div>
           )}

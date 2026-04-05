@@ -312,7 +312,7 @@ export default function Dashboard() {
                   <button
                     key={dept}
                     onClick={() => scrollToDepartment(dept)}
-                    className={`rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
+                    className={`rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
                       darkMode
                         ? `bg-gray-700 hover:text-white text-gray-200 ${
                             isSurgery
@@ -380,7 +380,7 @@ export default function Dashboard() {
                       <div
                         className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                           darkMode
-                            ? "bg-gray-800 border-gray-700"
+                            ? "bg-[#E55143]/10 border-[#E55143]/20"
                             : "bg-[#012a47] border-[#E55143]/20"
                         }`}
                       >
@@ -480,7 +480,7 @@ export default function Dashboard() {
                       <div
                         className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                           darkMode
-                            ? "bg-gray-800 border-gray-700"
+                            ? "bg-[#699D5D]/10 border-[#699D5D]/20"
                             : "bg-[#014a3d] border-[#699D5D]/20"
                         }`}
                       >

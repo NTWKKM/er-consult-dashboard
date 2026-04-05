@@ -107,6 +107,78 @@ export async function fetchCompletedConsultsPage(
     };
 }
 
+/**
+ * Search completed consults by exact HN or date range.
+ * This provides server-side filtering to bypass pagination limitations.
+ */
+export async function searchCompletedConsults(
+    searchHN?: string,
+    filterDate?: string
+): Promise<Consult[]> {
+    let consults: Consult[] = [];
+
+    // If searching by HN, query by exact HN first, then filter completed/date locally.
+    // This avoids requiring a new composite index.
+    if (searchHN) {
+        const q = query(
+            collection(db, COLLECTION_NAME),
+            where("hn", "==", searchHN)
+        );
+        const snapshot = await getDocs(q);
+        
+        consults = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as Consult))
+            .filter(c => c.status === "completed");
+
+        if (filterDate) {
+            consults = consults.filter(c => c.createdAt && c.createdAt.startsWith(filterDate));
+        }
+
+        return consults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+
+    // If only filtering by date, use the existing status + createdAt index
+    if (filterDate) {
+        const startStr = filterDate + "T00:00:00.000Z";
+        const endStr = filterDate + "T23:59:59.999Z";
+        
+        const q = query(
+            collection(db, COLLECTION_NAME),
+            where("status", "==", "completed"),
+            where("createdAt", ">=", startStr),
+            where("createdAt", "<=", endStr),
+            orderBy("createdAt", "desc")
+        );
+        
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Consult));
+    }
+
+    return [];
+}
+
+/**
+ * Fetch all completed cases within a date range (for exporting).
+ */
+export async function fetchAllCompletedConsultsForExport(
+    startDate: string,
+    endDate: string
+): Promise<Consult[]> {
+    const startStr = startDate + "T00:00:00.000Z";
+    const endStr = endDate + "T23:59:59.999Z";
+
+    const q = query(
+        collection(db, COLLECTION_NAME),
+        where("status", "==", "completed"),
+        where("createdAt", ">=", startStr),
+        where("createdAt", "<=", endStr),
+        orderBy("createdAt", "desc")
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Consult));
+}
+
 export async function getConsultById(id: string): Promise<Consult | undefined> {
     const docRef = doc(db, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
