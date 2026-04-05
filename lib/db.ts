@@ -245,24 +245,31 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
     return newConsult;
 }
 
+export type ConsultUpdater = (current: Consult) => Partial<Omit<Consult, "id">>;
+
 export async function updateConsult(
     id: string,
-    updates: Partial<Omit<Consult, "id">>
+    updater: ConsultUpdater | Partial<Omit<Consult, "id">>
 ): Promise<Consult | null> {
     const docRef = doc(db, COLLECTION_NAME, id);
     return await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
         if (!docSnap.exists()) return null;
 
+        const currentData = {
+            ...docSnap.data(),
+            id: docSnap.id,
+            firstName: docSnap.data().firstName ?? "",
+            lastName: docSnap.data().lastName ?? "",
+        } as Consult;
+
+        const updates = typeof updater === "function" ? updater(currentData) : updater;
+
         transaction.update(docRef, updates);
 
-        const data = docSnap.data();
         return {
-            ...data,
+            ...currentData,
             ...updates,
-            id,
-            firstName: (updates.firstName ?? data.firstName) ?? "",
-            lastName: (updates.lastName ?? data.lastName) ?? "",
         } as Consult;
     });
 }

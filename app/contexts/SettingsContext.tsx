@@ -27,27 +27,34 @@ const subscribe = (callback: () => void) => {
   };
 };
 
-// Snapshots for useSyncExternalStore
-const getSnapshot = (key: string, fallback: boolean) => () => {
-  if (typeof window === "undefined") return fallback;
-  const saved = localStorage.getItem(key);
-  return saved !== null ? saved === "true" : fallback;
+// Stable snapshot function references
+const getDarkModeSnapshot = () => {
+    if (typeof window === "undefined") return false;
+    const saved = localStorage.getItem("darkMode");
+    return saved !== null ? saved === "true" : false;
 };
 
-const getServerSnapshot = (fallback: boolean) => () => fallback;
+const getSoundEnabledSnapshot = () => {
+    if (typeof window === "undefined") return false;
+    const saved = localStorage.getItem("soundEnabled");
+    return saved !== null ? saved === "true" : false;
+};
+
+const darkModeServerSnapshot = () => false;
+const soundEnabledServerSnapshot = () => false;
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   // Use modern React store synchronization for safe SSR/Hydration
   const darkMode = useSyncExternalStore(
     subscribe,
-    getSnapshot("darkMode", false),
-    getServerSnapshot(false)
+    getDarkModeSnapshot,
+    darkModeServerSnapshot
   );
   
   const soundEnabled = useSyncExternalStore(
     subscribe,
-    getSnapshot("soundEnabled", false),
-    getServerSnapshot(false)
+    getSoundEnabledSnapshot,
+    soundEnabledServerSnapshot
   );
 
   // Helper to trigger UI updates in the current tab

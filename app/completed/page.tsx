@@ -112,15 +112,17 @@ export default function CompletedPage() {
     }
     setIsUpdating(true);
     try {
-      const updatedDepartments: Record<string, ConsultDepartment> = {};
-      selectedDepartments.forEach((dept) => {
-        updatedDepartments[dept] = { status: "pending", completedAt: null };
-      });
-      await updateConsult(selectedCase.id, {
-        status: "pending",
-        departments: updatedDepartments,
-        problem: `${selectedCase.problem}\n\n[Re-consult]: ${newProblem}`,
-        createdAt: new Date().toISOString(),
+      await updateConsult(selectedCase.id, (current) => {
+        const updatedDepartments: Record<string, ConsultDepartment> = {};
+        selectedDepartments.forEach((dept) => {
+          updatedDepartments[dept] = { status: "pending", completedAt: null };
+        });
+        return {
+          status: "pending",
+          departments: updatedDepartments,
+          problem: `${current.problem}\n\n[Re-consult]: ${newProblem}`,
+          createdAt: new Date().toISOString(),
+        };
       });
       setShowModal(false);
       setSelectedCase(null);

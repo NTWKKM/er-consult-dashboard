@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { updateConsult, getConsultById, Consult, ConsultDepartment } from "@/lib/db";
+import { updateConsult, Consult, ConsultDepartment } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmModal from "./ConfirmModal";
@@ -85,33 +85,33 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     if (isUpdating) return;
     setIsUpdating(true);
     try {
-      const latestCaseData = await getConsultById(caseId);
-      if (!latestCaseData) throw new Error("Case not found");
+      await updateConsult(caseId, (current) => {
+        const updatedDepartments = { ...current.departments };
+        const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
+        const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
+        const now = new Date().toISOString();
 
-      const updatedDepartments = { ...latestCaseData.departments };
-      const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
-      const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
-      const now = new Date().toISOString();
-      Object.keys(updatedDepartments).forEach((dept) => {
-        if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
-          updatedDepartments[dept] = {
-            ...updatedDepartments[dept],
-            acceptedAt: updatedDepartments[dept].acceptedAt || now,
-            actionStatus: newStatus,
-          };
+        Object.keys(updatedDepartments).forEach((dept) => {
+          if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
+            updatedDepartments[dept] = {
+              ...updatedDepartments[dept],
+              acceptedAt: updatedDepartments[dept].acceptedAt || now,
+              actionStatus: newStatus,
+            };
 
-          if (newStatus === "รับเคส" && !updatedDepartments[dept].acceptedAt) {
-            updatedDepartments[dept].acceptedAt = now;
-          } else if (newStatus === "Admit") {
-            updatedDepartments[dept].admittedAt = now;
-          } else if (newStatus === "คืน ER") {
-            updatedDepartments[dept].returnedAt = now;
-          } else if (newStatus === "D/C") {
-            updatedDepartments[dept].dischargedAt = now;
+            if (newStatus === "Admit") {
+              updatedDepartments[dept].admittedAt = now;
+            } else if (newStatus === "คืน ER") {
+              updatedDepartments[dept].returnedAt = now;
+            } else if (newStatus === "D/C") {
+              updatedDepartments[dept].dischargedAt = now;
+            }
           }
-        }
+        });
+
+        return { departments: updatedDepartments };
       });
-      await updateConsult(caseId, { departments: updatedDepartments });
+
       addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
       onUpdate?.();
     } catch (error) {
@@ -126,25 +126,25 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     if (isUpdating) return;
     setIsUpdating(true);
     try {
-      const latestCaseData = await getConsultById(caseId);
-      if (!latestCaseData) throw new Error("Case not found");
+      await updateConsult(caseId, (current) => {
+        const updatedDepartments = { ...current.departments };
+        const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
+        const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
+        const now = new Date().toISOString();
 
-      const updatedDepartments = { ...latestCaseData.departments };
-      const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
-      const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
-      const now = new Date().toISOString();
+        Object.keys(updatedDepartments).forEach((dept) => {
+          if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
+            updatedDepartments[dept] = {
+              ...updatedDepartments[dept],
+              acceptedAt: now,
+              actionStatus: "รับเคส",
+            };
+          }
+        });
 
-      Object.keys(updatedDepartments).forEach((dept) => {
-        if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
-          updatedDepartments[dept] = {
-            ...updatedDepartments[dept],
-            acceptedAt: now,
-            actionStatus: "รับเคส",
-          };
-        }
+        return { departments: updatedDepartments };
       });
 
-      await updateConsult(caseId, { departments: updatedDepartments });
       addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
       onUpdate?.();
     } catch (error) {
@@ -160,23 +160,22 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setShowCancelConfirm(false);
     setIsUpdating(true);
     try {
-      const latestCaseData = await getConsultById(caseId);
-      if (!latestCaseData) throw new Error("Case not found");
+      await updateConsult(caseId, (current) => {
+        const updatedDepartments = { ...current.departments };
+        updatedDepartments[departmentName] = {
+          ...updatedDepartments[departmentName],
+          status: "cancelled",
+          completedAt: new Date().toISOString(),
+        };
 
-      const updatedDepartments = { ...latestCaseData.departments };
-      updatedDepartments[departmentName] = {
-        ...updatedDepartments[departmentName],
-        status: "cancelled",
-        completedAt: new Date().toISOString(),
-      };
+        const allFinished = Object.values(updatedDepartments).every(
+          (dept: ConsultDepartment) => dept.status === "completed" || dept.status === "cancelled"
+        );
 
-      const allFinished = Object.values(updatedDepartments).every(
-        (dept: ConsultDepartment) => dept.status === "completed" || dept.status === "cancelled"
-      );
-
-      await updateConsult(caseId, {
-        departments: updatedDepartments,
-        ...(allFinished && { status: "completed" }),
+        return {
+          departments: updatedDepartments,
+          ...(allFinished && { status: "completed" }),
+        };
       });
 
       addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
@@ -194,21 +193,20 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setShowConfirm(false);
     setIsUpdating(true);
     try {
-      const latestCaseData = await getConsultById(caseId);
-      if (!latestCaseData) throw new Error("Case not found");
-
-      const updatedDepartments = { ...latestCaseData.departments };
-      updatedDepartments[departmentName] = {
-        ...updatedDepartments[departmentName],
-        status: "completed",
-        completedAt: new Date().toISOString(),
-      };
-      const allCompleted = Object.values(updatedDepartments).every(
-        (dept: ConsultDepartment) => dept.status === "completed"
-      );
-      await updateConsult(caseId, {
-        departments: updatedDepartments,
-        ...(allCompleted && { status: "completed" }),
+      await updateConsult(caseId, (current) => {
+        const updatedDepartments = { ...current.departments };
+        updatedDepartments[departmentName] = {
+          ...updatedDepartments[departmentName],
+          status: "completed",
+          completedAt: new Date().toISOString(),
+        };
+        const allCompleted = Object.values(updatedDepartments).every(
+          (dept: ConsultDepartment) => dept.status === "completed"
+        );
+        return {
+          departments: updatedDepartments,
+          ...(allCompleted && { status: "completed" }),
+        };
       });
       addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
       onUpdate?.();
