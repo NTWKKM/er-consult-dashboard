@@ -27,6 +27,22 @@ export interface Consult {
 
 const COLLECTION_NAME = "consults";
 
+/**
+ * Helper to map a Firestore document snapshot to a Consult object.
+ * Performs defensive checks and provides default values.
+ */
+function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult | null {
+    const data = document.data();
+    if (!data) return null;
+    return {
+        id: document.id,
+        firstName: data.firstName || "",
+        lastName: data.lastName || "",
+        ...data,
+    } as Consult;
+}
+
+
 // Real-time subscription instead of single fetch
 export function subscribeToConsultsByStatus(
     status: "pending" | "completed",
@@ -47,14 +63,10 @@ export function subscribeToConsultsByStatus(
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const consults: Consult[] = [];
         querySnapshot.forEach((document) => {
-            const data = document.data();
-            consults.push({
-                id: document.id,
-                firstName: data.firstName || "",
-                lastName: data.lastName || "",
-                ...data,
-            } as Consult);
+            const consult = mapDocToConsult(document);
+            if (consult) consults.push(consult);
         });
+
         
         onData(sortConsults(consults));
     }, (error) => {
@@ -90,15 +102,10 @@ export async function fetchCompletedConsultsPage(
     const hasMore = docs.length > pageSize;
     const pageDocs = hasMore ? docs.slice(0, pageSize) : docs;
 
-    const consults: Consult[] = pageDocs.map((document) => {
-        const data = document.data();
-        return {
-            id: document.id,
-            firstName: data.firstName || "",
-            lastName: data.lastName || "",
-            ...data,
-        } as Consult;
-    });
+    const consults: Consult[] = pageDocs
+        .map(mapDocToConsult)
+        .filter((c): c is Consult => c !== null);
+
 
     return {
         consults,
@@ -127,18 +134,10 @@ export async function searchCompletedConsults(
         const snapshot = await getDocs(q);
         
         consults = snapshot.docs
-            .map(document => {
-                const data = document.data();
-                if (!data) return null;
-                return {
-                    id: document.id,
-                    firstName: data.firstName || "",
-                    lastName: data.lastName || "",
-                    ...data,
-                } as Consult;
-            })
+            .map(mapDocToConsult)
             .filter((c): c is Consult => c !== null && Boolean(c.hn))
             .filter(c => c.status === "completed");
+
 
         if (filterDate) {
             consults = consults.filter(c => c.createdAt && c.createdAt.startsWith(filterDate));
@@ -162,17 +161,9 @@ export async function searchCompletedConsults(
         
         const snapshot = await getDocs(q);
         return snapshot.docs
-            .map(document => {
-                const data = document.data();
-                if (!data) return null;
-                return {
-                    id: document.id,
-                    firstName: data.firstName || "",
-                    lastName: data.lastName || "",
-                    ...data,
-                } as Consult;
-            })
+            .map(mapDocToConsult)
             .filter((c): c is Consult => c !== null && Boolean(c.hn));
+
     }
 
     return [];
@@ -200,17 +191,9 @@ export async function fetchAllCompletedConsultsForExport(
 
     const snapshot = await getDocs(q);
     return snapshot.docs
-        .map(document => {
-            const data = document.data();
-            if (!data) return null;
-            return {
-                id: document.id,
-                firstName: data.firstName || "",
-                lastName: data.lastName || "",
-                ...data,
-            } as Consult;
-        })
+        .map(mapDocToConsult)
         .filter((c): c is Consult => c !== null && Boolean(c.hn));
+
 }
 
 export async function getConsultById(id: string): Promise<Consult | undefined> {
