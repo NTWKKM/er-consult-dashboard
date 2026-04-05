@@ -104,7 +104,7 @@ export async function fetchCompletedConsultsPage(
 
     const consults: Consult[] = pageDocs
         .map(mapDocToConsult)
-        .filter((c): c is Consult => c !== null);
+        .filter((c): c is Consult => c !== null && Boolean(c.hn));
 
 
     return {
