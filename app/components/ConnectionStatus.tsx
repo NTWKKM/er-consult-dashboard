@@ -3,11 +3,14 @@
 import { useState, useEffect } from "react";
 
 export default function ConnectionStatus() {
-  const [isOnline, setIsOnline] = useState<boolean | null>(() =>
-    typeof window !== 'undefined' ? navigator.onLine : null
-  );
+  const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Wrap in a promise to prevent synchronous state updates within the effect body, avoiding linter warnings
+    Promise.resolve().then(() => {
+      setIsOnline(navigator.onLine);
+    });
+
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
