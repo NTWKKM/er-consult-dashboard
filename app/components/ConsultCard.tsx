@@ -64,9 +64,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const room = caseData.room || "-";
   const problem = caseData.problem || "-";
   const isUrgent = caseData.isUrgent || false;
-  const isCompleted = caseData.departments[departmentName]?.status === "completed";
-  const isAccepted = caseData.departments[departmentName]?.acceptedAt;
   const dept = caseData.departments[departmentName];
+  const isTerminal = dept?.status === "completed" || dept?.status === "cancelled";
+  const isCompleted = dept?.status === "completed";
+  const isAccepted = dept?.acceptedAt;
   const completedTime = dept?.completedAt
     ? new Date(dept.completedAt).toLocaleString("th-TH")
     : null;
@@ -189,7 +190,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate]);
 
   const handleCompleteCase = useCallback(async () => {
-    if (isUpdating || isCompleted) return;
+    if (isUpdating || isTerminal) return;
     setShowConfirm(false);
     setIsUpdating(true);
     try {
@@ -217,7 +218,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     } finally {
       setIsUpdating(false);
     }
-  }, [isUpdating, isCompleted, caseId, departmentName, hn, addToast, onUpdate]);
+  }, [isUpdating, isTerminal, caseId, departmentName, hn, addToast, onUpdate]);
 
   return (
     <>
@@ -237,7 +238,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         }`}
         style={{ animationDelay: `${animationDelay}ms` }}
       >
-        {!isCompleted && (
+        {!isTerminal && (
           <button
             type="button"
             aria-label="ยกเลิกปรึกษา"
@@ -308,12 +309,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
-            {isCompleted && (
+            {isTerminal && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#699D5D]/20 text-[#699D5D]">
                 ✓
               </span>
             )}
-            {!isCompleted && caseData.createdAt && (
+            {!isTerminal && caseData.createdAt && (
               <ElapsedTime createdAt={caseData.createdAt} darkMode={darkMode} />
             )}
           </div>
@@ -332,12 +333,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               </svg>
               <span className="font-medium">{timeAgo}</span>
             </div>
-            {isCompleted && (
+            {isTerminal && (
               <div className={`flex items-center gap-1 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="font-semibold">ปิด: {completedTime}</span>
+                <span className="font-semibold">{dept?.status === "cancelled" ? "ยกเลิก" : "ปิด"}: {completedTime}</span>
               </div>
             )}
             {isAccepted && (
@@ -370,7 +371,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             )}
           </div>
 
-          {!isCompleted && (
+          {!isTerminal && (
             <div className="flex flex-col gap-1">
               <div className="flex gap-2">
                 {!isAccepted ? (

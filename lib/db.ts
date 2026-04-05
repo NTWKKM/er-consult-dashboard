@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, runTransaction } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 
 export interface ConsultDepartment {
@@ -49,9 +49,17 @@ function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult
  * Helper to get the UTC ISO range [start, end) for a given local "YYYY-MM-DD" date.
  * Accepts an optional offsetMinutes (positive for West, negative for East, same as Date.getTimezoneOffset())
  * to compute the UTC boundary correctly for the user's local day.
+ * If not provided, computes the offset for the target date itself to handle DST correctly.
  */
-function getUtcRangeForLocalDate(date: string, offsetMinutes: number = new Date().getTimezoneOffset()) {
+function getUtcRangeForLocalDate(date: string, offsetMinutes?: number) {
     const [year, month, day] = date.split("-").map(Number);
+
+    // If no offset provided, compute it for the target date to handle DST correctly
+    if (offsetMinutes === undefined) {
+        const targetDate = new Date(year, month - 1, day);
+        offsetMinutes = targetDate.getTimezoneOffset();
+    }
+
     // Use Date.UTC constructor with the offset to get the exact UTC moment for local midnight
     const start = new Date(Date.UTC(year, month - 1, day, 0, offsetMinutes));
     const end = new Date(Date.UTC(year, month - 1, day + 1, 0, offsetMinutes));
@@ -279,8 +287,12 @@ export async function updateConsult(
     updater: ConsultUpdater | Partial<Omit<Consult, "id">>
 ): Promise<Consult | null> {
     const docRef = doc(db, COLLECTION_NAME, id);
-    return await runTransaction(db, async (transaction) => {
-        const docSnap = await transaction.get(docRef);
+
+    let updates: Partial<Omit<Consult, "id">>;
+
+    if (typeof updater === "function") {
+        // Read current data, compute updates, then apply
+        const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) {
             throw new Error(`Consult not found: ${id}`);
         }
@@ -292,25 +304,31 @@ export async function updateConsult(
             lastName: docSnap.data().lastName ?? "",
         } as Consult;
 
-        const updates = typeof updater === "function" ? updater(currentData) : updater;
+        updates = updater(currentData);
 
-        transaction.update(docRef, updates);
+        await updateDoc(docRef, updates);
 
         return {
             ...currentData,
             ...updates,
         } as Consult;
-    });
+    } else {
+        // Direct object update
+        updates = updater;
+        await updateDoc(docRef, updates);
+        return null;
+    }
 }
 
 export async function deleteConsult(id: string, allowMissing: boolean = false): Promise<void> {
     const docRef = doc(db, COLLECTION_NAME, id);
-    await runTransaction(db, async (transaction) => {
-        const docSnap = await transaction.get(docRef);
-        if (docSnap.exists()) {
-            transaction.delete(docRef);
-        } else if (!allowMissing) {
+
+    if (!allowMissing) {
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
             throw new Error(`Consult not found: ${id}`);
         }
-    });
+    }
+
+    await deleteDoc(docRef);
 }
