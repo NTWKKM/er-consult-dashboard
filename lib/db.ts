@@ -45,10 +45,16 @@ function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult
 /**
  * Helper to get the UTC ISO range [start, end) for a given local "YYYY-MM-DD" date.
  */
-function getUtcRangeForLocalDate(date: string) {
+/**
+ * Helper to get the UTC ISO range [start, end) for a given local "YYYY-MM-DD" date.
+ * Accepts an optional offsetMinutes (positive for West, negative for East, same as Date.getTimezoneOffset())
+ * to compute the UTC boundary correctly for the user's local day.
+ */
+function getUtcRangeForLocalDate(date: string, offsetMinutes: number = new Date().getTimezoneOffset()) {
     const [year, month, day] = date.split("-").map(Number);
-    const start = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const end = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+    // Use Date.UTC constructor with the offset to get the exact UTC moment for local midnight
+    const start = new Date(Date.UTC(year, month - 1, day, 0, offsetMinutes));
+    const end = new Date(Date.UTC(year, month - 1, day + 1, 0, offsetMinutes));
     return { start: start.toISOString(), end: end.toISOString() };
 }
 
@@ -130,7 +136,8 @@ export async function fetchCompletedConsultsPage(
  */
 export async function searchCompletedConsults(
     searchHN?: string,
-    filterDate?: string
+    filterDate?: string,
+    timezoneOffset?: number
 ): Promise<Consult[]> {
     let consults: Consult[] = [];
 
@@ -151,7 +158,7 @@ export async function searchCompletedConsults(
 
 
         if (filterDate) {
-            const { start, end } = getUtcRangeForLocalDate(filterDate);
+            const { start, end } = getUtcRangeForLocalDate(filterDate, timezoneOffset);
             consults = consults.filter(c => c.createdAt && c.createdAt >= start && c.createdAt < end);
         }
 
@@ -160,7 +167,7 @@ export async function searchCompletedConsults(
 
     // If only filtering by date, use the existing status + createdAt index
     if (filterDate) {
-        const { start, end } = getUtcRangeForLocalDate(filterDate);
+        const { start, end } = getUtcRangeForLocalDate(filterDate, timezoneOffset);
         
         const q = query(
             collection(db, COLLECTION_NAME),
@@ -186,14 +193,16 @@ export async function searchCompletedConsults(
  */
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
-    endDate: string
+    endDate: string,
+    timezoneOffset?: number
 ): Promise<Consult[]> {
-    const { start } = getUtcRangeForLocalDate(startDate);
-    const { end } = getUtcRangeForLocalDate(endDate);
+    const { start } = getUtcRangeForLocalDate(startDate, timezoneOffset);
+    const { end } = getUtcRangeForLocalDate(endDate, timezoneOffset);
 
     let allConsults: Consult[] = [];
     let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
     const BATCH_SIZE = 1000;
+    const MAX_RESULTS = 50000;
 
     while (true) {
         let q = query(
@@ -217,6 +226,13 @@ export async function fetchAllCompletedConsultsForExport(
             .filter((c): c is Consult => c !== null && Boolean(c.hn));
 
         allConsults = allConsults.concat(batch);
+
+        // Safety limit to prevent unbounded memory growth
+        if (allConsults.length >= MAX_RESULTS) {
+            allConsults = allConsults.slice(0, MAX_RESULTS);
+            console.warn(`Export truncated at ${MAX_RESULTS} results`);
+            break;
+        }
 
         // If we fetched fewer than batch size, we've reached the end
         if (snapshot.docs.length < BATCH_SIZE) break;
@@ -284,12 +300,14 @@ export async function updateConsult(
     });
 }
 
-export async function deleteConsult(id: string): Promise<void> {
+export async function deleteConsult(id: string, allowMissing: boolean = false): Promise<void> {
     const docRef = doc(db, COLLECTION_NAME, id);
     await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
         if (docSnap.exists()) {
             transaction.delete(docRef);
+        } else if (!allowMissing) {
+            throw new Error(`Consult not found: ${id}`);
         }
     });
 }

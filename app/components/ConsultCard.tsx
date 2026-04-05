@@ -502,7 +502,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       <ConfirmModal
         isOpen={showCancelConfirm}
         title="ยกเลิกปรึกษา"
-        message={`คุณต้องการยกเลิกการปรึกษา HN: ${hn}${fullName ? ` (${fullName})` : ""} แผนก: ${departmentName}? ${Object.keys(caseData.departments).length <= 1 ? "เคสจะถูกลบออกจากระบบ" : "แผนกนี้จะถูกลบออกจากคำปรึกษา"}`}
+        message={`คุณต้องการยกเลิกการปรึกษา HN: ${hn}${fullName ? ` (${fullName})` : ""} แผนก: ${departmentName}? ${Object.keys(caseData.departments).length <= 1 ? "เคสจะถูกย้ายไปยังเคสที่เสร็จแล้ว" : "แผนกนี้จะถูกยกเลิกจากคำปรึกษา"}`}
         confirmText="ยืนยันยกเลิก"
         cancelText="ไม่ยกเลิก"
         variant="warning"

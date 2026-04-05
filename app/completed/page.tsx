@@ -159,7 +159,11 @@ export default function CompletedPage() {
 
     setIsExporting(true);
     try {
-      const exportList = await fetchAllCompletedConsultsForExport(exportStartDate, exportEndDate);
+      const exportList = await fetchAllCompletedConsultsForExport(
+        exportStartDate, 
+        exportEndDate, 
+        new Date().getTimezoneOffset()
+      );
       
       if (exportList.length === 0) {
         addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
@@ -234,7 +238,7 @@ export default function CompletedPage() {
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const results = await searchCompletedConsults(searchHN, filterDate);
+        const results = await searchCompletedConsults(searchHN, filterDate, new Date().getTimezoneOffset());
         if (!cancelled) {
           setSearchResults(results);
         }
