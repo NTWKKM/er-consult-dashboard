@@ -165,7 +165,8 @@ export default function CompletedPage() {
     try {
       const { consults: exportList, truncated } = await fetchAllCompletedConsultsForExport(
         exportStartDate, 
-        exportEndDate
+        exportEndDate,
+        new Date().getTimezoneOffset()
       );
       
       if (exportList.length === 0) {
@@ -266,7 +267,7 @@ export default function CompletedPage() {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const results = await searchCompletedConsults(searchHN, filterDate);
+        const results = await searchCompletedConsults(searchHN, filterDate, new Date().getTimezoneOffset());
         if (!cancelled) {
           setSearchResults(results);
         }
