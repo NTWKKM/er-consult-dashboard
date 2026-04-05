@@ -285,6 +285,7 @@ export type ConsultUpdater = (current: Consult) => Partial<Omit<Consult, "id">>;
 
 export interface UpdateConsultOptions {
     awaitRemote?: boolean;
+    onBackgroundError?: (error: unknown) => void;
 }
 
 export async function updateConsult(
@@ -324,6 +325,9 @@ export async function updateConsult(
                 t.update(docRef, tUpdates);
             }).catch(err => {
                 console.error("Background sync failed for updateConsult:", err);
+                if (options.onBackgroundError) {
+                    options.onBackgroundError(err);
+                }
             });
 
             return {
@@ -359,7 +363,12 @@ export async function updateConsult(
         // Direct object update
         if (!awaitRemote) {
             // FIRE AND FORGET
-            updateDoc(docRef, updater).catch(e => console.error("Delayed updateDoc error:", e));
+            updateDoc(docRef, updater).catch(e => {
+                console.error("Delayed updateDoc error:", e);
+                if (options.onBackgroundError) {
+                    options.onBackgroundError(e);
+                }
+            });
             return null;
         }
         await updateDoc(docRef, updater);

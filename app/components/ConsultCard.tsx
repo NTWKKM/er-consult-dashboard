@@ -113,7 +113,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         });
 
         return { departments: updatedDepartments };
-      }, { awaitRemote: false })
+      }, { 
+        awaitRemote: false,
+        onBackgroundError: () => {
+          addToast({ 
+            type: "error", 
+            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+          });
+        }
+      })
       .then(() => setIsSyncing(false))
       .catch(e => {
         console.error("Sync error:", e);
@@ -154,7 +162,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         });
 
         return { departments: updatedDepartments };
-      }, { awaitRemote: false })
+      }, { 
+        awaitRemote: false,
+        onBackgroundError: () => {
+          addToast({ 
+            type: "error", 
+            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+          });
+        }
+      })
       .then(() => setIsSyncing(false))
       .catch(() => setIsSyncing(false));
 
@@ -191,7 +207,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           departments: updatedDepartments,
           ...(allFinished && { status: "completed" }),
         };
-      }, { awaitRemote: false })
+      }, { 
+        awaitRemote: false,
+        onBackgroundError: () => {
+          addToast({ 
+            type: "error", 
+            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+          });
+        }
+      })
       .then(() => setIsSyncing(false))
       .catch(() => setIsSyncing(false));
 
@@ -227,7 +251,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           departments: updatedDepartments,
           ...(allCompleted && { status: "completed" }),
         };
-      }, { awaitRemote: false })
+      }, { 
+        awaitRemote: false,
+        onBackgroundError: () => {
+          addToast({ 
+            type: "error", 
+            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+          });
+        }
+      })
       .then(() => setIsSyncing(false))
       .catch(() => setIsSyncing(false));
 

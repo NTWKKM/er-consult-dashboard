@@ -131,7 +131,15 @@ export default function CompletedPage() {
           problem: `${current.problem}\n\n[Re-consult]: ${newProblem}`,
           createdAt: new Date().toISOString(),
         };
-      }, { awaitRemote: false }); // OPTIMISTIC UPDATE
+      }, { 
+        awaitRemote: false,
+        onBackgroundError: () => {
+          addToast({ 
+            type: "error", 
+            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+          });
+        }
+      }); // OPTIMISTIC UPDATE
 
       // Instant UI response
       setCases((prev) => prev.filter((c) => c.id !== caseId));
