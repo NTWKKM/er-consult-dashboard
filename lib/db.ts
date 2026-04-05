@@ -1,9 +1,9 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, runTransaction } from "firebase/firestore";
 import { sortConsults } from "./utils";
 
 export interface ConsultDepartment {
-    status: "pending" | "completed";
+    status: "pending" | "completed" | "cancelled";
     completedAt: string | null;
     acceptedAt?: string | null;
     actionStatus?: string;
@@ -250,15 +250,29 @@ export async function updateConsult(
     updates: Partial<Omit<Consult, "id">>
 ): Promise<Consult | null> {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) return null;
+    return await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(docRef);
+        if (!docSnap.exists()) return null;
 
-    await updateDoc(docRef, updates);
-    
-    return { ...docSnap.data(), ...updates, id } as Consult;
+        transaction.update(docRef, updates);
+
+        const data = docSnap.data();
+        return {
+            ...data,
+            ...updates,
+            id,
+            firstName: (updates.firstName ?? data.firstName) ?? "",
+            lastName: (updates.lastName ?? data.lastName) ?? "",
+        } as Consult;
+    });
 }
 
 export async function deleteConsult(id: string): Promise<void> {
     const docRef = doc(db, COLLECTION_NAME, id);
-    await deleteDoc(docRef);
+    await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(docRef);
+        if (docSnap.exists()) {
+            transaction.delete(docRef);
+        }
+    });
 }

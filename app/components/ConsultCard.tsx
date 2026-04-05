@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { updateConsult, getConsultById, deleteConsult, Consult, ConsultDepartment } from "@/lib/db";
+import { updateConsult, getConsultById, Consult, ConsultDepartment } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmModal from "./ConfirmModal";
@@ -164,19 +164,20 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       if (!latestCaseData) throw new Error("Case not found");
 
       const updatedDepartments = { ...latestCaseData.departments };
-      delete updatedDepartments[departmentName];
+      updatedDepartments[departmentName] = {
+        ...updatedDepartments[departmentName],
+        status: "cancelled",
+        completedAt: new Date().toISOString(),
+      };
 
-      if (Object.keys(updatedDepartments).length === 0) {
-        await deleteConsult(caseId);
-      } else {
-        const allCompleted = Object.values(updatedDepartments).every(
-          (dept: ConsultDepartment) => dept.status === "completed"
-        );
-        await updateConsult(caseId, {
-          departments: updatedDepartments,
-          ...(allCompleted && { status: "completed" }),
-        });
-      }
+      const allFinished = Object.values(updatedDepartments).every(
+        (dept: ConsultDepartment) => dept.status === "completed" || dept.status === "cancelled"
+      );
+
+      await updateConsult(caseId, {
+        departments: updatedDepartments,
+        ...(allFinished && { status: "completed" }),
+      });
 
       addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
       onUpdate?.();

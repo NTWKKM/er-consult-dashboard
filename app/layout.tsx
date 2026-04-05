@@ -17,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th" suppressHydrationWarning>
-      <body className="font-sans bg-[#014167] dark:bg-gray-900 min-h-screen transition-colors duration-300">
+      <body className="font-sans bg-[#014167] dark:bg-gray-900 min-h-screen transition-colors duration-300" suppressHydrationWarning>
         <SettingsProvider>
           <ToastProvider>
             <Navbar />

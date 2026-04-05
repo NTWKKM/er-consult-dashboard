@@ -479,10 +479,12 @@ export default function CompletedPage() {
                             >
                               <span
                                 className={`font-bold border-b pb-0.5 mb-0.5 block ${
-                                  darkMode ? "border-gray-700 text-gray-200" : "border-[#014167]/10 text-black"
+                                  data.status === "cancelled" 
+                                    ? "text-red-500 line-through decoration-2" 
+                                    : darkMode ? "border-gray-700 text-gray-200" : "border-[#014167]/10 text-black"
                                 }`}
                               >
-                                {dept}
+                                {dept} {data.status === "cancelled" && "(ยกเลิก)"}
                               </span>
                               <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 ${darkMode ? "text-gray-400" : "text-black/70"}`}>
                                 {data.acceptedAt && (
@@ -511,7 +513,9 @@ export default function CompletedPage() {
                                 )}
                                 {data.completedAt && (
                                   <div>
-                                    <span className="text-[#E55143] font-semibold">ปิด:</span>{" "}
+                                    <span className={data.status === "cancelled" ? "text-red-500 font-semibold" : "text-[#E55143] font-semibold"}>
+                                      {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
+                                    </span>{" "}
                                     {new Date(data.completedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
@@ -588,12 +592,14 @@ export default function CompletedPage() {
                       <span
                         key={dept}
                         className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium border ${
-                          darkMode
-                            ? "bg-gray-600 text-gray-200 border-gray-500"
-                            : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
+                          caseData.departments[dept].status === "cancelled"
+                            ? "bg-red-500/20 text-red-500 line-through border-red-500/30"
+                            : darkMode
+                              ? "bg-gray-600 text-gray-200 border-gray-500"
+                              : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
                         }`}
                       >
-                        {dept}
+                        {dept} {caseData.departments[dept].status === "cancelled" && "(ยกเลิก)"}
                       </span>
                     ))}
                   </div>
