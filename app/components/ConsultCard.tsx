@@ -156,7 +156,8 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
             updatedDepartments[dept] = {
               ...updatedDepartments[dept],
-              acceptedAt: now,
+              // ใช้ acceptedAt เดิมถ้ามีอยู่แล้ว ถ้าไม่มีถึงจะใช้เวลา now ป้องกันการเขียนทับ
+              acceptedAt: updatedDepartments[dept].acceptedAt || now,
               actionStatus: "รับเคส",
             };
           }

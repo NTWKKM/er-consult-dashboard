@@ -113,6 +113,11 @@ export default function CompletedPage() {
     }
     setIsUpdating(true);
     const caseId = selectedCase.id;
+    
+    // เก็บ State ปัจจุบันไว้สำหรับ Rollback ในกรณีที่ Background Update ล้มเหลว
+    const prevCases = cases;
+    const prevSearchResults = searchResults;
+
     try {
       await updateConsult(caseId, (current) => {
         const updatedDepartments: Record<string, ConsultDepartment> = {};
@@ -128,10 +133,13 @@ export default function CompletedPage() {
       }, { 
         awaitRemote: false,
         onBackgroundError: () => {
+          // แจ้งเตือนและคืนค่า State กลับเป็นเหมือนเดิม (Rollback)
           addToast({ 
             type: "error", 
             message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
+          setCases(prevCases);
+          setSearchResults(prevSearchResults);
         }
       }); // OPTIMISTIC UPDATE
 
