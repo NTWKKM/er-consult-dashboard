@@ -160,7 +160,7 @@ export default function CompletedPage() {
 
     setIsExporting(true);
     try {
-      const exportList = await fetchAllCompletedConsultsForExport(
+      const { consults: exportList, truncated } = await fetchAllCompletedConsultsForExport(
         exportStartDate, 
         exportEndDate, 
         new Date().getTimezoneOffset()
@@ -169,6 +169,13 @@ export default function CompletedPage() {
       if (exportList.length === 0) {
         addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
         return;
+      }
+
+      if (truncated) {
+        addToast({ 
+          type: "warning", 
+          message: "ข้อมูลมีจำนวนมากเกินไป ระบบจะ Export เฉพาะ 50,000 รายการแรกเท่านั้น" 
+        });
       }
 
       // Dynamic import to reduce bundle size
@@ -232,6 +239,7 @@ export default function CompletedPage() {
   useEffect(() => {
     if (!searchHN && !filterDate) {
       setSearchResults(null);
+      setIsSearching(false);
       return;
     }
 
@@ -246,15 +254,14 @@ export default function CompletedPage() {
       } catch (err) {
         console.error("Search error:", err);
       } finally {
-        if (!cancelled) {
-          setIsSearching(false);
-        }
+        setIsSearching(false);
       }
     }, 600);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      setIsSearching(false);
     };
   }, [searchHN, filterDate]);
 
