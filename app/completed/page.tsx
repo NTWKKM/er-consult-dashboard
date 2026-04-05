@@ -115,8 +115,9 @@ export default function CompletedPage() {
       return;
     }
     setIsUpdating(true);
+    const caseId = selectedCase.id;
     try {
-      await updateConsult(selectedCase.id, (current) => {
+      await updateConsult(caseId, (current) => {
         const updatedDepartments: Record<string, ConsultDepartment> = {};
         selectedDepartments.forEach((dept) => {
           updatedDepartments[dept] = { status: "pending", completedAt: null };
@@ -128,6 +129,8 @@ export default function CompletedPage() {
           createdAt: new Date().toISOString(),
         };
       });
+      setCases((prev) => prev.filter((c) => c.id !== caseId));
+      setSearchResults((prev) => prev?.filter((c) => c.id !== caseId) ?? null);
       setShowModal(false);
       setSelectedCase(null);
       setNewProblem("");
@@ -162,8 +165,7 @@ export default function CompletedPage() {
     try {
       const { consults: exportList, truncated } = await fetchAllCompletedConsultsForExport(
         exportStartDate, 
-        exportEndDate, 
-        new Date().getTimezoneOffset()
+        exportEndDate
       );
       
       if (exportList.length === 0) {
@@ -259,11 +261,12 @@ export default function CompletedPage() {
 
     // Show loading immediately on filter change
     setIsSearching(true);
+    setSearchResults(null);
 
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const results = await searchCompletedConsults(searchHN, filterDate, new Date().getTimezoneOffset());
+        const results = await searchCompletedConsults(searchHN, filterDate);
         if (!cancelled) {
           setSearchResults(results);
         }
