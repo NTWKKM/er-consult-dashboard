@@ -380,7 +380,7 @@ export default function Dashboard() {
                       <div
                         className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                           darkMode
-                            ? "bg-gray-950 border-gray-800"
+                            ? "bg-gray-800 border-gray-700"
                             : "bg-[#012a47] border-[#E55143]/20"
                         }`}
                       >
@@ -480,7 +480,7 @@ export default function Dashboard() {
                       <div
                         className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                           darkMode
-                            ? "bg-gray-950 border-gray-800"
+                            ? "bg-gray-800 border-gray-700"
                             : "bg-[#014a3d] border-[#699D5D]/20"
                         }`}
                       >
