@@ -162,7 +162,8 @@ export async function searchCompletedConsults(
  */
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
-    endDate: string
+    endDate: string,
+    maxResults: number = 10000
 ): Promise<Consult[]> {
     const startStr = startDate + "T00:00:00.000Z";
     const endStr = endDate + "T23:59:59.999Z";
@@ -172,7 +173,8 @@ export async function fetchAllCompletedConsultsForExport(
         where("status", "==", "completed"),
         where("createdAt", ">=", startStr),
         where("createdAt", "<=", endStr),
-        orderBy("createdAt", "desc")
+        orderBy("createdAt", "desc"),
+        limit(maxResults)
     );
 
     const snapshot = await getDocs(q);

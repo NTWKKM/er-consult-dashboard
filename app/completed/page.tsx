@@ -147,6 +147,10 @@ export default function CompletedPage() {
       addToast({ type: "error", message: "กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด" });
       return;
     }
+    if (exportStartDate > exportEndDate) {
+      addToast({ type: "error", message: "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด" });
+      return;
+    }
 
     setIsExporting(true);
     try {
@@ -220,19 +224,27 @@ export default function CompletedPage() {
       return;
     }
 
+    let cancelled = false;
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
         const results = await searchCompletedConsults(searchHN, filterDate);
-        setSearchResults(results);
+        if (!cancelled) {
+          setSearchResults(results);
+        }
       } catch (err) {
         console.error("Search error:", err);
       } finally {
-        setIsSearching(false);
+        if (!cancelled) {
+          setIsSearching(false);
+        }
       }
     }, 600);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [searchHN, filterDate]);
 
   if (loading) {
@@ -862,9 +874,9 @@ export default function CompletedPage() {
               </button>
               <button
                 onClick={handleExportExcel}
-                disabled={isExporting || !exportStartDate || !exportEndDate}
+                disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
-                  isExporting || !exportStartDate || !exportEndDate
+                  isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate
                     ? darkMode
                       ? "bg-gray-700 text-gray-500 cursor-not-allowed"
                       : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
