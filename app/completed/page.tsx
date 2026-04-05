@@ -22,7 +22,7 @@ export default function CompletedPage() {
 
   // Server-side Search
   const [searchResults, setSearchResults] = useState<Consult[] | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error" | "ready">("idle");
 
   // Search & Filter
   const [searchHN, setSearchHN] = useState("");
@@ -83,27 +83,30 @@ export default function CompletedPage() {
   // Filtered cases
   const filteredCases = useMemo(() => {
     const isSearchActive = Boolean(searchHN || filterDate);
-    // If searching, prioritize searchResults when it arrives; otherwise, use current page cases to maintain partial-HN logic during debounce/loading.
-    const baseCases = (isSearchActive && searchResults !== null) ? searchResults : cases;
+    
+    // No search active, use standard paged cases
+    if (!isSearchActive) return cases;
 
-    return baseCases.filter((c) => {
-      // HN search (client side filtering for partial matches on local cases OR further filtering server results)
-      if (searchHN && !c.hn.includes(searchHN)) return false;
+    // During loading (debounce/initial fetch), fallback to cases to maintain partial UI
+    // but only if we don't have results yet.
+    if (searchStatus === "loading" && searchResults === null) return cases;
 
-      // Department filter
-      if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
+    // On error, do NOT fallback to page-local cases; return empty list (UI will show error)
+    if (searchStatus === "error") return [];
 
-      // Date filter (client side fallback if searchResults isn't active/loaded)
-      if (filterDate && (!isSearchActive || searchResults === null)) {
-        if (!c.createdAt) return false;
-        const d = new Date(c.createdAt);
-        const caseDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        if (caseDate !== filterDate) return false;
-      }
+    // Prioritize search results if they are ready or being refreshed
+    if (searchResults !== null) {
+      return searchResults.filter((c) => {
+        // Since searchResults already filtered by HN and date at server,
+        // we only need to apply the department filter here or further HN refine.
+        if (searchHN && !c.hn.includes(searchHN)) return false;
+        if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
+        return true;
+      });
+    }
 
-      return true;
-    });
-  }, [cases, searchResults, searchHN, filterDept, filterDate]);
+    return cases;
+  }, [cases, searchResults, searchStatus, searchHN, filterDept, filterDate]);
 
   const handleReConsult = async () => {
     if (!selectedCase || !newProblem.trim()) {
@@ -128,7 +131,9 @@ export default function CompletedPage() {
           problem: `${current.problem}\n\n[Re-consult]: ${newProblem}`,
           createdAt: new Date().toISOString(),
         };
-      });
+      }, { awaitRemote: false }); // OPTIMISTIC UPDATE
+
+      // Instant UI response
       setCases((prev) => prev.filter((c) => c.id !== caseId));
       setSearchResults((prev) => prev?.filter((c) => c.id !== caseId) ?? null);
       setShowModal(false);
@@ -256,13 +261,12 @@ export default function CompletedPage() {
   useEffect(() => {
     if (!searchHN && !filterDate) {
       setSearchResults(null);
-      setIsSearching(false);
+      setSearchStatus("idle");
       return;
     }
 
     // Show loading immediately on filter change
-    setIsSearching(true);
-    setSearchResults(null);
+    setSearchStatus("loading");
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -270,12 +274,12 @@ export default function CompletedPage() {
         const results = await searchCompletedConsults(searchHN, filterDate, new Date().getTimezoneOffset());
         if (!cancelled) {
           setSearchResults(results);
+          setSearchStatus("ready");
         }
       } catch (err) {
         console.error("Search error:", err);
-      } finally {
         if (!cancelled) {
-          setIsSearching(false);
+          setSearchStatus("error");
         }
       }
     }, 600);
@@ -337,7 +341,7 @@ export default function CompletedPage() {
             >
               <span className={`font-semibold text-sm ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>ผลการค้นหา:</span>
               <span className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
-                {isSearching ? "..." : filteredCases.length}
+                {searchStatus === "loading" ? "..." : filteredCases.length}
               </span>
               <span className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>เคส</span>
             </div>
@@ -685,10 +689,14 @@ export default function CompletedPage() {
               }`}
             >
               <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                {Boolean(searchHN || filterDate)
-                  ? `พบทั้งหมด ${filteredCases.length} เคส`
-                  : `หน้า ${currentPage} — แสดง ${filteredCases.length} เคส`}
-                {loadingMore && " (กำลังโหลด...)"}
+                {searchStatus === "error" ? (
+                  <span className="text-[#E55143] font-bold">⚠️ การค้นหาล้มเหลว</span>
+                ) : Boolean(searchHN || filterDate) ? (
+                  `พบทั้งหมด ${filteredCases.length} เคส`
+                ) : (
+                  `หน้า ${currentPage} — แสดง ${filteredCases.length} เคส`
+                )}
+                {searchStatus === "loading" && " (กำลังโหลด...)"}
               </div>
               {!Boolean(searchHN || filterDate) && (
                 <div className="flex gap-2">

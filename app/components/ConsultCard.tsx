@@ -53,6 +53,7 @@ const ElapsedTime = React.memo(function ElapsedTime({ createdAt, darkMode }: { c
 
 function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate, animationDelay = 0 }: ConsultCardProps) {
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const { addToast } = useToast();
@@ -66,7 +67,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const isUrgent = caseData.isUrgent || false;
   const dept = caseData.departments[departmentName];
   const isTerminal = dept?.status === "completed" || dept?.status === "cancelled";
-  const isCompleted = dept?.status === "completed";
   const isAccepted = dept?.acceptedAt;
   const completedTime = dept?.completedAt
     ? new Date(dept.completedAt).toLocaleString("th-TH")
@@ -84,9 +84,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
   const handleActionStatusChange = useCallback(async (newStatus: string) => {
     if (isUpdating) return;
-    setIsUpdating(true);
+    setIsUpdating(true); // Immediate local "busy" state
+    setIsSyncing(true);   // Track remote sync
     try {
-      await updateConsult(caseId, (current) => {
+      // Don't await the remote write to allow instant UI closure/update
+      updateConsult(caseId, (current) => {
         const updatedDepartments = { ...current.departments };
         const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
         const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
@@ -111,23 +113,31 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         });
 
         return { departments: updatedDepartments };
+      }, { awaitRemote: false })
+      .then(() => setIsSyncing(false))
+      .catch(e => {
+        console.error("Sync error:", e);
+        setIsSyncing(false);
       });
 
+      // Instant success feedback
+      setIsUpdating(false); 
       addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
       onUpdate?.();
     } catch (error) {
       console.error("Error updating status:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
-    } finally {
       setIsUpdating(false);
+      setIsSyncing(false);
     }
   }, [isUpdating, caseId, departmentName, addToast, onUpdate]);
 
   const handleAcceptCase = useCallback(async () => {
     if (isUpdating) return;
     setIsUpdating(true);
+    setIsSyncing(true);
     try {
-      await updateConsult(caseId, (current) => {
+      updateConsult(caseId, (current) => {
         const updatedDepartments = { ...current.departments };
         const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
         const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
@@ -144,15 +154,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         });
 
         return { departments: updatedDepartments };
-      });
+      }, { awaitRemote: false })
+      .then(() => setIsSyncing(false))
+      .catch(() => setIsSyncing(false));
 
+      setIsUpdating(false);
       addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
       onUpdate?.();
     } catch (error) {
       console.error("Error accepting case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
-    } finally {
       setIsUpdating(false);
+      setIsSyncing(false);
     }
   }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate]);
 
@@ -160,8 +173,9 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     if (isUpdating) return;
     setShowCancelConfirm(false);
     setIsUpdating(true);
+    setIsSyncing(true);
     try {
-      await updateConsult(caseId, (current) => {
+      updateConsult(caseId, (current) => {
         const updatedDepartments = { ...current.departments };
         updatedDepartments[departmentName] = {
           ...updatedDepartments[departmentName],
@@ -177,15 +191,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           departments: updatedDepartments,
           ...(allFinished && { status: "completed" }),
         };
-      });
+      }, { awaitRemote: false })
+      .then(() => setIsSyncing(false))
+      .catch(() => setIsSyncing(false));
 
+      setIsUpdating(false);
       addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
       onUpdate?.();
     } catch (error) {
       console.error("Error cancelling consult:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
-    } finally {
       setIsUpdating(false);
+      setIsSyncing(false);
     }
   }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate]);
 
@@ -193,8 +210,9 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     if (isUpdating || isTerminal) return;
     setShowConfirm(false);
     setIsUpdating(true);
+    setIsSyncing(true);
     try {
-      await updateConsult(caseId, (current) => {
+      updateConsult(caseId, (current) => {
         const updatedDepartments = { ...current.departments };
         updatedDepartments[departmentName] = {
           ...updatedDepartments[departmentName],
@@ -209,14 +227,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           departments: updatedDepartments,
           ...(allCompleted && { status: "completed" }),
         };
-      });
+      }, { awaitRemote: false })
+      .then(() => setIsSyncing(false))
+      .catch(() => setIsSyncing(false));
+
+      setIsUpdating(false);
       addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
       onUpdate?.();
     } catch (error) {
       console.error("Error updating case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
-    } finally {
       setIsUpdating(false);
+      setIsSyncing(false);
     }
   }, [isUpdating, isTerminal, caseId, departmentName, hn, addToast, onUpdate]);
 
@@ -309,6 +331,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
+            {isSyncing && (
+              <span className="text-[9px] animate-pulse text-[#699D5D] font-bold">
+                ⏳ Syncing...
+              </span>
+            )}
             {isTerminal && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#699D5D]/20 text-[#699D5D]">
                 ✓

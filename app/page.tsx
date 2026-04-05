@@ -125,22 +125,32 @@ export default function Dashboard() {
   }, []);
 
   const departmentCasesMap = useMemo(() => {
-    const map: { [key: string]: Consult[] } = {};
     const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
+    
+    // Initialize map with empty arrays for all departments to ensure all are keys
+    const map: { [key: string]: Consult[] } = allDepts.reduce((acc, dept) => {
+      acc[dept] = [];
+      return acc;
+    }, {} as { [key: string]: Consult[] });
 
-    allDepts.forEach((dept) => {
-      const filtered = allCases.filter((caseData) => {
-        if (!caseData.departments[dept] || caseData.departments[dept].status !== "pending")
-          return false;
+    // Single pass through allCases for grouping (O(N))
+    allCases.forEach((caseData) => {
+      // Room filtering logic
+      const isResus = !!caseData.room?.toLowerCase().includes("resus");
+      if (roomFilter === "resus" && !isResus) return;
+      if (roomFilter === "non-resus" && isResus) return;
 
-        const isResus = caseData.room && caseData.room.toLowerCase().includes("resus");
-        if (roomFilter === "resus" && !isResus) return false;
-        if (roomFilter === "non-resus" && isResus) return false;
-
-        return true;
+      // Group case into each of its pending departments
+      Object.entries(caseData.departments).forEach(([deptName, deptInfo]) => {
+        if (map[deptName] && deptInfo.status === "pending") {
+          map[deptName].push(caseData);
+        }
       });
+    });
 
-      map[dept] = sortConsults(filtered);
+    // Final sort for each bucket
+    Object.keys(map).forEach((dept) => {
+      map[dept] = sortConsults(map[dept]);
     });
 
     return map;

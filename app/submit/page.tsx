@@ -131,9 +131,15 @@ export default function SubmitPage() {
   // Keyboard shortcut: Ctrl/Cmd + Enter to submit
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleSubmit(false);
+      if (e.key === "Enter") {
+        if (e.metaKey || e.ctrlKey) {
+          e.preventDefault();
+          handleSubmit(false);
+        } else if (e.shiftKey) {
+          // If the focus is in the textarea, Shift+Enter will submit Fast Track instead of newline
+          e.preventDefault();
+          handleSubmit(true);
+        }
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -376,9 +382,10 @@ export default function SubmitPage() {
 
             {/* Submit buttons */}
             <div className={`pt-3 border-t ${darkMode ? "border-gray-700" : "border-[#C7CFDA]/30"}`}>
-              <p className={`text-xs mb-2 text-center ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                💡 กด Ctrl+Enter (Cmd+Enter) เพื่อส่งเคส
-              </p>
+              <div className={`text-[10px] mb-2 text-center flex flex-col gap-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+                <p>💡 Ctrl+Enter: ส่งเคสปกติ</p>
+                <p>⚡ Shift+Enter: ส่ง Fast Track</p>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"

@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, runTransaction } from "firebase/firestore";
 import { sortConsults } from "./utils";
 
 export interface ConsultDepartment {
@@ -283,35 +283,85 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
 
 export type ConsultUpdater = (current: Consult) => Partial<Omit<Consult, "id">>;
 
+export interface UpdateConsultOptions {
+    awaitRemote?: boolean;
+}
+
 export async function updateConsult(
     id: string,
-    updater: ConsultUpdater | Partial<Omit<Consult, "id">>
+    updater: ConsultUpdater | Partial<Omit<Consult, "id">>,
+    options: UpdateConsultOptions = {}
 ): Promise<Consult | null> {
     const docRef = doc(db, COLLECTION_NAME, id);
+    const { awaitRemote = true } = options;
 
     if (typeof updater === "function") {
-        const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) {
-            throw new Error(`Consult not found: ${id}`);
+        if (!awaitRemote) {
+            // Optimistic Path: Return immediately after local read, then sync safely in background.
+            // Note: getDoc usually hit the local cache first, so this is fast.
+            const docSnap = await getDoc(docRef);
+            if (!docSnap.exists()) {
+                throw new Error(`Consult not found: ${id}`);
+            }
+
+            const data = docSnap.data();
+            const currentData = {
+                ...data,
+                id: docSnap.id,
+                firstName: data?.firstName ?? "",
+                lastName: data?.lastName ?? "",
+            } as Consult;
+
+            const updates = updater(currentData);
+            
+            // Perform the "real" update via Transaction in background to ensure Concurrency Safety.
+            runTransaction(db, async (t) => {
+                const tSnap = await t.get(docRef);
+                if (!tSnap.exists()) return;
+                const tData = tSnap.data();
+                const tCurrent = { ...tData, id: tSnap.id } as Consult;
+                const tUpdates = (updater as ConsultUpdater)(tCurrent);
+                t.update(docRef, tUpdates);
+            }).catch(err => {
+                console.error("Background sync failed for updateConsult:", err);
+            });
+
+            return {
+                ...currentData,
+                ...updates,
+            } as Consult;
         }
 
-        const data = docSnap.data();
-        const currentData = {
-            ...data,
-            id: docSnap.id,
-            firstName: data?.firstName ?? "",
-            lastName: data?.lastName ?? "",
-        } as Consult;
+        // Standard Transactional Path (Awaited for server response)
+        return runTransaction(db, async (transaction) => {
+            const docSnap = await transaction.get(docRef);
+            if (!docSnap.exists()) {
+                throw new Error(`Consult not found: ${id}`);
+            }
 
-        const updates = updater(currentData);
-        await updateDoc(docRef, updates);
+            const data = docSnap.data();
+            const currentData = {
+                ...data,
+                id: docSnap.id,
+                firstName: data?.firstName ?? "",
+                lastName: data?.lastName ?? "",
+            } as Consult;
 
-        return {
-            ...currentData,
-            ...updates,
-        } as Consult;
+            const updates = updater(currentData);
+            transaction.update(docRef, updates);
+
+            return {
+                ...currentData,
+                ...updates,
+            } as Consult;
+        });
     } else {
         // Direct object update
+        if (!awaitRemote) {
+            // FIRE AND FORGET
+            updateDoc(docRef, updater).catch(e => console.error("Delayed updateDoc error:", e));
+            return null;
+        }
         await updateDoc(docRef, updater);
         return null;
     }
