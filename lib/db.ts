@@ -124,19 +124,20 @@ export async function searchCompletedConsults(
 ): Promise<Consult[]> {
     let consults: Consult[] = [];
 
-    // If searching by HN, query by exact HN first, then filter completed/date locally.
-    // This avoids requiring a new composite index.
+    // If searching by HN, query by exact HN with server-side status filter.
+    // NOTE: Queries on "hn" may require a composite index if you later add ordering
+    // or additional where clauses beyond status filtering.
     if (searchHN) {
         const q = query(
             collection(db, COLLECTION_NAME),
-            where("hn", "==", searchHN)
+            where("hn", "==", searchHN),
+            where("status", "==", "completed")
         );
         const snapshot = await getDocs(q);
-        
+
         consults = snapshot.docs
             .map(mapDocToConsult)
-            .filter((c): c is Consult => c !== null && Boolean(c.hn))
-            .filter(c => c.status === "completed");
+            .filter((c): c is Consult => c !== null && Boolean(c.hn));
 
 
         if (filterDate) {
