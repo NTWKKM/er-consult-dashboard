@@ -158,7 +158,6 @@ export default function CompletedPage() {
       
       if (exportList.length === 0) {
         addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
-        setIsExporting(false);
         return;
       }
 
@@ -303,7 +302,11 @@ export default function CompletedPage() {
               <span className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>เคส</span>
             </div>
             <button
-              onClick={() => setShowExportModal(true)}
+              onClick={() => {
+                setExportStartDate("");
+                setExportEndDate("");
+                setShowExportModal(true);
+              }}
               className="inline-flex items-center gap-2 bg-[#699D5D] hover:bg-[#58854D] text-white px-4 py-1.5 rounded-full shadow-sm font-semibold text-sm transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

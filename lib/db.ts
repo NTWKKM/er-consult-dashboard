@@ -127,7 +127,17 @@ export async function searchCompletedConsults(
         const snapshot = await getDocs(q);
         
         consults = snapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as Consult))
+            .map(document => {
+                const data = document.data();
+                if (!data) return null;
+                return {
+                    id: document.id,
+                    firstName: data.firstName || "",
+                    lastName: data.lastName || "",
+                    ...data,
+                } as Consult;
+            })
+            .filter((c): c is Consult => c !== null && Boolean(c.hn))
             .filter(c => c.status === "completed");
 
         if (filterDate) {
@@ -151,7 +161,18 @@ export async function searchCompletedConsults(
         );
         
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Consult));
+        return snapshot.docs
+            .map(document => {
+                const data = document.data();
+                if (!data) return null;
+                return {
+                    id: document.id,
+                    firstName: data.firstName || "",
+                    lastName: data.lastName || "",
+                    ...data,
+                } as Consult;
+            })
+            .filter((c): c is Consult => c !== null && Boolean(c.hn));
     }
 
     return [];
@@ -178,7 +199,18 @@ export async function fetchAllCompletedConsultsForExport(
     );
 
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Consult));
+    return snapshot.docs
+        .map(document => {
+            const data = document.data();
+            if (!data) return null;
+            return {
+                id: document.id,
+                firstName: data.firstName || "",
+                lastName: data.lastName || "",
+                ...data,
+            } as Consult;
+        })
+        .filter((c): c is Consult => c !== null && Boolean(c.hn));
 }
 
 export async function getConsultById(id: string): Promise<Consult | undefined> {
