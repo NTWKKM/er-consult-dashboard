@@ -82,16 +82,19 @@ export default function CompletedPage() {
 
   // Filtered cases
   const filteredCases = useMemo(() => {
-    const baseCases = searchResults !== null ? searchResults : cases;
+    const isSearchActive = Boolean(searchHN || filterDate);
+    // If searching, prioritize searchResults when it arrives; otherwise, use current page cases to maintain partial-HN logic during debounce/loading.
+    const baseCases = (isSearchActive && searchResults !== null) ? searchResults : cases;
+
     return baseCases.filter((c) => {
-      // HN search (client side fallback if searchResults isn't exact or if using cases)
+      // HN search (client side filtering for partial matches on local cases OR further filtering server results)
       if (searchHN && !c.hn.includes(searchHN)) return false;
 
       // Department filter
       if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
 
-      // Date filter (client side fallback)
-      if (filterDate) {
+      // Date filter (client side fallback if searchResults isn't active/loaded)
+      if (filterDate && (!isSearchActive || searchResults === null)) {
         if (!c.createdAt) return false;
         const caseDate = new Date(c.createdAt).toISOString().split("T")[0];
         if (caseDate !== filterDate) return false;
@@ -173,7 +176,9 @@ export default function CompletedPage() {
           return Object.entries(c.departments)
             .map(([dept, data]) => {
               const time = data[key] as string | undefined;
-              return time ? `${dept}: ${new Date(time).toLocaleString("th-TH")}` : null;
+              if (!time) return null;
+              const label = key === "completedAt" && data.status === "cancelled" ? `${dept} (ยกเลิก)` : dept;
+              return `${label}: ${new Date(time).toLocaleString("th-TH")}`;
             })
             .filter(Boolean)
             .join("\n");
@@ -640,55 +645,59 @@ export default function CompletedPage() {
           </div>
 
           {/* Pagination */}
-          {(currentPage > 1 || hasMore) && (
+          {(currentPage > 1 || hasMore || Boolean(searchHN || filterDate)) && (
             <div
               className={`px-4 py-3 border-t flex items-center justify-between ${
                 darkMode ? "bg-gray-800/50 border-gray-700" : "bg-[#014167]/10 border-[#014167]/20"
               }`}
             >
               <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                หน้า {currentPage} — แสดง {filteredCases.length} เคส
+                {Boolean(searchHN || filterDate)
+                  ? `พบทั้งหมด ${filteredCases.length} เคส`
+                  : `หน้า ${currentPage} — แสดง ${filteredCases.length} เคส`}
                 {loadingMore && " (กำลังโหลด...)"}
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => goToPage(currentPage - 1)}
-                  disabled={currentPage === 1 || loadingMore}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    currentPage === 1 || loadingMore
-                      ? darkMode
-                        ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                        : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                      : darkMode
-                      ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
-                      : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
-                  }`}
-                >
-                  ← ก่อนหน้า
-                </button>
-                <span
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                    darkMode ? "bg-gray-700 text-gray-200" : "bg-[#699D5D] text-white"
-                  }`}
-                >
-                  {currentPage}
-                </span>
-                <button
-                  onClick={() => goToPage(currentPage + 1)}
-                  disabled={!hasMore || loadingMore}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    !hasMore || loadingMore
-                      ? darkMode
-                        ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                        : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                      : darkMode
-                      ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
-                      : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
-                  }`}
-                >
-                  ถัดไป →
-                </button>
-              </div>
+              {!Boolean(searchHN || filterDate) && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={currentPage === 1 || loadingMore}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      currentPage === 1 || loadingMore
+                        ? darkMode
+                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
+                        : darkMode
+                        ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
+                        : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
+                    }`}
+                  >
+                    ← ก่อนหน้า
+                  </button>
+                  <span
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                      darkMode ? "bg-gray-700 text-gray-200" : "bg-[#699D5D] text-white"
+                    }`}
+                  >
+                    {currentPage}
+                  </span>
+                  <button
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={!hasMore || loadingMore}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      !hasMore || loadingMore
+                        ? darkMode
+                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
+                        : darkMode
+                        ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
+                        : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
+                    }`}
+                  >
+                    ถัดไป →
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -42,6 +42,16 @@ function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult
     } as Consult;
 }
 
+/**
+ * Helper to get the UTC ISO range [start, end) for a given local "YYYY-MM-DD" date.
+ */
+function getUtcRangeForLocalDate(date: string) {
+    const [year, month, day] = date.split("-").map(Number);
+    const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const end = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+    return { start: start.toISOString(), end: end.toISOString() };
+}
+
 
 // Real-time subscription instead of single fetch
 export function subscribeToConsultsByStatus(
@@ -141,7 +151,8 @@ export async function searchCompletedConsults(
 
 
         if (filterDate) {
-            consults = consults.filter(c => c.createdAt && c.createdAt.startsWith(filterDate));
+            const { start, end } = getUtcRangeForLocalDate(filterDate);
+            consults = consults.filter(c => c.createdAt && c.createdAt >= start && c.createdAt < end);
         }
 
         return consults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -149,14 +160,13 @@ export async function searchCompletedConsults(
 
     // If only filtering by date, use the existing status + createdAt index
     if (filterDate) {
-        const startStr = filterDate + "T00:00:00.000Z";
-        const endStr = filterDate + "T23:59:59.999Z";
+        const { start, end } = getUtcRangeForLocalDate(filterDate);
         
         const q = query(
             collection(db, COLLECTION_NAME),
             where("status", "==", "completed"),
-            where("createdAt", ">=", startStr),
-            where("createdAt", "<=", endStr),
+            where("createdAt", ">=", start),
+            where("createdAt", "<", end),
             orderBy("createdAt", "desc")
         );
         
@@ -178,8 +188,8 @@ export async function fetchAllCompletedConsultsForExport(
     startDate: string,
     endDate: string
 ): Promise<Consult[]> {
-    const startStr = startDate + "T00:00:00.000Z";
-    const endStr = endDate + "T23:59:59.999Z";
+    const { start } = getUtcRangeForLocalDate(startDate);
+    const { end } = getUtcRangeForLocalDate(endDate);
 
     let allConsults: Consult[] = [];
     let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
@@ -189,8 +199,8 @@ export async function fetchAllCompletedConsultsForExport(
         let q = query(
             collection(db, COLLECTION_NAME),
             where("status", "==", "completed"),
-            where("createdAt", ">=", startStr),
-            where("createdAt", "<=", endStr),
+            where("createdAt", ">=", start),
+            where("createdAt", "<", end),
             orderBy("createdAt", "desc"),
             limit(BATCH_SIZE)
         );

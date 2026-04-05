@@ -201,7 +201,8 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           completedAt: new Date().toISOString(),
         };
         const allCompleted = Object.values(updatedDepartments).every(
-          (dept: ConsultDepartment) => dept.status === "completed"
+          (dept: ConsultDepartment) =>
+            dept.status === "completed" || dept.status === "cancelled"
         );
         return {
           departments: updatedDepartments,
