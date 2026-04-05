@@ -184,13 +184,26 @@ export default function CompletedPage() {
       const exportData = exportList.map((c) => {
         const depts = Object.keys(c.departments).join(", ");
 
-        const getTimesFor = (key: keyof ConsultDepartment) => {
+        // Returns times for non-cancelled departments only (for "ปิดเคส")
+        const getTimesFor = (key: keyof ConsultDepartment, excludeStatus?: string) => {
           return Object.entries(c.departments)
             .map(([dept, data]) => {
               const time = data[key] as string | undefined;
               if (!time) return null;
-              const label = key === "completedAt" && data.status === "cancelled" ? `${dept} (ยกเลิก)` : dept;
-              return `${label}: ${new Date(time).toLocaleString("th-TH")}`;
+              if (excludeStatus && data.status === excludeStatus) return null;
+              return `${dept}: ${new Date(time).toLocaleString("th-TH")}`;
+            })
+            .filter(Boolean)
+            .join("\n");
+        };
+
+        // Returns times for cancelled departments only (for "ยกเลิก" column)
+        const getCancelledTimesFor = (key: keyof ConsultDepartment) => {
+          return Object.entries(c.departments)
+            .map(([dept, data]) => {
+              const time = data[key] as string | undefined;
+              if (!time || data.status !== "cancelled") return null;
+              return `${dept}: ${new Date(time).toLocaleString("th-TH")}`;
             })
             .filter(Boolean)
             .join("\n");
@@ -208,7 +221,8 @@ export default function CompletedPage() {
           Admit: getTimesFor("admittedAt") || "-",
           "คืน ER": getTimesFor("returnedAt") || "-",
           "D/C": getTimesFor("dischargedAt") || "-",
-          ปิดเคส: getTimesFor("completedAt") || "-",
+          ปิดเคส: getTimesFor("completedAt", "cancelled") || "-",  // excluded cancelled
+          ยกเลิก: getCancelledTimesFor("completedAt") || "-",       // cancelled only
         };
       });
 
@@ -243,9 +257,11 @@ export default function CompletedPage() {
       return;
     }
 
+    // Show loading immediately on filter change
+    setIsSearching(true);
+
     let cancelled = false;
     const timer = setTimeout(async () => {
-      setIsSearching(true);
       try {
         const results = await searchCompletedConsults(searchHN, filterDate, new Date().getTimezoneOffset());
         if (!cancelled) {
@@ -254,14 +270,15 @@ export default function CompletedPage() {
       } catch (err) {
         console.error("Search error:", err);
       } finally {
-        setIsSearching(false);
+        if (!cancelled) {
+          setIsSearching(false);
+        }
       }
     }, 600);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      setIsSearching(false);
     };
   }, [searchHN, filterDate]);
 

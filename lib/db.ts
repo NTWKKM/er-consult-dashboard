@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, runTransaction } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 
 export interface ConsultDepartment {
@@ -51,19 +51,10 @@ function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult
 function getUtcRangeForLocalDate(date: string, offsetMinutes?: number) {
     const [year, month, day] = date.split("-").map(Number);
 
-    let offsetStart: number;
-    let offsetEnd: number;
-
-    if (offsetMinutes !== undefined) {
-        // If an explicit offset is provided, use it for both for consistency with requested override
-        // but the prompt suggests computing separate offsets even then for DST accuracy.
-        // Let's compute them based on the target date to ensure DST is respected for the specific date.
-        offsetStart = new Date(year, month - 1, day).getTimezoneOffset();
-        offsetEnd = new Date(year, month - 1, day + 1).getTimezoneOffset();
-    } else {
-        offsetStart = new Date(year, month - 1, day).getTimezoneOffset();
-        offsetEnd = new Date(year, month - 1, day + 1).getTimezoneOffset();
-    }
+    // When an explicit offset is provided, use it directly (caller knows user's timezone).
+    // Otherwise, fall back to server's local timezone for the target dates.
+    const offsetStart = offsetMinutes ?? new Date(year, month - 1, day).getTimezoneOffset();
+    const offsetEnd = offsetMinutes ?? new Date(year, month - 1, day + 1).getTimezoneOffset();
 
     const start = new Date(Date.UTC(year, month - 1, day, 0, offsetStart));
     const end = new Date(Date.UTC(year, month - 1, day + 1, 0, offsetEnd));
@@ -92,7 +83,7 @@ export function subscribeToConsultsByStatus(
         const consults: Consult[] = [];
         querySnapshot.forEach((document) => {
             const consult = mapDocToConsult(document);
-            if (consult) consults.push(consult);
+            if (consult && Boolean(consult.hn)) consults.push(consult);
         });
 
         
@@ -239,7 +230,7 @@ export async function fetchAllCompletedConsultsForExport(
             .map(mapDocToConsult)
             .filter((c): c is Consult => c !== null && Boolean(c.hn));
 
-        allConsults = allConsults.concat(batch);
+        allConsults.push(...batch);
 
         // Safety limit to prevent unbounded memory growth
         if (allConsults.length >= MAX_RESULTS) {
@@ -299,28 +290,26 @@ export async function updateConsult(
     const docRef = doc(db, COLLECTION_NAME, id);
 
     if (typeof updater === "function") {
-        return runTransaction(db, async (transaction) => {
-            const docSnap = await transaction.get(docRef);
-            if (!docSnap.exists()) {
-                throw new Error(`Consult not found: ${id}`);
-            }
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            throw new Error(`Consult not found: ${id}`);
+        }
 
-            const currentData = {
-                ...docSnap.data(),
-                id: docSnap.id,
-                firstName: docSnap.data().firstName ?? "",
-                lastName: docSnap.data().lastName ?? "",
-            } as Consult;
+        const data = docSnap.data();
+        const currentData = {
+            ...data,
+            id: docSnap.id,
+            firstName: data?.firstName ?? "",
+            lastName: data?.lastName ?? "",
+        } as Consult;
 
-            const updates = updater(currentData);
-            
-            transaction.update(docRef, updates);
+        const updates = updater(currentData);
+        await updateDoc(docRef, updates);
 
-            return {
-                ...currentData,
-                ...updates,
-            } as Consult;
-        });
+        return {
+            ...currentData,
+            ...updates,
+        } as Consult;
     } else {
         // Direct object update
         await updateDoc(docRef, updater);
