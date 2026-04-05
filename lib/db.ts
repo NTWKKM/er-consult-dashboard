@@ -35,10 +35,10 @@ function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult
     const data = document.data();
     if (!data) return null;
     return {
-        id: document.id,
-        firstName: data.firstName || "",
-        lastName: data.lastName || "",
         ...data,
+        id: document.id,
+        firstName: data.firstName ?? "",
+        lastName: data.lastName ?? "",
     } as Consult;
 }
 
@@ -171,29 +171,49 @@ export async function searchCompletedConsults(
 
 /**
  * Fetch all completed cases within a date range (for exporting).
+ * Uses cursor-based pagination internally to fetch the entire result set.
  */
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
-    endDate: string,
-    maxResults: number = 10000
+    endDate: string
 ): Promise<Consult[]> {
     const startStr = startDate + "T00:00:00.000Z";
     const endStr = endDate + "T23:59:59.999Z";
 
-    const q = query(
-        collection(db, COLLECTION_NAME),
-        where("status", "==", "completed"),
-        where("createdAt", ">=", startStr),
-        where("createdAt", "<=", endStr),
-        orderBy("createdAt", "desc"),
-        limit(maxResults)
-    );
+    let allConsults: Consult[] = [];
+    let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
+    const BATCH_SIZE = 1000;
 
-    const snapshot = await getDocs(q);
-    return snapshot.docs
-        .map(mapDocToConsult)
-        .filter((c): c is Consult => c !== null && Boolean(c.hn));
+    while (true) {
+        let q = query(
+            collection(db, COLLECTION_NAME),
+            where("status", "==", "completed"),
+            where("createdAt", ">=", startStr),
+            where("createdAt", "<=", endStr),
+            orderBy("createdAt", "desc"),
+            limit(BATCH_SIZE)
+        );
 
+        if (lastDoc) {
+            q = query(q, startAfter(lastDoc));
+        }
+
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) break;
+
+        const batch = snapshot.docs
+            .map(mapDocToConsult)
+            .filter((c): c is Consult => c !== null && Boolean(c.hn));
+
+        allConsults = allConsults.concat(batch);
+
+        // If we fetched fewer than batch size, we've reached the end
+        if (snapshot.docs.length < BATCH_SIZE) break;
+
+        lastDoc = snapshot.docs[snapshot.docs.length - 1];
+    }
+
+    return allConsults;
 }
 
 export async function getConsultById(id: string): Promise<Consult | undefined> {
@@ -202,10 +222,10 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
     if (docSnap.exists()) {
         const data = docSnap.data();
         return {
-            id: docSnap.id,
-            firstName: data.firstName || "",
-            lastName: data.lastName || "",
             ...data,
+            id: docSnap.id,
+            firstName: data.firstName ?? "",
+            lastName: data.lastName ?? "",
         } as Consult;
     }
     return undefined;
@@ -234,7 +254,7 @@ export async function updateConsult(
 
     await updateDoc(docRef, updates);
     
-    return { id, ...docSnap.data(), ...updates } as Consult;
+    return { ...docSnap.data(), ...updates, id } as Consult;
 }
 
 export async function deleteConsult(id: string): Promise<void> {
