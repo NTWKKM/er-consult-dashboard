@@ -147,7 +147,8 @@ export async function searchCompletedConsults(
     if (searchHN) {
         const q = query(
             collection(db, COLLECTION_NAME),
-            where("hn", "==", searchHN),
+            where("hn", ">=", searchHN),
+            where("hn", "<", searchHN + "\uf8ff"),
             where("status", "==", "completed")
         );
         const snapshot = await getDocs(q);
@@ -280,7 +281,9 @@ export async function updateConsult(
     const docRef = doc(db, COLLECTION_NAME, id);
     return await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
-        if (!docSnap.exists()) return null;
+        if (!docSnap.exists()) {
+            throw new Error(`Consult not found: ${id}`);
+        }
 
         const currentData = {
             ...docSnap.data(),

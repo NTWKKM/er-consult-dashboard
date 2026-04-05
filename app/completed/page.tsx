@@ -96,7 +96,8 @@ export default function CompletedPage() {
       // Date filter (client side fallback if searchResults isn't active/loaded)
       if (filterDate && (!isSearchActive || searchResults === null)) {
         if (!c.createdAt) return false;
-        const caseDate = new Date(c.createdAt).toISOString().split("T")[0];
+        const d = new Date(c.createdAt);
+        const caseDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         if (caseDate !== filterDate) return false;
       }
 
