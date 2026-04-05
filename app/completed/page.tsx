@@ -80,32 +80,26 @@ export default function CompletedPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [fetchPage]);
 
-  // Filtered cases
   const filteredCases = useMemo(() => {
     const isSearchActive = Boolean(searchHN || filterDate);
-    
-    // No search active, use standard paged cases
-    if (!isSearchActive) return cases;
+    let baseCases = cases;
 
-    // During loading (debounce/initial fetch), fallback to cases to maintain partial UI
-    // but only if we don't have results yet.
-    if (searchStatus === "loading" && searchResults === null) return cases;
-
-    // On error, do NOT fallback to page-local cases; return empty list (UI will show error)
-    if (searchStatus === "error") return [];
-
-    // Prioritize search results if they are ready or being refreshed
-    if (searchResults !== null) {
-      return searchResults.filter((c) => {
-        // Since searchResults already filtered by HN and date at server,
-        // we only need to apply the department filter here or further HN refine.
-        if (searchHN && !c.hn.includes(searchHN)) return false;
-        if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
-        return true;
-      });
+    // เลือกอาร์เรย์เริ่มต้นที่จะนำมากรอง
+    if (isSearchActive) {
+      if (searchStatus === "error") return [];
+      if (searchStatus === "loading" && searchResults === null) {
+        baseCases = cases;
+      } else if (searchResults !== null) {
+        baseCases = searchResults;
+      }
     }
 
-    return cases;
+    // กรองด้วย HN และแผนกอย่างสม่ำเสมอในทุก ๆ กรณี
+    return baseCases.filter((c) => {
+      if (searchHN && !c.hn.includes(searchHN)) return false;
+      if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
+      return true;
+    });
   }, [cases, searchResults, searchStatus, searchHN, filterDept, filterDate]);
 
   const handleReConsult = async () => {
@@ -178,8 +172,7 @@ export default function CompletedPage() {
     try {
       const { consults: exportList, truncated } = await fetchAllCompletedConsultsForExport(
         exportStartDate, 
-        exportEndDate,
-        new Date().getTimezoneOffset()
+        exportEndDate
       );
       
       if (exportList.length === 0) {
@@ -279,7 +272,7 @@ export default function CompletedPage() {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const results = await searchCompletedConsults(searchHN, filterDate, new Date().getTimezoneOffset());
+        const results = await searchCompletedConsults(searchHN, filterDate);
         if (!cancelled) {
           setSearchResults(results);
           setSearchStatus("ready");

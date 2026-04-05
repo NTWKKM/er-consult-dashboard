@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, runTransaction } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 
 export interface ConsultDepartment {
@@ -139,8 +139,7 @@ export async function fetchCompletedConsultsPage(
  */
 export async function searchCompletedConsults(
     searchHN?: string,
-    filterDate?: string,
-    timezoneOffset?: number
+    filterDate?: string
 ): Promise<Consult[]> {
     let consults: Consult[] = [];
 
@@ -162,7 +161,7 @@ export async function searchCompletedConsults(
 
 
         if (filterDate) {
-            const { start, end } = getUtcRangeForLocalDate(filterDate, timezoneOffset);
+            const { start, end } = getUtcRangeForLocalDate(filterDate);
             consults = consults.filter(c => c.createdAt && c.createdAt >= start && c.createdAt < end);
         }
 
@@ -171,7 +170,7 @@ export async function searchCompletedConsults(
 
     // If only filtering by date, use the existing status + createdAt index
     if (filterDate) {
-        const { start, end } = getUtcRangeForLocalDate(filterDate, timezoneOffset);
+        const { start, end } = getUtcRangeForLocalDate(filterDate);
         
         const q = query(
             collection(db, COLLECTION_NAME),
@@ -197,11 +196,10 @@ export async function searchCompletedConsults(
  */
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
-    endDate: string,
-    timezoneOffset?: number
+    endDate: string
 ): Promise<{ consults: Consult[]; truncated: boolean; totalCount: number }> {
-    const { start } = getUtcRangeForLocalDate(startDate, timezoneOffset);
-    const { end } = getUtcRangeForLocalDate(endDate, timezoneOffset);
+    const { start } = getUtcRangeForLocalDate(startDate);
+    const { end } = getUtcRangeForLocalDate(endDate);
 
     let allConsults: Consult[] = [];
     let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
@@ -315,15 +313,8 @@ export async function updateConsult(
 
             const updates = updater(currentData);
             
-            // Perform the "real" update via Transaction in background to ensure Concurrency Safety.
-            runTransaction(db, async (t) => {
-                const tSnap = await t.get(docRef);
-                if (!tSnap.exists()) return;
-                const tData = tSnap.data();
-                const tCurrent = { ...tData, id: tSnap.id } as Consult;
-                const tUpdates = (updater as ConsultUpdater)(tCurrent);
-                t.update(docRef, tUpdates);
-            }).catch(err => {
+            // Perform the "real" update in background (Allows Offline persistence)
+            updateDoc(docRef, updates).catch(err => {
                 console.error("Background sync failed for updateConsult:", err);
                 if (options.onBackgroundError) {
                     options.onBackgroundError(err);
@@ -336,29 +327,27 @@ export async function updateConsult(
             } as Consult;
         }
 
-        // Standard Transactional Path (Awaited for server response)
-        return runTransaction(db, async (transaction) => {
-            const docSnap = await transaction.get(docRef);
-            if (!docSnap.exists()) {
-                throw new Error(`Consult not found: ${id}`);
-            }
+        // Standard Path (Awaited for server response)
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            throw new Error(`Consult not found: ${id}`);
+        }
 
-            const data = docSnap.data();
-            const currentData = {
-                ...data,
-                id: docSnap.id,
-                firstName: data?.firstName ?? "",
-                lastName: data?.lastName ?? "",
-            } as Consult;
+        const data = docSnap.data();
+        const currentData = {
+            ...data,
+            id: docSnap.id,
+            firstName: data?.firstName ?? "",
+            lastName: data?.lastName ?? "",
+        } as Consult;
 
-            const updates = updater(currentData);
-            transaction.update(docRef, updates);
+        const updates = updater(currentData);
+        await updateDoc(docRef, updates);
 
-            return {
-                ...currentData,
-                ...updates,
-            } as Consult;
-        });
+        return {
+            ...currentData,
+            ...updates,
+        } as Consult;
     } else {
         // Direct object update
         if (!awaitRemote) {

@@ -87,7 +87,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsUpdating(true); // Immediate local "busy" state
     setIsSyncing(true);   // Track remote sync
     try {
-      // Don't await the remote write to allow instant UI closure/update
       updateConsult(caseId, (current) => {
         const updatedDepartments = { ...current.departments };
         const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
@@ -122,16 +121,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           });
         }
       })
-      .then(() => setIsSyncing(false))
+      .then(() => {
+        setIsSyncing(false);
+        setIsUpdating(false); 
+        addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
+        onUpdate?.();
+      })
       .catch(e => {
         console.error("Sync error:", e);
         setIsSyncing(false);
+        setIsUpdating(false);
+        addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
       });
-
-      // Instant success feedback
-      setIsUpdating(false); 
-      addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
-      onUpdate?.();
     } catch (error) {
       console.error("Error updating status:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
@@ -171,12 +172,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           });
         }
       })
-      .then(() => setIsSyncing(false))
-      .catch(() => setIsSyncing(false));
-
-      setIsUpdating(false);
-      addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
-      onUpdate?.();
+      .then(() => {
+        setIsSyncing(false);
+        setIsUpdating(false);
+        addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
+        onUpdate?.();
+      })
+      .catch((e) => {
+        console.error("Error accepting case:", e);
+        setIsSyncing(false);
+        setIsUpdating(false);
+        addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
+      });
     } catch (error) {
       console.error("Error accepting case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
@@ -216,12 +223,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           });
         }
       })
-      .then(() => setIsSyncing(false))
-      .catch(() => setIsSyncing(false));
-
-      setIsUpdating(false);
-      addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
-      onUpdate?.();
+      .then(() => {
+        setIsSyncing(false);
+        setIsUpdating(false);
+        addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
+        onUpdate?.();
+      })
+      .catch((e) => {
+        console.error("Error cancelling consult:", e);
+        setIsSyncing(false);
+        setIsUpdating(false);
+        addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
+      });
     } catch (error) {
       console.error("Error cancelling consult:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
@@ -260,12 +273,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           });
         }
       })
-      .then(() => setIsSyncing(false))
-      .catch(() => setIsSyncing(false));
-
-      setIsUpdating(false);
-      addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
-      onUpdate?.();
+      .then(() => {
+        setIsSyncing(false);
+        setIsUpdating(false);
+        addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
+        onUpdate?.();
+      })
+      .catch((e) => {
+        console.error("Error updating case:", e);
+        setIsSyncing(false);
+        setIsUpdating(false);
+        addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
+      });
     } catch (error) {
       console.error("Error updating case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });

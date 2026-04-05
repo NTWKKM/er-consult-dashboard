@@ -21,10 +21,12 @@ export default function SubmitPage() {
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isMac, setIsMac] = useState(false);
 
-  // Auto-focus HN field on mount
+  // Auto-focus HN field on mount & detect OS
   useEffect(() => {
     hnRef.current?.focus();
+    setIsMac(navigator.platform.toUpperCase().indexOf('MAC') >= 0 || navigator.userAgent.toUpperCase().indexOf('MAC') >= 0);
   }, []);
 
   const validateForm = () => {
@@ -132,6 +134,7 @@ export default function SubmitPage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Enter") {
+        if (isLoading) return; // Prevent double submission
         if (e.metaKey || e.ctrlKey) {
           e.preventDefault();
           handleSubmit(false);
@@ -145,7 +148,7 @@ export default function SubmitPage() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hn, firstName, lastName, room, problem, selectedDepts]);
+  }, [hn, firstName, lastName, room, problem, selectedDepts, isLoading]);
 
   const inputClasses = (fieldName: string) =>
     `w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all duration-200 text-sm ${errors[fieldName]
@@ -383,7 +386,7 @@ export default function SubmitPage() {
             {/* Submit buttons */}
             <div className={`pt-3 border-t ${darkMode ? "border-gray-700" : "border-[#C7CFDA]/30"}`}>
               <div className={`text-[10px] mb-2 text-center flex flex-col gap-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                <p>💡 Ctrl+Enter: ส่งเคสปกติ</p>
+                <p>💡 {isMac ? "⌘+Enter" : "Ctrl+Enter"}: ส่งเคสปกติ</p>
                 <p>⚡ Shift+Enter: ส่ง Fast Track</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
