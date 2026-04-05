@@ -18,15 +18,21 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 // ER environments may have unstable WiFi — this lets doctors view cached data
 // and queued writes auto-sync when connectivity returns.
 let db: Firestore;
-try {
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  });
-} catch {
-  // Firestore already initialized (e.g. Next.js hot-reload) — reuse existing instance
+if (typeof window === "undefined") {
+  // Server-side: skip persistence APIs (IndexedDB not available)
   db = getFirestore(app);
+} else {
+  try {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch (error) {
+    // Firestore already initialized (e.g. Next.js hot-reload) or persistence unavailable
+    console.warn("Firestore: falling back to existing instance.", error);
+    db = getFirestore(app);
+  }
 }
 
 export { db };

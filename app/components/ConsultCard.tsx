@@ -156,6 +156,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate]);
 
   const handleCancelConsult = useCallback(async () => {
+    if (isUpdating) return;
     setShowCancelConfirm(false);
     setIsUpdating(true);
     try {
@@ -185,7 +186,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     } finally {
       setIsUpdating(false);
     }
-  }, [caseId, departmentName, hn, addToast, onUpdate]);
+  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate]);
 
   const handleCompleteCase = useCallback(async () => {
     if (isUpdating || isCompleted) return;
@@ -238,6 +239,8 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       >
         {!isCompleted && (
           <button
+            type="button"
+            aria-label="ยกเลิกปรึกษา"
             onClick={() => setShowCancelConfirm(true)}
             disabled={isUpdating}
             className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 text-[10px] font-bold z-10 ${
@@ -492,7 +495,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       <ConfirmModal
         isOpen={showCancelConfirm}
         title="ยกเลิกปรึกษา"
-        message={`คุณต้องการยกเลิกการปรึกษา HN: ${hn}${fullName ? ` (${fullName})` : ""} แผนก: ${departmentName}? เคสจะถูกลบออกจากระบบ`}
+        message={`คุณต้องการยกเลิกการปรึกษา HN: ${hn}${fullName ? ` (${fullName})` : ""} แผนก: ${departmentName}? ${Object.keys(caseData.departments).length <= 1 ? "เคสจะถูกลบออกจากระบบ" : "แผนกนี้จะถูกลบออกจากคำปรึกษา"}`}
         confirmText="ยืนยันยกเลิก"
         cancelText="ไม่ยกเลิก"
         variant="warning"
