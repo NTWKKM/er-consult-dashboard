@@ -88,6 +88,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsSyncing(true);   // Track remote sync
     try {
       updateConsult(caseId, (current) => {
+        // Guard against stale snapshots/missing departments
+        if (!current.departments || !current.departments[departmentName]) {
+          return current;
+        }
+
         const updatedDepartments = { ...current.departments };
         const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
         const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
@@ -121,9 +126,27 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           });
         }
       })
-      .then(() => {
-        setIsSyncing(false);
-        setIsUpdating(false); 
+      .then((result) => {
+        if (result.consult === null && !result.isQueued) {
+            // This happens if the guard triggered or doc missing
+             setIsSyncing(false);
+             setIsUpdating(false);
+             return;
+        }
+
+        if (result.backgroundPromise) {
+            result.backgroundPromise.then(() => {
+                setIsSyncing(false);
+                setIsUpdating(false);
+            }).catch(() => {
+                setIsSyncing(false);
+                setIsUpdating(false);
+            });
+        } else {
+            setIsSyncing(false);
+            setIsUpdating(false);
+        }
+        
         addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
         onUpdate?.();
       })
@@ -147,6 +170,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsSyncing(true);
     try {
       updateConsult(caseId, (current) => {
+        // Guard against stale snapshots/missing departments
+        if (!current.departments || !current.departments[departmentName]) {
+          return current;
+        }
+
         const updatedDepartments = { ...current.departments };
         const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
         const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
@@ -173,9 +201,23 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           });
         }
       })
-      .then(() => {
-        setIsSyncing(false);
-        setIsUpdating(false);
+      .then((result) => {
+        if (result.consult === null && !result.isQueued) {
+             setIsSyncing(false);
+             setIsUpdating(false);
+             return;
+        }
+
+        if (result.backgroundPromise) {
+            result.backgroundPromise.finally(() => {
+                setIsSyncing(false);
+                setIsUpdating(false);
+            });
+        } else {
+            setIsSyncing(false);
+            setIsUpdating(false);
+        }
+
         addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
         onUpdate?.();
       })
@@ -200,6 +242,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsSyncing(true);
     try {
       updateConsult(caseId, (current) => {
+        // Guard against stale snapshots/missing departments
+        if (!current.departments || !current.departments[departmentName]) {
+          return current;
+        }
+
         const updatedDepartments = { ...current.departments };
         updatedDepartments[departmentName] = {
           ...updatedDepartments[departmentName],
@@ -224,9 +271,23 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           });
         }
       })
-      .then(() => {
-        setIsSyncing(false);
-        setIsUpdating(false);
+      .then((result) => {
+        if (result.consult === null && !result.isQueued) {
+             setIsSyncing(false);
+             setIsUpdating(false);
+             return;
+        }
+
+        if (result.backgroundPromise) {
+            result.backgroundPromise.finally(() => {
+                setIsSyncing(false);
+                setIsUpdating(false);
+            });
+        } else {
+            setIsSyncing(false);
+            setIsUpdating(false);
+        }
+
         addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
         onUpdate?.();
       })
@@ -251,6 +312,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsSyncing(true);
     try {
       updateConsult(caseId, (current) => {
+        // Guard against stale snapshots/missing departments
+        if (!current.departments || !current.departments[departmentName]) {
+          return current;
+        }
+
         const updatedDepartments = { ...current.departments };
         updatedDepartments[departmentName] = {
           ...updatedDepartments[departmentName],
@@ -274,9 +340,23 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           });
         }
       })
-      .then(() => {
-        setIsSyncing(false);
-        setIsUpdating(false);
+      .then((result) => {
+        if (result.consult === null && !result.isQueued) {
+             setIsSyncing(false);
+             setIsUpdating(false);
+             return;
+        }
+
+        if (result.backgroundPromise) {
+            result.backgroundPromise.finally(() => {
+                setIsSyncing(false);
+                setIsUpdating(false);
+            });
+        } else {
+            setIsSyncing(false);
+            setIsUpdating(false);
+        }
+
         addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
         onUpdate?.();
       })
@@ -582,7 +662,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       <ConfirmModal
         isOpen={showCancelConfirm}
         title="ยกเลิกปรึกษา"
-        message={`คุณต้องการยกเลิกการปรึกษา HN: ${hn}${fullName ? ` (${fullName})` : ""} แผนก: ${departmentName}? ${Object.keys(caseData.departments).length <= 1 ? "เคสจะถูกย้ายไปยังเคสที่เสร็จแล้ว" : "แผนกนี้จะถูกยกเลิกจากคำปรึกษา"}`}
+        message={`คุณต้องการยกเลิกการปรึกษา HN: ${hn}${fullName ? ` (${fullName})` : ""} แผนก: ${departmentName}? ${
+          Object.values(caseData.departments).filter(d => d.status === 'pending').length <= 1 
+            ? "เคสจะถูกย้ายไปยังเคสที่เสร็จแล้ว" 
+            : "แผนกนี้จะถูกยกเลิกจากคำปรึกษา"
+        }`}
         confirmText="ยืนยันยกเลิก"
         cancelText="ไม่ยกเลิก"
         variant="warning"

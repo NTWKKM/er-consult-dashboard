@@ -1,6 +1,7 @@
 import { db } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { sortConsults } from "./utils";
+import { getUtcRangeForLocalDate } from "./dateUtils";
 
 export interface ConsultDepartment {
     status: "pending" | "completed" | "cancelled";
@@ -48,18 +49,7 @@ function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult
  * to compute the UTC boundary correctly for the user's local day.
  * If not provided, computes the offset for the target date itself to handle DST correctly.
  */
-function getUtcRangeForLocalDate(date: string, offsetMinutes?: number) {
-    const [year, month, day] = date.split("-").map(Number);
-
-    // When an explicit offset is provided, use it directly (caller knows user's timezone).
-    // Otherwise, fall back to server's local timezone for the target dates.
-    const offsetStart = offsetMinutes ?? new Date(year, month - 1, day).getTimezoneOffset();
-    const offsetEnd = offsetMinutes ?? new Date(year, month - 1, day + 1).getTimezoneOffset();
-
-    const start = new Date(Date.UTC(year, month - 1, day, 0, offsetStart));
-    const end = new Date(Date.UTC(year, month - 1, day + 1, 0, offsetEnd));
-    return { start: start.toISOString(), end: end.toISOString() };
-}
+// Removed local getUtcRangeForLocalDate - now imported from ./dateUtils
 
 
 // Real-time subscription instead of single fetch
@@ -286,11 +276,17 @@ export interface UpdateConsultOptions {
     onBackgroundError?: (error: unknown) => void;
 }
 
+export interface UpdateResults {
+    consult: Consult | null;
+    isQueued: boolean;
+    backgroundPromise: Promise<void> | null;
+}
+
 export async function updateConsult(
     id: string,
     updater: ConsultUpdater | Partial<Omit<Consult, "id">>,
     options: UpdateConsultOptions = {}
-): Promise<Consult | null> {
+): Promise<UpdateResults> {
     const docRef = doc(db, COLLECTION_NAME, id);
     const { awaitRemote = true } = options;
 
@@ -314,7 +310,7 @@ export async function updateConsult(
             const updates = updater(currentData);
             
             // Perform the "real" update in background (Allows Offline persistence)
-            updateDoc(docRef, updates).catch(err => {
+            const backgroundPromise = updateDoc(docRef, updates).catch(err => {
                 console.error("Background sync failed for updateConsult:", err);
                 if (options.onBackgroundError) {
                     options.onBackgroundError(err);
@@ -322,9 +318,13 @@ export async function updateConsult(
             });
 
             return {
-                ...currentData,
-                ...updates,
-            } as Consult;
+                consult: {
+                    ...currentData,
+                    ...updates,
+                } as Consult,
+                isQueued: true,
+                backgroundPromise
+            };
         }
 
         // Standard Path (Awaited for server response)
@@ -345,23 +345,35 @@ export async function updateConsult(
         await updateDoc(docRef, updates);
 
         return {
-            ...currentData,
-            ...updates,
-        } as Consult;
+            consult: {
+                ...currentData,
+                ...updates,
+            } as Consult,
+            isQueued: false,
+            backgroundPromise: null
+        };
     } else {
         // Direct object update
         if (!awaitRemote) {
             // FIRE AND FORGET
-            updateDoc(docRef, updater).catch(e => {
+            const backgroundPromise = updateDoc(docRef, updater).catch(e => {
                 console.error("Delayed updateDoc error:", e);
                 if (options.onBackgroundError) {
                     options.onBackgroundError(e);
                 }
             });
-            return null;
+            return {
+                consult: null,
+                isQueued: true,
+                backgroundPromise
+            };
         }
         await updateDoc(docRef, updater);
-        return null;
+        return {
+            consult: null,
+            isQueued: false,
+            backgroundPromise: null
+        };
     }
 }
 

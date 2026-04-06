@@ -11,46 +11,12 @@
  * pure function, which is exactly the refactoring the PR introduced.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
-import { sortConsults } from "@/lib/utils";
+import { buildDepartmentCasesMap } from "@/lib/departmentCasesMap";
 import type { Consult } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
-// Mirror of the PR's departmentCasesMap useMemo logic as a pure function
-// ---------------------------------------------------------------------------
-type RoomFilter = "all" | "resus" | "non-resus";
-
-function buildDepartmentCasesMap(
-  allCases: Consult[],
-  roomFilter: RoomFilter
-): { [key: string]: Consult[] } {
-  const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
-
-  const map: { [key: string]: Consult[] } = allDepts.reduce((acc, dept) => {
-    acc[dept] = [];
-    return acc;
-  }, {} as { [key: string]: Consult[] });
-
-  allCases.forEach((caseData) => {
-    const isResus = !!caseData.room?.toLowerCase().includes("resus");
-    if (roomFilter === "resus" && !isResus) return;
-    if (roomFilter === "non-resus" && isResus) return;
-
-    Object.entries(caseData.departments).forEach(([deptName, deptInfo]) => {
-      if (map[deptName] && deptInfo.status === "pending") {
-        map[deptName].push(caseData);
-      }
-    });
-  });
-
-  Object.keys(map).forEach((dept) => {
-    map[dept] = sortConsults(map[dept]);
-  });
-
-  return map;
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -149,8 +115,6 @@ describe("departmentCasesMap", () => {
   });
 
   describe("room filtering", () => {
-    const resusCase = makeConsult.bind(null);  // called below to reset counter
-
     it("includes all rooms when filter is 'all'", () => {
       const resus = makeConsult({ room: "Resus Team 1", departments: { "Gen Sx": { status: "pending", completedAt: null } } });
       const nonResus = makeConsult({ room: "NT", departments: { "Gen Sx": { status: "pending", completedAt: null } } });

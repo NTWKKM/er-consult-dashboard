@@ -6,15 +6,16 @@ import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
 import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
-import { sortConsults, findNewCaseIds } from "@/lib/utils";
+import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
+import { buildDepartmentCasesMap, RoomFilter } from "@/lib/departmentCasesMap";
 
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
-  const [roomFilter, setRoomFilter] = useState<"all" | "resus" | "non-resus">("all");
+  const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
 
   const { darkMode, soundEnabled } = useSettings();
 
@@ -125,35 +126,7 @@ export default function Dashboard() {
   }, []);
 
   const departmentCasesMap = useMemo(() => {
-    const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
-    
-    // Initialize map with empty arrays for all departments to ensure all are keys
-    const map: { [key: string]: Consult[] } = allDepts.reduce((acc, dept) => {
-      acc[dept] = [];
-      return acc;
-    }, {} as { [key: string]: Consult[] });
-
-    // Single pass through allCases for grouping (O(N))
-    allCases.forEach((caseData) => {
-      // Room filtering logic
-      const isResus = !!caseData.room?.toLowerCase().includes("resus");
-      if (roomFilter === "resus" && !isResus) return;
-      if (roomFilter === "non-resus" && isResus) return;
-
-      // Group case into each of its pending departments
-      Object.entries(caseData.departments).forEach(([deptName, deptInfo]) => {
-        if (map[deptName] && deptInfo.status === "pending") {
-          map[deptName].push(caseData);
-        }
-      });
-    });
-
-    // Final sort for each bucket
-    Object.keys(map).forEach((dept) => {
-      map[dept] = sortConsults(map[dept]);
-    });
-
-    return map;
+    return buildDepartmentCasesMap(allCases, roomFilter);
   }, [allCases, roomFilter]);
 
   const getCasesForDepartment = (deptName: string) => {

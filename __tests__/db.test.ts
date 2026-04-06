@@ -62,10 +62,10 @@ import {
   searchCompletedConsults,
   fetchAllCompletedConsultsForExport,
   getConsultById,
-  addConsult,
   subscribeToConsultsByStatus,
   type Consult,
 } from "@/lib/db";
+import { getUtcRangeForLocalDate } from "@/lib/dateUtils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -87,20 +87,7 @@ function makeQuerySnapshot(docs: ReturnType<typeof makeDocSnapshot>[]) {
   };
 }
 
-const BASE_CONSULT: Consult = {
-  id: "case-1",
-  hn: "123456",
-  firstName: "John",
-  lastName: "Doe",
-  room: "Resus Team 1",
-  problem: "Chest pain",
-  createdAt: "2024-01-15T10:00:00.000Z",
-  status: "pending",
-  isUrgent: false,
-  departments: {
-    "Gen Sx": { status: "pending", completedAt: null, acceptedAt: null },
-  },
-};
+// BASE_CONSULT removed
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -134,19 +121,9 @@ describe("getUtcRangeForLocalDate (via searchCompletedConsults)", () => {
 });
 
 // ===========================================================================
-// Pure getUtcRangeForLocalDate logic (duplicated here for unit testing)
+// Pure getUtcRangeForLocalDate logic (tested via imported function)
 // ===========================================================================
 describe("getUtcRangeForLocalDate logic (pure function)", () => {
-  // Mirror the private function for direct testing
-  function getUtcRangeForLocalDate(date: string, offsetMinutes?: number) {
-    const [year, month, day] = date.split("-").map(Number);
-    const offsetStart = offsetMinutes ?? new Date(year, month - 1, day).getTimezoneOffset();
-    const offsetEnd = offsetMinutes ?? new Date(year, month - 1, day + 1).getTimezoneOffset();
-    const start = new Date(Date.UTC(year, month - 1, day, 0, offsetStart));
-    const end = new Date(Date.UTC(year, month - 1, day + 1, 0, offsetEnd));
-    return { start: start.toISOString(), end: end.toISOString() };
-  }
-
   it("returns ISO strings", () => {
     const { start, end } = getUtcRangeForLocalDate("2024-01-15");
     expect(start).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -311,9 +288,10 @@ describe("updateConsult", () => {
       mockUpdateDoc.mockResolvedValue(undefined);
 
       const result = await updateConsult("case-1", () => ({ status: "completed" as const }));
-
-      expect(result?.status).toBe("completed");
-      expect(result?.hn).toBe("123456");
+ 
+      expect(result.consult?.status).toBe("completed");
+      expect(result.consult?.hn).toBe("123456");
+      expect(result.isQueued).toBe(false);
     });
 
     it("throws when document does not exist", async () => {
@@ -338,7 +316,9 @@ describe("updateConsult", () => {
       );
 
       // Should still return optimistic merged data
-      expect(result?.status).toBe("completed");
+      expect(result.consult?.status).toBe("completed");
+      expect(result.isQueued).toBe(true);
+      expect(result.backgroundPromise).toBeDefined();
       // updateDoc was called but we didn't await it
       expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
     });
@@ -386,7 +366,8 @@ describe("updateConsult", () => {
     it("returns null for plain object updates", async () => {
       mockUpdateDoc.mockResolvedValue(undefined);
       const result = await updateConsult("case-1", { status: "completed" as const });
-      expect(result).toBeNull();
+      expect(result.consult).toBeNull();
+      expect(result.isQueued).toBe(false);
     });
   });
 
@@ -398,7 +379,9 @@ describe("updateConsult", () => {
         { status: "completed" as const },
         { awaitRemote: false }
       );
-      expect(result).toBeNull();
+      expect(result.consult).toBeNull();
+      expect(result.isQueued).toBe(true);
+      expect(result.backgroundPromise).toBeDefined();
       expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
     });
 

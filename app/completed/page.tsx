@@ -95,8 +95,9 @@ export default function CompletedPage() {
     }
 
     // กรองด้วย HN และแผนกอย่างสม่ำเสมอในทุก ๆ กรณี
+    const lowerSearchHN = searchHN.toLowerCase();
     return baseCases.filter((c) => {
-      if (searchHN && !c.hn.includes(searchHN)) return false;
+      if (searchHN && !c.hn.toLowerCase().startsWith(lowerSearchHN)) return false;
       if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
       return true;
     });
@@ -119,7 +120,10 @@ export default function CompletedPage() {
     const prevSearchResults = searchResults;
 
     try {
-      await updateConsult(caseId, (current) => {
+      const result = await updateConsult(caseId, (current) => {
+        // Guard against missing department
+        if (!current.departments) return current;
+
         const updatedDepartments: Record<string, ConsultDepartment> = {};
         selectedDepartments.forEach((dept) => {
           updatedDepartments[dept] = { status: "pending", completedAt: null };
@@ -146,6 +150,14 @@ export default function CompletedPage() {
       // Instant UI response
       setCases((prev) => prev.filter((c) => c.id !== caseId));
       setSearchResults((prev) => prev?.filter((c) => c.id !== caseId) ?? null);
+      
+      // Wait for background sync if it was queued
+      if (result.backgroundPromise) {
+          result.backgroundPromise.catch(() => {
+              // Already handled by onBackgroundError
+          });
+      }
+
       setShowModal(false);
       setSelectedCase(null);
       setNewProblem("");
@@ -274,7 +286,8 @@ export default function CompletedPage() {
       return;
     }
 
-    // Show loading immediately on filter change
+    // Reset results when starting a server-side search to avoid showing stale data
+    setSearchResults(null);
     setSearchStatus("loading");
 
     let cancelled = false;
@@ -298,6 +311,46 @@ export default function CompletedPage() {
       clearTimeout(timer);
     };
   }, [searchHN, filterDate]);
+
+  // Focus management for Export Modal
+  const exportModalRef = useRef<HTMLDivElement>(null);
+  const prevFocusedElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (showExportModal) {
+      prevFocusedElement.current = document.activeElement as HTMLElement;
+      // Focus the first input or the h2 heading
+      const firstInput = exportModalRef.current?.querySelector("input");
+      if (firstInput) {
+        firstInput.focus();
+      }
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setShowExportModal(false);
+        }
+        if (e.key === "Tab" && exportModalRef.current) {
+          const focusable = exportModalRef.current.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          );
+          const first = focusable[0] as HTMLElement;
+          const last = focusable[focusable.length - 1] as HTMLElement;
+
+          if (e.shiftKey && document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+          }
+        }
+      };
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    } else if (prevFocusedElement.current) {
+      prevFocusedElement.current.focus();
+    }
+  }, [showExportModal]);
 
   if (loading) {
     return (
@@ -873,14 +926,20 @@ export default function CompletedPage() {
 
       {/* Export Options Modal */}
       {showExportModal && (
-        <div className="fixed inset-0 bg-[#000000]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+        <div 
+          className="fixed inset-0 bg-[#000000]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-modal-title"
+        >
           <div
+            ref={exportModalRef}
             className={`rounded-xl shadow-xl max-w-md w-full p-6 border animate-scale-in ${
               darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
             }`}
           >
             <div className="flex items-center justify-between mb-4">
-              <h2 className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
+              <h2 id="export-modal-title" className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
                 Export ข้อมูล Excel
               </h2>
               <button
@@ -945,6 +1004,7 @@ export default function CompletedPage() {
               <button
                 onClick={handleExportExcel}
                 disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate}
+                aria-disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
                   isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate
                     ? darkMode
