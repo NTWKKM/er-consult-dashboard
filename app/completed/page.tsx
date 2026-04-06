@@ -62,6 +62,7 @@ export default function CompletedPage() {
     } catch (err) {
       console.error("Fetch error:", err);
       setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+      throw err;
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -140,32 +141,32 @@ export default function CompletedPage() {
       }, { 
         awaitRemote: false,
         onBackgroundError: () => {
-        addToast({ 
-          type: "error", 
-          message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-        });
-        
-        const { searchHN, filterDate, currentPage } = viewStateRef.current;
-        if (searchHN || filterDate) {
-          void searchCompletedConsults(searchHN, filterDate)
-            .then((res) => {
-              setSearchResults(res);
-              setSearchStatus("ready");
-            })
-            .catch((err) => {
-              console.error("Recovery refresh failed:", err);
-              setSearchStatus("error");
-              setCases(prevCases); // Rollback หากโหลดใหม่ล้มเหลว
-              setSearchResults(prevSearchResults);
-            });
-        } else {
-          void fetchPage(currentPage).catch((err) => {
-             console.error("Recovery refresh failed:", err);
-             setCases(prevCases); // Rollback หากโหลดใหม่ล้มเหลว
-             setSearchResults(prevSearchResults);
+          addToast({ 
+            type: "error", 
+            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
+          
+          // Rollback immediately
+          setCases(prevCases);
+          setSearchResults(prevSearchResults);
+          setSearchStatus("ready");
+          
+          const { searchHN, filterDate, currentPage } = viewStateRef.current;
+          if (searchHN || filterDate) {
+            void searchCompletedConsults(searchHN, filterDate)
+              .then((res) => {
+                setSearchResults(res);
+                setSearchStatus("ready");
+              })
+              .catch((err) => {
+                console.error("Recovery refresh failed:", err);
+              });
+          } else {
+            void fetchPage(currentPage).catch((err) => {
+               console.error("Recovery refresh failed:", err);
+            });
+          }
         }
-      }
       }); // OPTIMISTIC UPDATE
 
       if (result.consult === null && !result.isQueued) {
@@ -988,10 +989,11 @@ export default function CompletedPage() {
               </p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                  <label htmlFor="exportStartDate" className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                     ตั้งแต่วันที่
                   </label>
                   <input
+                    id="exportStartDate"
                     type="date"
                     value={exportStartDate}
                     onChange={(e) => setExportStartDate(e.target.value)}
@@ -1003,10 +1005,11 @@ export default function CompletedPage() {
                   />
                 </div>
                 <div>
-                  <label className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                  <label htmlFor="exportEndDate" className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                     ถึงวันที่
                   </label>
                   <input
+                    id="exportEndDate"
                     type="date"
                     value={exportEndDate}
                     onChange={(e) => setExportEndDate(e.target.value)}

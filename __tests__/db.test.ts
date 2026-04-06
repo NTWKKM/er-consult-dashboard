@@ -582,13 +582,15 @@ describe("searchCompletedConsults", () => {
       makeQuerySnapshot([makeDocSnapshot("c1", inside), makeDocSnapshot("c2", outside)])
     );
 
-    // filterDate is 2024-05-10; with server TZ offset applied the boundary will
-    // include 2024-05-10T12:00:00.000Z but exclude 2024-05-11T12:00:00.000Z.
-    // We just verify the function returns ≤ the full set (client-side filtering occurred).
+    // Mock timezone offset to UTC (0 minutes)
+    const offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(0);
+
     const result = await searchCompletedConsults("789", "2024-05-10");
-    // At most 1 result should be from the given date; outside date is filtered
     const outsideIncluded = result.find((c) => c.createdAt === "2024-05-11T12:00:00.000Z");
     expect(outsideIncluded).toBeUndefined();
+
+    // Restore timezone offset
+    offsetSpy.mockRestore();
   });
 });
 
@@ -617,7 +619,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     expect(result.consults).toEqual([]);
     expect(result.truncated).toBe(false);
-    expect(result.totalCount).toBe(0);
+    expect(result.returnedCount).toBe(0);
   });
 
   it("returns all consults and truncated=false when under MAX_RESULTS", async () => {
@@ -630,7 +632,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     expect(result.consults).toHaveLength(3);
     expect(result.truncated).toBe(false);
-    expect(result.totalCount).toBe(3);
+    expect(result.returnedCount).toBe(3);
   });
 
   it("fetches next batch using cursor pagination when batch is full", async () => {

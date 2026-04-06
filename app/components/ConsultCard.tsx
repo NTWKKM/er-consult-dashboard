@@ -91,7 +91,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     try {
       updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName]) {
+        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
         }
 
@@ -165,7 +165,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     try {
       updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName]) {
+        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
         }
 
@@ -237,7 +237,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     try {
       updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName]) {
+        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
         }
 
@@ -307,7 +307,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     try {
       updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName]) {
+        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
         }
 

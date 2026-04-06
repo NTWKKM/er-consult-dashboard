@@ -90,7 +90,7 @@ export default function SubmitPage() {
     submitInFlightRef.current = true;
     setIsLoading(true);
 
-    const departmentsMap: Record<string, { status: "pending" | "completed"; completedAt: string | null }> = {};
+    const departmentsMap: Record<string, { status: "pending" | "completed" | "cancelled"; completedAt: string | null }> = {};
     selectedDepts.forEach((dept) => {
       departmentsMap[dept] = { status: "pending", completedAt: null };
     });

@@ -125,17 +125,17 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, []);
 
-  const departmentCasesMap = useMemo(() => {
-    return buildDepartmentCasesMap(allCases, roomFilter);
+  const filteredAllCases = useMemo(() => {
+    return allCases.filter((caseData) => matchesRoomFilter(caseData, roomFilter));
   }, [allCases, roomFilter]);
+
+  const departmentCasesMap = useMemo(() => {
+    return buildDepartmentCasesMap(filteredAllCases, "all");
+  }, [filteredAllCases]);
 
   const getCasesForDepartment = (deptName: string) => {
     return departmentCasesMap[deptName] || [];
   };
-
-  const filteredAllCases = useMemo(() => {
-    return allCases.filter((caseData) => matchesRoomFilter(caseData, roomFilter));
-  }, [allCases, roomFilter]);
 
   const totalPendingCases = filteredAllCases.length;
 

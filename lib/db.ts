@@ -43,13 +43,6 @@ function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult
     } as Consult;
 }
 
-/**
- * Helper to get the UTC ISO range [start, end) for a given local "YYYY-MM-DD" date.
- * Accepts an optional offsetMinutes (positive for West, negative for East, same as Date.getTimezoneOffset())
- * to compute the UTC boundary correctly for the user's local day.
- * If not provided, computes the offset for the target date itself to handle DST correctly.
- */
-// Removed local getUtcRangeForLocalDate - now imported from ./dateUtils
 
 
 // Real-time subscription instead of single fetch
@@ -204,7 +197,7 @@ export async function searchCompletedConsults(
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
     endDate: string
-): Promise<{ consults: Consult[]; truncated: boolean; totalCount: number }> {
+): Promise<{ consults: Consult[]; truncated: boolean; returnedCount: number }> {
     const { start } = getUtcRangeForLocalDate(startDate);
     const { endExclusive } = getUtcRangeForLocalDate(endDate);
 
@@ -254,7 +247,7 @@ export async function fetchAllCompletedConsultsForExport(
     return {
         consults: allConsults,
         truncated,
-        totalCount: allConsults.length
+        returnedCount: allConsults.length
     };
 }
 
