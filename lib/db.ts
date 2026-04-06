@@ -88,6 +88,8 @@ export async function fetchCompletedConsultsPage(
     pageSize: number,
     lastDoc?: QueryDocumentSnapshot<DocumentData>
 ): Promise<{ consults: Consult[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
+    // Track both valid consults and their corresponding Firestore docs.
+    // validDocs[i] is the snapshot for validConsults[i], enabling correct cursor tracking.
     const validConsults: Consult[] = [];
     const validDocs: QueryDocumentSnapshot<DocumentData>[] = [];
     let currentCursor = lastDoc;

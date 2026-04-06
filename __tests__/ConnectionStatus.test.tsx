@@ -27,7 +27,14 @@ function setNavigatorOnline(value: boolean) {
 import ConnectionStatus from "@/app/components/ConnectionStatus";
 
 describe("ConnectionStatus", () => {
+  let originalOnLine: boolean;
+
+  beforeEach(() => {
+    originalOnLine = navigator.onLine;
+  });
+
   afterEach(() => {
+    setNavigatorOnline(originalOnLine);
     vi.restoreAllMocks();
   });
 

@@ -585,12 +585,14 @@ describe("searchCompletedConsults", () => {
     // Mock timezone offset to UTC (0 minutes)
     const offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(0);
 
-    const result = await searchCompletedConsults("789", "2024-05-10");
-    const outsideIncluded = result.find((c) => c.createdAt === "2024-05-11T12:00:00.000Z");
-    expect(outsideIncluded).toBeUndefined();
-
-    // Restore timezone offset
-    offsetSpy.mockRestore();
+    try {
+      const result = await searchCompletedConsults("789", "2024-05-10");
+      const outsideIncluded = result.find((c) => c.createdAt === "2024-05-11T12:00:00.000Z");
+      expect(outsideIncluded).toBeUndefined();
+    } finally {
+      // Restore timezone offset
+      offsetSpy.mockRestore();
+    }
   });
 });
 

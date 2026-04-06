@@ -71,13 +71,13 @@ export default function CompletedPage() {
 
   // Initial load
   useEffect(() => {
-    fetchPage(1);
+    void fetchPage(1).catch(() => {});
   }, [fetchPage]);
 
   // Navigate to a specific page
   const goToPage = useCallback((page: number) => {
     setCurrentPage(page);
-    fetchPage(page);
+    void fetchPage(page).catch(() => {});
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [fetchPage]);
 

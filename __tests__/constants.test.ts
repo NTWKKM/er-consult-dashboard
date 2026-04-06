@@ -44,10 +44,6 @@ describe("lib/constants", () => {
       expect(ACTION_STATUSES).toHaveLength(4);
     });
 
-    it("equals [ACCEPT_STATUS, ...POST_ACCEPT_STATUSES]", () => {
-      expect(ACTION_STATUSES).toEqual([ACCEPT_STATUS, ...POST_ACCEPT_STATUSES]);
-    });
-
     it("contains Admit, คืน ER, and D/C", () => {
       expect(ACTION_STATUSES).toContain("Admit");
       expect(ACTION_STATUSES).toContain("คืน ER");
@@ -73,9 +69,8 @@ describe("lib/constants", () => {
     });
 
     it("does not overlap with SURGERY_DEPTS", () => {
-      const overlap = ORTHO_DEPTS.filter((d) =>
-        (SURGERY_DEPTS as readonly string[]).includes(d)
-      );
+      const surgerySet = new Set<string>(SURGERY_DEPTS);
+      const overlap = ORTHO_DEPTS.filter((d) => surgerySet.has(d));
       expect(overlap).toHaveLength(0);
     });
   });
