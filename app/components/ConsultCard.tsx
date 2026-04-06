@@ -94,27 +94,21 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         }
 
         const updatedDepartments = { ...current.departments };
-        const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
-        const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
         const now = new Date().toISOString();
 
-        Object.keys(updatedDepartments).forEach((dept) => {
-          if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
-            updatedDepartments[dept] = {
-              ...updatedDepartments[dept],
-              acceptedAt: updatedDepartments[dept].acceptedAt || now,
-              actionStatus: newStatus,
-            };
+        updatedDepartments[departmentName] = {
+          ...updatedDepartments[departmentName],
+          acceptedAt: updatedDepartments[departmentName].acceptedAt || now,
+          actionStatus: newStatus,
+        };
 
-            if (newStatus === "Admit") {
-              updatedDepartments[dept].admittedAt = now;
-            } else if (newStatus === "คืน ER") {
-              updatedDepartments[dept].returnedAt = now;
-            } else if (newStatus === "D/C") {
-              updatedDepartments[dept].dischargedAt = now;
-            }
-          }
-        });
+        if (newStatus === "Admit") {
+          updatedDepartments[departmentName].admittedAt = now;
+        } else if (newStatus === "คืน ER") {
+          updatedDepartments[departmentName].returnedAt = now;
+        } else if (newStatus === "D/C") {
+          updatedDepartments[departmentName].dischargedAt = now;
+        }
 
         return { departments: updatedDepartments };
       }, { 
