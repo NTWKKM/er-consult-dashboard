@@ -794,7 +794,6 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
                       : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-inner"
                     : "bg-[#E55143] text-white hover:bg-[#d44639]"
                 }`}
-                title={!isStatusSelected ? "กรุณาเลือกสถานะก่อนปิดเคส" : "ปิดเคส"}
               >
                 {isUpdating ? "..." : "ปิดเคส"}
               </button>

@@ -546,7 +546,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                         ? "bg-gray-800 border border-gray-700 text-gray-500"
                         : "bg-gray-200 border border-gray-300 text-gray-400 shadow-inner"
                     }`}
-                    title="ต้องรับเคสก่อนจึงจะปิดเคสได้"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -600,7 +599,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                           : "bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300 shadow-inner"
                         : "bg-[#E55143] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5"
                     }`}
-                    title={!isStatusSelected ? "กรุณาเลือกสถานะ (Admit, คืน ER, D/C) ก่อนปิดเคส" : "ปิดเคส"}
                   >
                     {isUpdating ? (
                       <>
@@ -619,16 +617,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 </>
               )}
               </div>
-              {isAccepted && !isStatusSelected && (
-                <div className={`text-center text-[10px] w-full pt-1 font-bold animate-pulse ${darkMode ? "text-amber-400" : "text-amber-600"}`}>
-                  * กรุณาเลือกสถานะก่อนปิดเคส
-                </div>
-              )}
-              {!isAccepted && (
-                <div className={`text-center text-[10px] w-full pt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                  * ต้องรับเคสก่อนจึงจะปิดเคสได้
-                </div>
-              )}
             </div>
           )}
         </div>
