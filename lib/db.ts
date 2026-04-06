@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 
@@ -400,17 +400,4 @@ export async function updateConsult(
             backgroundPromise: null
         };
     }
-}
-
-export async function deleteConsult(id: string, allowMissing: boolean = false): Promise<void> {
-    const docRef = doc(db, COLLECTION_NAME, id);
-
-    if (!allowMissing) {
-        const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) {
-            throw new Error(`Consult not found: ${id}`);
-        }
-    }
-
-    await deleteDoc(docRef);
 }

@@ -58,7 +58,6 @@ vi.mock("firebase/firestore", () => ({
 // ---------------------------------------------------------------------------
 import {
   updateConsult,
-  deleteConsult,
   searchCompletedConsults,
   fetchAllCompletedConsultsForExport,
   getConsultById,
@@ -402,37 +401,7 @@ describe("updateConsult", () => {
   });
 });
 
-// ===========================================================================
-// deleteConsult
-// ===========================================================================
-describe("deleteConsult", () => {
-  it("calls deleteDoc when document exists", async () => {
-    mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", {}, true));
-    mockDeleteDoc.mockResolvedValue(undefined);
 
-    await deleteConsult("case-1");
-
-    expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
-  });
-
-  it("throws when document does not exist and allowMissing is false", async () => {
-    mockGetDoc.mockResolvedValue(makeDocSnapshot("missing", null, false));
-
-    await expect(deleteConsult("missing")).rejects.toThrow(
-      "Consult not found: missing"
-    );
-    expect(mockDeleteDoc).not.toHaveBeenCalled();
-  });
-
-  it("calls deleteDoc without existence check when allowMissing is true", async () => {
-    mockDeleteDoc.mockResolvedValue(undefined);
-
-    await deleteConsult("any-id", true);
-
-    expect(mockGetDoc).not.toHaveBeenCalled();
-    expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
-  });
-});
 
 // ===========================================================================
 // searchCompletedConsults
