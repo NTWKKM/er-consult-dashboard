@@ -579,6 +579,8 @@ describe("searchCompletedConsults", () => {
 
     try {
       const result = await searchCompletedConsults("789", "2024-05-10");
+      expect(result.length).toBe(1);
+      expect(result[0].createdAt).toBe("2024-05-10T12:00:00.000Z");
       const outsideIncluded = result.find((c) => c.createdAt === "2024-05-11T12:00:00.000Z");
       expect(outsideIncluded).toBeUndefined();
     } finally {

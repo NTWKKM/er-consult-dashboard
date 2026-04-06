@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { updateConsult, Consult, ConsultDepartment } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
@@ -61,6 +61,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const { addToast } = useToast();
 
+  const pendingSyncCountRef = useRef(0);
+
+  const beginSync = useCallback(() => {
+    pendingSyncCountRef.current += 1;
+    setIsSyncing(true);
+  }, []);
+
+  const endSync = useCallback(() => {
+    pendingSyncCountRef.current = Math.max(0, pendingSyncCountRef.current - 1);
+    setIsSyncing(pendingSyncCountRef.current > 0);
+  }, []);
+
   const hn = caseData.hn || "-";
   const firstName = caseData.firstName || "";
   const lastName = caseData.lastName || "";
@@ -87,7 +99,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const handleActionStatusChange = useCallback(async (newStatus: string) => {
     if (isUpdating) return;
     setIsUpdating(true); // Immediate local "busy" state
-    setIsSyncing(true);   // Track remote sync
+    beginSync();         // Track remote sync
     try {
       const result = await updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
@@ -124,7 +136,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       });
 
       if (result.consult === null && !result.isQueued) {
-           setIsSyncing(false);
+           endSync();
            setIsUpdating(false);
            return;
       }
@@ -133,12 +145,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
       if (result.backgroundPromise) {
           result.backgroundPromise.then(() => {
-              setIsSyncing(false);
+              endSync();
           }).catch(() => {
-              setIsSyncing(false);
+              endSync();
           });
       } else {
-          setIsSyncing(false);
+          endSync();
       }
       
       addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
@@ -147,14 +159,14 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       console.error("Error updating status:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
       setIsUpdating(false);
-      setIsSyncing(false);
+      endSync();
     }
-  }, [isUpdating, caseId, departmentName, addToast, onUpdate]);
+  }, [isUpdating, caseId, departmentName, addToast, onUpdate, beginSync, endSync]);
 
   const handleAcceptCase = useCallback(async () => {
     if (isUpdating) return;
     setIsUpdating(true);
-    setIsSyncing(true);
+    beginSync();
     try {
       const result = await updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
@@ -190,7 +202,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       });
 
       if (result.consult === null && !result.isQueued) {
-           setIsSyncing(false);
+           endSync();
            setIsUpdating(false);
            return;
       }
@@ -199,10 +211,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
       if (result.backgroundPromise) {
           result.backgroundPromise.finally(() => {
-              setIsSyncing(false);
+              endSync();
           });
       } else {
-          setIsSyncing(false);
+          endSync();
       }
 
       addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
@@ -211,15 +223,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       console.error("Error accepting case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
       setIsUpdating(false);
-      setIsSyncing(false);
+      endSync();
     }
-  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate]);
+  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
 
   const handleCancelConsult = useCallback(async () => {
     if (isUpdating) return;
     setShowCancelConfirm(false);
     setIsUpdating(true);
-    setIsSyncing(true);
+    beginSync();
     try {
       const result = await updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
@@ -253,7 +265,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       });
 
       if (result.consult === null && !result.isQueued) {
-           setIsSyncing(false);
+           endSync();
            setIsUpdating(false);
            return;
       }
@@ -262,10 +274,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
       if (result.backgroundPromise) {
           result.backgroundPromise.finally(() => {
-              setIsSyncing(false);
+              endSync();
           });
       } else {
-          setIsSyncing(false);
+          endSync();
       }
 
       addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
@@ -274,15 +286,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       console.error("Error cancelling consult:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
       setIsUpdating(false);
-      setIsSyncing(false);
+      endSync();
     }
-  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate]);
+  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
 
   const handleCompleteCase = useCallback(async () => {
     if (isUpdating || isTerminal) return;
     setShowConfirm(false);
     setIsUpdating(true);
-    setIsSyncing(true);
+    beginSync();
     try {
       const result = await updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
@@ -315,7 +327,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       });
 
       if (result.consult === null && !result.isQueued) {
-           setIsSyncing(false);
+           endSync();
            setIsUpdating(false);
            return;
       }
@@ -324,10 +336,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
       if (result.backgroundPromise) {
           result.backgroundPromise.finally(() => {
-              setIsSyncing(false);
+              endSync();
           });
       } else {
-          setIsSyncing(false);
+          endSync();
       }
 
       addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
@@ -336,9 +348,9 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       console.error("Error updating case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
       setIsUpdating(false);
-      setIsSyncing(false);
+      endSync();
     }
-  }, [isUpdating, isTerminal, caseId, departmentName, hn, addToast, onUpdate]);
+  }, [isUpdating, isTerminal, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
 
   return (
     <>

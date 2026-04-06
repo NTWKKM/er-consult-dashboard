@@ -719,20 +719,55 @@ export default function CompletedPage() {
                   <p className={`text-xs mb-2 whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
                     {caseData.problem}
                   </p>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {Object.keys(caseData.departments).map((dept) => (
-                      <span
-                        key={dept}
-                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium border ${
-                          caseData.departments[dept].status === "cancelled"
-                            ? "bg-red-500/20 text-red-500 line-through border-red-500/30"
-                            : darkMode
-                              ? "bg-gray-600 text-gray-200 border-gray-500"
-                              : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
-                        }`}
-                      >
-                        {dept} {caseData.departments[dept].status === "cancelled" && "(ยกเลิก)"}
-                      </span>
+                  <div className="flex flex-col gap-1.5 mb-2">
+                    {Object.entries(caseData.departments).map(([dept, data]) => (
+                      <div key={dept} className={`p-1.5 rounded shadow-sm border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-white/60 border-[#014167]/10"}`}>
+                        <span
+                          className={`inline-block px-2 py-0.5 mb-1 rounded text-[10px] font-medium border ${
+                            data.status === "cancelled"
+                              ? "bg-red-500/20 text-red-500 line-through border-red-500/30"
+                              : darkMode
+                                ? "bg-gray-600 text-gray-200 border-gray-500"
+                                : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
+                          }`}
+                        >
+                          {dept} {data.status === "cancelled" && "(ยกเลิก)"}
+                        </span>
+                        <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] ${darkMode ? "text-gray-400" : "text-black/70"}`}>
+                          {data.acceptedAt && (
+                            <div>
+                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รับ:</span>{" "}
+                              {new Date(data.acceptedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {data.admittedAt && (
+                            <div>
+                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>Admit:</span>{" "}
+                              {new Date(data.admittedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {data.returnedAt && (
+                            <div>
+                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>คืน ER:</span>{" "}
+                              {new Date(data.returnedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {data.dischargedAt && (
+                            <div>
+                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>D/C:</span>{" "}
+                              {new Date(data.dischargedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {data.completedAt && (
+                            <div>
+                              <span className={data.status === "cancelled" ? "text-red-500 font-semibold" : "text-[#E55143] font-semibold"}>
+                                {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
+                              </span>{" "}
+                              {new Date(data.completedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ))}
                   </div>
                   <div className={`text-[11px] ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>

@@ -127,6 +127,7 @@ describe("SettingsContext", () => {
       });
 
       expect(storage.setItem).toHaveBeenCalledWith("darkMode", "true");
+      expect(screen.getByTestId("dark-mode").textContent).toBe("true");
     });
 
     it("dispatches settings-change event to trigger re-render", () => {
@@ -187,6 +188,7 @@ describe("SettingsContext", () => {
       });
 
       expect(storage.setItem).toHaveBeenCalledWith("soundEnabled", "true");
+      expect(screen.getByTestId("sound-enabled").textContent).toBe("true");
     });
 
     it("dispatches settings-change event", () => {
