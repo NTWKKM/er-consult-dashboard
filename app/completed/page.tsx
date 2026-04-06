@@ -89,6 +89,7 @@ export default function CompletedPage() {
     if (isSearchActive) {
       if (searchStatus === "error") return [];
       if (searchStatus === "loading" && searchResults === null) {
+        if (filterDate) return []; // <-- ป้องกันไม่ให้เอาเคสปัจจุบันมาแสดงแวบเดียวตอนกรองวันที่
         baseCases = cases;
       } else if (searchResults !== null) {
         baseCases = searchResults;

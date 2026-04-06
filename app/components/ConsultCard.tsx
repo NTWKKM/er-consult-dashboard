@@ -89,7 +89,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsUpdating(true); // Immediate local "busy" state
     setIsSyncing(true);   // Track remote sync
     try {
-      updateConsult(caseId, (current) => {
+      const result = await updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
         if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
@@ -121,35 +121,28 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
         }
-      })
-      .then((result) => {
-        if (result.consult === null && !result.isQueued) {
-             setIsSyncing(false);
-             setIsUpdating(false);
-             return;
-        }
-
-        setIsUpdating(false); // Immediate UI release after local enqueue
-
-        if (result.backgroundPromise) {
-            result.backgroundPromise.then(() => {
-                setIsSyncing(false);
-            }).catch(() => {
-                setIsSyncing(false);
-            });
-        } else {
-            setIsSyncing(false);
-        }
-        
-        addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
-        onUpdate?.();
-      })
-      .catch(e => {
-        console.error("Sync error:", e);
-        setIsSyncing(false);
-        setIsUpdating(false);
-        addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
       });
+
+      if (result.consult === null && !result.isQueued) {
+           setIsSyncing(false);
+           setIsUpdating(false);
+           return;
+      }
+
+      setIsUpdating(false); // Immediate UI release after local enqueue
+
+      if (result.backgroundPromise) {
+          result.backgroundPromise.then(() => {
+              setIsSyncing(false);
+          }).catch(() => {
+              setIsSyncing(false);
+          });
+      } else {
+          setIsSyncing(false);
+      }
+      
+      addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
+      onUpdate?.();
     } catch (error) {
       console.error("Error updating status:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
@@ -163,7 +156,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsUpdating(true);
     setIsSyncing(true);
     try {
-      updateConsult(caseId, (current) => {
+      const result = await updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
         if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
@@ -194,33 +187,26 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
         }
-      })
-      .then((result) => {
-        if (result.consult === null && !result.isQueued) {
-             setIsSyncing(false);
-             setIsUpdating(false);
-             return;
-        }
-
-        setIsUpdating(false); // UI release
-
-        if (result.backgroundPromise) {
-            result.backgroundPromise.finally(() => {
-                setIsSyncing(false);
-            });
-        } else {
-            setIsSyncing(false);
-        }
-
-        addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
-        onUpdate?.();
-      })
-      .catch((e) => {
-        console.error("Error accepting case:", e);
-        setIsSyncing(false);
-        setIsUpdating(false);
-        addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
       });
+
+      if (result.consult === null && !result.isQueued) {
+           setIsSyncing(false);
+           setIsUpdating(false);
+           return;
+      }
+
+      setIsUpdating(false); // UI release
+
+      if (result.backgroundPromise) {
+          result.backgroundPromise.finally(() => {
+              setIsSyncing(false);
+          });
+      } else {
+          setIsSyncing(false);
+      }
+
+      addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
+      onUpdate?.();
     } catch (error) {
       console.error("Error accepting case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
@@ -235,7 +221,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsUpdating(true);
     setIsSyncing(true);
     try {
-      updateConsult(caseId, (current) => {
+      const result = await updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
         if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
@@ -264,33 +250,26 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
         }
-      })
-      .then((result) => {
-        if (result.consult === null && !result.isQueued) {
-             setIsSyncing(false);
-             setIsUpdating(false);
-             return;
-        }
-
-        setIsUpdating(false); // UI release
-
-        if (result.backgroundPromise) {
-            result.backgroundPromise.finally(() => {
-                setIsSyncing(false);
-            });
-        } else {
-            setIsSyncing(false);
-        }
-
-        addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
-        onUpdate?.();
-      })
-      .catch((e) => {
-        console.error("Error cancelling consult:", e);
-        setIsSyncing(false);
-        setIsUpdating(false);
-        addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
       });
+
+      if (result.consult === null && !result.isQueued) {
+           setIsSyncing(false);
+           setIsUpdating(false);
+           return;
+      }
+
+      setIsUpdating(false); // UI release
+
+      if (result.backgroundPromise) {
+          result.backgroundPromise.finally(() => {
+              setIsSyncing(false);
+          });
+      } else {
+          setIsSyncing(false);
+      }
+
+      addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
+      onUpdate?.();
     } catch (error) {
       console.error("Error cancelling consult:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
@@ -305,7 +284,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     setIsUpdating(true);
     setIsSyncing(true);
     try {
-      updateConsult(caseId, (current) => {
+      const result = await updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
         if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
@@ -333,33 +312,26 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
         }
-      })
-      .then((result) => {
-        if (result.consult === null && !result.isQueued) {
-             setIsSyncing(false);
-             setIsUpdating(false);
-             return;
-        }
-
-        setIsUpdating(false); // UI release
-
-        if (result.backgroundPromise) {
-            result.backgroundPromise.finally(() => {
-                setIsSyncing(false);
-            });
-        } else {
-            setIsSyncing(false);
-        }
-
-        addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
-        onUpdate?.();
-      })
-      .catch((e) => {
-        console.error("Error updating case:", e);
-        setIsSyncing(false);
-        setIsUpdating(false);
-        addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
       });
+
+      if (result.consult === null && !result.isQueued) {
+           setIsSyncing(false);
+           setIsUpdating(false);
+           return;
+      }
+
+      setIsUpdating(false); // UI release
+
+      if (result.backgroundPromise) {
+          result.backgroundPromise.finally(() => {
+              setIsSyncing(false);
+          });
+      } else {
+          setIsSyncing(false);
+      }
+
+      addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
+      onUpdate?.();
     } catch (error) {
       console.error("Error updating case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });

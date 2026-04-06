@@ -352,6 +352,28 @@ describe("updateConsult", () => {
     });
   });
 
+  describe("no-op updater (returns null)", () => {
+    it("returns consult: null and isQueued: false for awaitRemote: true", async () => {
+      mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
+      
+      const result = await updateConsult("case-1", () => null, { awaitRemote: true });
+      
+      expect(result.consult).toBeNull();
+      expect(result.isQueued).toBe(false);
+      expect(mockUpdateDoc).not.toHaveBeenCalled();
+    });
+
+    it("returns consult: null and isQueued: false for awaitRemote: false", async () => {
+      mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
+      
+      const result = await updateConsult("case-1", () => null, { awaitRemote: false });
+      
+      expect(result.consult).toBeNull();
+      expect(result.isQueued).toBe(false);
+      expect(mockUpdateDoc).not.toHaveBeenCalled();
+    });
+  });
+
   describe("with plain object updates (awaitRemote: true by default)", () => {
     it("calls updateDoc with the plain object", async () => {
       mockUpdateDoc.mockResolvedValue(undefined);
