@@ -11,6 +11,14 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
+// [NEW] Runtime validation for environment variables to prevent silent failures
+if (typeof window !== "undefined" && !firebaseConfig.apiKey) {
+  console.error(
+    "🚨 Firebase Configuration Error: 'NEXT_PUBLIC_FIREBASE_API_KEY' is missing. " +
+    "Please check your environment variables (.env.local) to ensure the dashboard functions correctly."
+  );
+}
+
 // Initialize Firebase only if it hasn't been initialized already (important for Next.js hot-reloading)
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
@@ -36,3 +44,4 @@ if (typeof window === "undefined") {
 }
 
 export { db };
+
