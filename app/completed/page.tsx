@@ -120,8 +120,6 @@ export default function CompletedPage() {
     }
     setIsUpdating(true);
     const caseId = selectedCase.id;
-    const prevCases = [...cases];
-    const prevSearchResults = searchResults !== null ? [...searchResults] : null;
     
     try {
       const result = await updateConsult(caseId, (current) => {
@@ -146,13 +144,10 @@ export default function CompletedPage() {
             message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
           
-          // Rollback immediately
-          setCases(prevCases);
-          setSearchResults(prevSearchResults);
-          setSearchStatus("ready");
-          
+          // Refetch directly instead of rolling back with stale snapshot
           const { searchHN, filterDate, currentPage } = viewStateRef.current;
           if (searchHN || filterDate) {
+            setSearchStatus("loading");
             void searchCompletedConsults(searchHN, filterDate)
               .then((res) => {
                 setSearchResults(res);
@@ -160,8 +155,10 @@ export default function CompletedPage() {
               })
               .catch((err) => {
                 console.error("Recovery refresh failed:", err);
+                setSearchStatus("error");
               });
           } else {
+            setLoading(true);
             void fetchPage(currentPage).catch((err) => {
                console.error("Recovery refresh failed:", err);
             });

@@ -44,18 +44,27 @@ function mockLocalStorage() {
 
 describe("SettingsContext", () => {
   let storage: ReturnType<typeof mockLocalStorage>;
+  let originalLocalStorage: PropertyDescriptor | undefined;
 
   beforeEach(() => {
+    // Capture the original localStorage before overriding
+    originalLocalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+    
     storage = mockLocalStorage();
     Object.defineProperty(window, "localStorage", {
       value: storage,
       writable: true,
+      configurable: true, // Ensure it can be redefined later
     });
     // Reset document classList dark state
     document.documentElement.classList.remove("dark");
   });
 
   afterEach(() => {
+    // Restore the original localStorage
+    if (originalLocalStorage) {
+      Object.defineProperty(window, "localStorage", originalLocalStorage);
+    }
     vi.restoreAllMocks();
   });
 
@@ -200,9 +209,9 @@ describe("SettingsContext", () => {
   });
 
   // -------------------------------------------------------------------------
-  // useSettings outside provider
+  // useSettings default behavior
   // -------------------------------------------------------------------------
-  describe("useSettings guard", () => {
+  describe("useSettings default behavior", () => {
     it("does NOT throw when used inside SettingsProvider", () => {
       // Context has a default value so no throw expected in this implementation
       expect(() =>
@@ -212,6 +221,10 @@ describe("SettingsContext", () => {
           </SettingsProvider>
         )
       ).not.toThrow();
+    });
+
+    it("does NOT throw when used outside SettingsProvider (returns default)", () => {
+      expect(() => render(<SettingsConsumer />)).not.toThrow();
     });
   });
 
