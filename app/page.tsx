@@ -8,7 +8,7 @@ import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
-import { buildDepartmentCasesMap, RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
+import { buildDepartmentCasesMap, type RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
 
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);

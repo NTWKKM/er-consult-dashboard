@@ -122,23 +122,21 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       })
       .then((result) => {
         if (result.consult === null && !result.isQueued) {
-            // This happens if the guard triggered or doc missing
              setIsSyncing(false);
              setIsUpdating(false);
              return;
         }
 
+        setIsUpdating(false); // Immediate UI release after local enqueue
+
         if (result.backgroundPromise) {
             result.backgroundPromise.then(() => {
                 setIsSyncing(false);
-                setIsUpdating(false);
             }).catch(() => {
                 setIsSyncing(false);
-                setIsUpdating(false);
             });
         } else {
             setIsSyncing(false);
-            setIsUpdating(false);
         }
         
         addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
@@ -202,14 +200,14 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
              return;
         }
 
+        setIsUpdating(false); // UI release
+
         if (result.backgroundPromise) {
             result.backgroundPromise.finally(() => {
                 setIsSyncing(false);
-                setIsUpdating(false);
             });
         } else {
             setIsSyncing(false);
-            setIsUpdating(false);
         }
 
         addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
@@ -272,14 +270,14 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
              return;
         }
 
+        setIsUpdating(false); // UI release
+
         if (result.backgroundPromise) {
             result.backgroundPromise.finally(() => {
                 setIsSyncing(false);
-                setIsUpdating(false);
             });
         } else {
             setIsSyncing(false);
-            setIsUpdating(false);
         }
 
         addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
@@ -341,14 +339,14 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
              return;
         }
 
+        setIsUpdating(false); // UI release
+
         if (result.backgroundPromise) {
             result.backgroundPromise.finally(() => {
                 setIsSyncing(false);
-                setIsUpdating(false);
             });
         } else {
             setIsSyncing(false);
-            setIsUpdating(false);
         }
 
         addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });

@@ -357,7 +357,7 @@ export default function CompletedPage() {
         }
         if (e.key === "Tab" && exportModalRef.current) {
           const focusable = exportModalRef.current.querySelectorAll(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
           );
           const first = focusable[0] as HTMLElement;
           const last = focusable[focusable.length - 1] as HTMLElement;

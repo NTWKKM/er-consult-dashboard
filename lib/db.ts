@@ -168,8 +168,8 @@ export async function searchCompletedConsults(
 
 
         if (filterDate) {
-            const { start, end } = getUtcRangeForLocalDate(filterDate);
-            consults = consults.filter(c => c.createdAt && c.createdAt >= start && c.createdAt < end);
+            const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
+            consults = consults.filter(c => c.createdAt && c.createdAt >= start && c.createdAt < endExclusive);
         }
 
         return consults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -177,13 +177,13 @@ export async function searchCompletedConsults(
 
     // If only filtering by date, use the existing status + createdAt index
     if (filterDate) {
-        const { start, end } = getUtcRangeForLocalDate(filterDate);
+        const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
         
         const q = query(
             collection(db, COLLECTION_NAME),
             where("status", "==", "completed"),
             where("createdAt", ">=", start),
-            where("createdAt", "<", end),
+            where("createdAt", "<", endExclusive),
             orderBy("createdAt", "desc")
         );
         
@@ -206,7 +206,7 @@ export async function fetchAllCompletedConsultsForExport(
     endDate: string
 ): Promise<{ consults: Consult[]; truncated: boolean; totalCount: number }> {
     const { start } = getUtcRangeForLocalDate(startDate);
-    const { end } = getUtcRangeForLocalDate(endDate);
+    const { endExclusive } = getUtcRangeForLocalDate(endDate);
 
     let allConsults: Consult[] = [];
     let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
@@ -219,7 +219,7 @@ export async function fetchAllCompletedConsultsForExport(
             collection(db, COLLECTION_NAME),
             where("status", "==", "completed"),
             where("createdAt", ">=", start),
-            where("createdAt", "<", end),
+            where("createdAt", "<", endExclusive),
             orderBy("createdAt", "desc"),
             limit(BATCH_SIZE)
         );
@@ -238,7 +238,7 @@ export async function fetchAllCompletedConsultsForExport(
         allConsults.push(...batch);
 
         // Safety limit to prevent unbounded memory growth
-        if (allConsults.length >= MAX_RESULTS) {
+        if (allConsults.length > MAX_RESULTS) {
             allConsults = allConsults.slice(0, MAX_RESULTS);
             console.warn(`Export truncated at ${MAX_RESULTS} results`);
             truncated = true;

@@ -27,7 +27,9 @@ export default function SubmitPage() {
   // Auto-focus HN field on mount & detect OS
   useEffect(() => {
     hnRef.current?.focus();
-    setIsMac(navigator.platform.toUpperCase().indexOf('MAC') >= 0 || navigator.userAgent.toUpperCase().indexOf('MAC') >= 0);
+    // @ts-expect-error - userAgentData is not yet fully typed in standard TS lib
+    const platform = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent;
+    setIsMac(platform.toUpperCase().indexOf('MAC') >= 0);
   }, []);
 
   const validateForm = useCallback(() => {

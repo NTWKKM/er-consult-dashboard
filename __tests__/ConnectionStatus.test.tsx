@@ -164,15 +164,14 @@ describe("ConnectionStatus", () => {
   // -------------------------------------------------------------------------
   describe("SSR / Null state", () => {
     it("renders loading state with grey dot when isOnline is null", () => {
-      vi.mocked(useSyncExternalStore).mockReturnValue(null);
+      vi.mocked(useSyncExternalStore).mockReturnValueOnce(null);
 
-      render(<ConnectionStatus />);
+      const { container } = render(<ConnectionStatus />);
       
       expect(screen.getByText("...")).toBeInTheDocument();
       expect(screen.queryByText("LIVE")).not.toBeInTheDocument();
       expect(screen.queryByText("OFFLINE")).not.toBeInTheDocument();
       
-      const { container } = render(<ConnectionStatus />);
       expect(container.querySelector(".bg-gray-400")).toBeInTheDocument();
     });
   });

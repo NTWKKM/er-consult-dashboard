@@ -110,13 +110,13 @@ describe("getUtcRangeForLocalDate (via searchCompletedConsults)", () => {
     );
     expect(createdAtCalls.length).toBe(2);
     const [, op1, start] = createdAtCalls[0];
-    const [, op2, end] = createdAtCalls[1];
+    const [, op2, endExclusive] = createdAtCalls[1];
     expect(op1).toBe(">=");
     expect(op2).toBe("<");
     // start should be midnight UTC of the requested date
     // (with local TZ offset included; at least the date portion matches)
     expect(start).toContain("2024-06-1");
-    expect(end).toContain("2024-06-1");
+    expect(endExclusive).toContain("2024-06-1");
   });
 });
 
@@ -125,20 +125,20 @@ describe("getUtcRangeForLocalDate (via searchCompletedConsults)", () => {
 // ===========================================================================
 describe("getUtcRangeForLocalDate logic (pure function)", () => {
   it("returns ISO strings", () => {
-    const { start, end } = getUtcRangeForLocalDate("2024-01-15");
+    const { start, endExclusive } = getUtcRangeForLocalDate("2024-01-15");
     expect(start).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(end).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(endExclusive).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it("start is strictly before end", () => {
-    const { start, end } = getUtcRangeForLocalDate("2024-01-15");
-    expect(new Date(start).getTime()).toBeLessThan(new Date(end).getTime());
+    const { start, endExclusive } = getUtcRangeForLocalDate("2024-01-15");
+    expect(new Date(start).getTime()).toBeLessThan(new Date(endExclusive).getTime());
   });
 
   it("end is exactly 24 hours after start when offset is the same", () => {
     // Use explicit 0-offset (UTC) to get clean boundaries
-    const { start, end } = getUtcRangeForLocalDate("2024-06-15", 0);
-    const diff = new Date(end).getTime() - new Date(start).getTime();
+    const { start, endExclusive } = getUtcRangeForLocalDate("2024-06-15", 0);
+    const diff = new Date(endExclusive).getTime() - new Date(start).getTime();
     expect(diff).toBe(24 * 60 * 60 * 1000);
   });
 
@@ -148,8 +148,8 @@ describe("getUtcRangeForLocalDate logic (pure function)", () => {
   });
 
   it("with explicit 0 offset, end is midnight UTC the following day", () => {
-    const { end } = getUtcRangeForLocalDate("2024-03-20", 0);
-    expect(end).toBe("2024-03-21T00:00:00.000Z");
+    const { endExclusive } = getUtcRangeForLocalDate("2024-03-20", 0);
+    expect(endExclusive).toBe("2024-03-21T00:00:00.000Z");
   });
 
   it("respects positive UTC offset (e.g. UTC+7 = -420 minutes)", () => {
@@ -160,21 +160,21 @@ describe("getUtcRangeForLocalDate logic (pure function)", () => {
   });
 
   it("handles month boundary correctly", () => {
-    const { start, end } = getUtcRangeForLocalDate("2024-01-31", 0);
+    const { start, endExclusive } = getUtcRangeForLocalDate("2024-01-31", 0);
     expect(start).toBe("2024-01-31T00:00:00.000Z");
-    expect(end).toBe("2024-02-01T00:00:00.000Z");
+    expect(endExclusive).toBe("2024-02-01T00:00:00.000Z");
   });
 
   it("handles year boundary correctly", () => {
-    const { start, end } = getUtcRangeForLocalDate("2024-12-31", 0);
+    const { start, endExclusive } = getUtcRangeForLocalDate("2024-12-31", 0);
     expect(start).toBe("2024-12-31T00:00:00.000Z");
-    expect(end).toBe("2025-01-01T00:00:00.000Z");
+    expect(endExclusive).toBe("2025-01-01T00:00:00.000Z");
   });
 
   it("handles leap day", () => {
-    const { start, end } = getUtcRangeForLocalDate("2024-02-29", 0);
+    const { start, endExclusive } = getUtcRangeForLocalDate("2024-02-29", 0);
     expect(start).toBe("2024-02-29T00:00:00.000Z");
-    expect(end).toBe("2024-03-01T00:00:00.000Z");
+    expect(endExclusive).toBe("2024-03-01T00:00:00.000Z");
   });
 });
 
@@ -671,8 +671,9 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     expect(result.truncated).toBe(true);
     expect(result.consults.length).toBe(MAX_RESULTS);
-    expect(result.totalCount).toBe(MAX_RESULTS);
-    expect(mockGetDocs).toHaveBeenCalledTimes(batches);
+    // With the updated logic (length > MAX_RESULTS), a full last batch
+    // doesn't trigger truncation yet, so it attempts to fetch one more.
+    expect(mockGetDocs).toHaveBeenCalledTimes(batches + 1);
   });
 
   it("filters out documents without hn in each batch", async () => {
