@@ -234,7 +234,8 @@ export default function CompletedPage() {
       }
 
       // Dynamic import to reduce bundle size
-      const XLSX = (await import("xlsx")).default;
+      const xlsxModule = await import("xlsx");
+      const XLSX = xlsxModule.default ?? xlsxModule;
 
       const exportData = exportList.map((c) => {
         const depts = Object.keys(c.departments).join(", ");

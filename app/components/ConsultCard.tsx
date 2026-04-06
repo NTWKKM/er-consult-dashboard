@@ -15,6 +15,9 @@ interface ConsultCardProps {
   animationDelay?: number;
 }
 
+const formatTime = (iso: string) =>
+  new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" });
+
 const ElapsedTime = React.memo(function ElapsedTime({ createdAt, darkMode }: { createdAt: string; darkMode: boolean }) {
   const [elapsed, setElapsed] = useState("");
 
@@ -71,7 +74,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const completedTime = dept?.completedAt
     ? new Date(dept.completedAt).toLocaleString("th-TH")
     : null;
-  const formatTime = (iso: string) => new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" });
   const acceptedTime = isAccepted ? formatTime(isAccepted) : null;
   const admittedTime = dept?.admittedAt ? formatTime(dept.admittedAt) : null;
   const returnedTime = dept?.returnedAt ? formatTime(dept.returnedAt) : null;
@@ -571,6 +573,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 <>
                   <div className={`flex-1 relative ${isUpdating ? "opacity-50 pointer-events-none" : ""}`}>
                     <select
+                      aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== "รับเคส" ? actionStatus : ""}
                       onChange={(e) => handleActionStatusChange(e.target.value)}
                       className={`w-full h-full px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${

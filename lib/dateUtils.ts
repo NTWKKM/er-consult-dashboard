@@ -3,7 +3,22 @@
  * Computes the offset for the target date itself to handle DST correctly.
  */
 export function getUtcRangeForLocalDate(date: string, explicitOffset?: number) {
-    const [year, month, day] = date.split("-").map(Number);
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+    if (!m) throw new Error('Invalid date format. Expected "YYYY-MM-DD".');
+
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+
+    // Calendar-date validation to catch impossible dates like February 30th or April 31st
+    const normalized = new Date(year, month - 1, day);
+    if (
+      normalized.getFullYear() !== year ||
+      normalized.getMonth() !== month - 1 ||
+      normalized.getDate() !== day
+    ) {
+      throw new Error(`Invalid calendar date: ${date}`);
+    }
 
     // If explicitOffset is provided, use it for both start and end to test specific TZ behaviors.
     // Otherwise, compute per-date offsets to handle DST transitions.
