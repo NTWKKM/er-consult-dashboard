@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { updateConsult, Consult, ConsultDepartment } from "@/lib/db";
-import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES } from "@/lib/constants";
+import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmModal from "./ConfirmModal";
 
@@ -180,7 +180,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               ...updatedDepartments[dept],
               // ใช้ acceptedAt เดิมถ้ามีอยู่แล้ว ถ้าไม่มีถึงจะใช้เวลา now ป้องกันการเขียนทับ
               acceptedAt: updatedDepartments[dept].acceptedAt || now,
-              actionStatus: "รับเคส",
+              actionStatus: ACCEPT_STATUS,
             };
           }
         });
@@ -574,10 +574,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   <div className={`flex-1 relative ${isUpdating ? "opacity-50 pointer-events-none" : ""}`}>
                     <select
                       aria-label="เลือกสถานะถัดไป"
-                      value={actionStatus && actionStatus !== "รับเคส" ? actionStatus : ""}
+                      value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                       onChange={(e) => handleActionStatusChange(e.target.value)}
                       className={`w-full h-full px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${
-                        actionStatus && actionStatus !== "รับเคส"
+                        actionStatus && actionStatus !== ACCEPT_STATUS
                           ? darkMode
                             ? "bg-amber-500/20 text-amber-300 border border-amber-500"
                             : "bg-amber-400/20 text-amber-700 border border-amber-500"

@@ -328,7 +328,8 @@ export async function updateConsult(
             }
             
             // Perform the "real" update in background (Allows Offline persistence)
-            const backgroundPromise = updateDoc(docRef, updates).catch(err => {
+            const rawPromise = updateDoc(docRef, updates);
+            rawPromise.catch(err => {
                 console.error("Background sync failed for updateConsult:", err);
                 if (options.onBackgroundError) {
                     options.onBackgroundError(err);
@@ -341,7 +342,7 @@ export async function updateConsult(
                     ...updates,
                 } as Consult,
                 isQueued: true,
-                backgroundPromise
+                backgroundPromise: rawPromise
             };
         }
 
@@ -381,7 +382,8 @@ export async function updateConsult(
         // Direct object update
         if (!awaitRemote) {
             // FIRE AND FORGET
-            const backgroundPromise = updateDoc(docRef, updater).catch(e => {
+            const rawPromise = updateDoc(docRef, updater);
+            rawPromise.catch(e => {
                 console.error("Delayed updateDoc error:", e);
                 if (options.onBackgroundError) {
                     options.onBackgroundError(e);
@@ -390,7 +392,7 @@ export async function updateConsult(
             return {
                 consult: null,
                 isQueued: true,
-                backgroundPromise
+                backgroundPromise: rawPromise
             };
         }
         await updateDoc(docRef, updater);

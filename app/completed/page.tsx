@@ -121,7 +121,7 @@ export default function CompletedPage() {
     setIsUpdating(true);
     const caseId = selectedCase.id;
     const prevCases = [...cases];
-    const prevSearchResults = searchResults ? [...searchResults] : null;
+    const prevSearchResults = searchResults !== null ? [...searchResults] : null;
     
     try {
       const result = await updateConsult(caseId, (current) => {
@@ -176,7 +176,7 @@ export default function CompletedPage() {
 
       // Instant UI response
       setCases((prev) => prev.filter((c) => c.id !== caseId));
-      setSearchResults((prev) => prev?.filter((c) => c.id !== caseId) ?? null);
+      setSearchResults((prev) => prev !== null ? prev.filter((c) => c.id !== caseId) : null);
       
       // Wait for background sync if it was queued
       if (result.backgroundPromise) {
