@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
-import React from "react";
+import React, { useSyncExternalStore } from "react";
+
+// Mock react but preserve real useSyncExternalStore by default
+vi.mock("react", async () => {
+  const actual = await vi.importActual("react");
+  return {
+    ...actual,
+    useSyncExternalStore: vi.fn(actual.useSyncExternalStore as typeof useSyncExternalStore),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // ConnectionStatus uses useSyncExternalStore with navigator.onLine.
@@ -153,4 +162,18 @@ describe("ConnectionStatus", () => {
   // -------------------------------------------------------------------------
   // SSR / Null state
   // -------------------------------------------------------------------------
+  describe("SSR / Null state", () => {
+    it("renders loading state with grey dot when isOnline is null", () => {
+      vi.mocked(useSyncExternalStore).mockReturnValue(null);
+
+      render(<ConnectionStatus />);
+      
+      expect(screen.getByText("...")).toBeInTheDocument();
+      expect(screen.queryByText("LIVE")).not.toBeInTheDocument();
+      expect(screen.queryByText("OFFLINE")).not.toBeInTheDocument();
+      
+      const { container } = render(<ConnectionStatus />);
+      expect(container.querySelector(".bg-gray-400")).toBeInTheDocument();
+    });
+  });
 });

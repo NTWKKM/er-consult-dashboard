@@ -12,6 +12,7 @@ export default function SubmitPage() {
   const { darkMode } = useSettings();
   const { addToast } = useToast();
   const hnRef = useRef<HTMLInputElement>(null);
+  const submitInFlightRef = useRef(false);
 
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -77,11 +78,14 @@ export default function SubmitPage() {
   };
 
   const handleSubmit = async (isUrgent: boolean = false) => {
+    if (submitInFlightRef.current) return;
+
     if (!validateForm()) {
       addToast({ type: "error", message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
       return;
     }
 
+    submitInFlightRef.current = true;
     setIsLoading(true);
 
     const departmentsMap: Record<string, { status: "pending" | "completed"; completedAt: string | null }> = {};
@@ -126,6 +130,7 @@ export default function SubmitPage() {
         duration: 5000,
       });
     } finally {
+      submitInFlightRef.current = false;
       setIsLoading(false);
     }
   };

@@ -90,7 +90,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
         if (!current.departments || !current.departments[departmentName]) {
-          return current;
+          return null;
         }
 
         const updatedDepartments = { ...current.departments };
@@ -172,7 +172,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
         if (!current.departments || !current.departments[departmentName]) {
-          return current;
+          return null;
         }
 
         const updatedDepartments = { ...current.departments };
@@ -244,7 +244,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
         if (!current.departments || !current.departments[departmentName]) {
-          return current;
+          return null;
         }
 
         const updatedDepartments = { ...current.departments };
@@ -314,7 +314,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       updateConsult(caseId, (current) => {
         // Guard against stale snapshots/missing departments
         if (!current.departments || !current.departments[departmentName]) {
-          return current;
+          return null;
         }
 
         const updatedDepartments = { ...current.departments };

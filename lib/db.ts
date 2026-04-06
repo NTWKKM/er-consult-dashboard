@@ -95,30 +95,47 @@ export async function fetchCompletedConsultsPage(
     pageSize: number,
     lastDoc?: QueryDocumentSnapshot<DocumentData>
 ): Promise<{ consults: Consult[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
-    let q = query(
-        collection(db, COLLECTION_NAME),
-        where("status", "==", "completed"),
-        orderBy("createdAt", "desc"),
-        limit(pageSize + 1) // fetch one extra to check if there are more
-    );
+    const validConsults: Consult[] = [];
+    const validDocs: QueryDocumentSnapshot<DocumentData>[] = [];
+    let currentCursor = lastDoc;
+    let hasMore = false;
 
-    if (lastDoc) {
-        q = query(q, startAfter(lastDoc));
+    // ดึงข้อมูลไปเรื่อยๆ จนกว่าจะได้เอกสารที่ถูกต้องครบ pageSize + 1 (เพื่อเช็ค hasMore)
+    while (validConsults.length <= pageSize) {
+        let q = query(
+            collection(db, COLLECTION_NAME),
+            where("status", "==", "completed"),
+            orderBy("createdAt", "desc"),
+            limit(pageSize + 1 - validConsults.length)
+        );
+
+        if (currentCursor) {
+            q = query(q, startAfter(currentCursor));
+        }
+
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) break;
+
+        snapshot.docs.forEach((doc) => {
+            if (validConsults.length <= pageSize) {
+                const c = mapDocToConsult(doc);
+                if (c !== null && Boolean(c.hn)) {
+                    validConsults.push(c);
+                    validDocs.push(doc);
+                }
+            }
+        });
+
+        currentCursor = snapshot.docs[snapshot.docs.length - 1];
     }
 
-    const snapshot = await getDocs(q);
-    const docs = snapshot.docs;
-    const hasMore = docs.length > pageSize;
-    const pageDocs = hasMore ? docs.slice(0, pageSize) : docs;
-
-    const consults: Consult[] = pageDocs
-        .map(mapDocToConsult)
-        .filter((c): c is Consult => c !== null && Boolean(c.hn));
-
+    hasMore = validConsults.length > pageSize;
+    const pageConsults = hasMore ? validConsults.slice(0, pageSize) : validConsults;
+    const pageLastDoc = pageConsults.length > 0 ? validDocs[pageConsults.length - 1] : null;
 
     return {
-        consults,
-        lastDoc: pageDocs.length > 0 ? pageDocs[pageDocs.length - 1] : null,
+        consults: pageConsults,
+        lastDoc: pageLastDoc,
         hasMore,
     };
 }
@@ -269,7 +286,7 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
     return newConsult;
 }
 
-export type ConsultUpdater = (current: Consult) => Partial<Omit<Consult, "id">>;
+export type ConsultUpdater = (current: Consult) => Partial<Omit<Consult, "id">> | null;
 
 export interface UpdateConsultOptions {
     awaitRemote?: boolean;
@@ -308,6 +325,13 @@ export async function updateConsult(
             } as Consult;
 
             const updates = updater(currentData);
+            if (updates === null) {
+                return {
+                    consult: null,
+                    isQueued: false,
+                    backgroundPromise: null,
+                };
+            }
             
             // Perform the "real" update in background (Allows Offline persistence)
             const backgroundPromise = updateDoc(docRef, updates).catch(err => {
@@ -342,6 +366,13 @@ export async function updateConsult(
         } as Consult;
 
         const updates = updater(currentData);
+        if (updates === null) {
+            return {
+                consult: null,
+                isQueued: false,
+                backgroundPromise: null,
+            };
+        }
         await updateDoc(docRef, updates);
 
         return {

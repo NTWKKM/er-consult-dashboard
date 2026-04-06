@@ -103,6 +103,11 @@ export default function CompletedPage() {
     });
   }, [cases, searchResults, searchStatus, searchHN, filterDept, filterDate]);
 
+  const viewStateRef = useRef({ currentPage, searchHN, filterDate });
+  useEffect(() => {
+    viewStateRef.current = { currentPage, searchHN, filterDate };
+  }, [currentPage, searchHN, filterDate]);
+
   const handleReConsult = async () => {
     if (!selectedCase || !newProblem.trim()) {
       addToast({ type: "error", message: "กรุณาระบุปัญหาใหม่" });
@@ -115,14 +120,10 @@ export default function CompletedPage() {
     setIsUpdating(true);
     const caseId = selectedCase.id;
     
-    // เก็บ State ปัจจุบันไว้สำหรับ Rollback ในกรณีที่ Background Update ล้มเหลว
-    const prevCases = cases;
-    const prevSearchResults = searchResults;
-
     try {
       const result = await updateConsult(caseId, (current) => {
         // Guard against missing department
-        if (!current.departments) return current;
+        if (!current.departments) return null;
 
         const updatedDepartments: Record<string, ConsultDepartment> = {};
         selectedDepartments.forEach((dept) => {
@@ -137,15 +138,25 @@ export default function CompletedPage() {
       }, { 
         awaitRemote: false,
         onBackgroundError: () => {
-          // แจ้งเตือนและคืนค่า State กลับเป็นเหมือนเดิม (Rollback)
+          // แจ้งเตือนและสั่งโหลดหน้าใหม่แทนการพ่นข้อมูลเก่ากลับคืนมา
           addToast({ 
             type: "error", 
             message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
-          setCases(prevCases);
-          setSearchResults(prevSearchResults);
+          
+          const { searchHN, filterDate, currentPage } = viewStateRef.current;
+          if (searchHN || filterDate) {
+            searchCompletedConsults(searchHN, filterDate).then(res => setSearchResults(res));
+          } else {
+            fetchPage(currentPage);
+          }
         }
       }); // OPTIMISTIC UPDATE
+
+      if (result.consult === null && !result.isQueued) {
+          setIsUpdating(false);
+          return;
+      }
 
       // Instant UI response
       setCases((prev) => prev.filter((c) => c.id !== caseId));
