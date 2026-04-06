@@ -25,7 +25,7 @@ export default function ErrorBoundary({
         <h2 className="text-xl font-bold text-[#014167] dark:text-gray-100 mb-2">
           เกิดข้อผิดพลาดในการโหลดหน้าเว็บ
         </h2>
-        <p className="text-sm text-[#014167]/80 dark:text-gray-300 mb-6 font-medium">
+        <p className="text-sm text-[#014167]/80 dark:text-gray-300 mb-6 font-medium break-words">
           {error.message || "ระบบไม่สามารถประมวลผลข้อมูลได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง"}
         </p>
         <button

@@ -97,25 +97,26 @@ beforeEach(() => {
 // ===========================================================================
 describe("getUtcRangeForLocalDate (via searchCompletedConsults)", () => {
   it("filters consults from searchCompletedConsults to the correct UTC day boundary", async () => {
-    // Spy on getDocs to capture the queries
-    mockGetDocs.mockResolvedValue(makeQuerySnapshot([]));
-    await searchCompletedConsults(undefined, "2024-06-15");
-    expect(mockGetDocs).toHaveBeenCalledTimes(1);
-    // The query is constructed with where clauses for status/createdAt range
-    expect(mockWhere).toHaveBeenCalledWith("status", "==", "completed");
-    // Two where calls for createdAt range
-    const createdAtCalls = (mockWhere as Mock).mock.calls.filter(
-      (c) => c[0] === "createdAt"
-    );
-    expect(createdAtCalls.length).toBe(2);
-    const [, op1, start] = createdAtCalls[0];
-    const [, op2, endExclusive] = createdAtCalls[1];
-    expect(op1).toBe(">=");
-    expect(op2).toBe("<");
-    // start should be midnight UTC of the requested date
-    // (with local TZ offset included; at least the date portion matches)
-    expect(start).toContain("2024-06-1");
-    expect(endExclusive).toContain("2024-06-1");
+    // ล็อก Timezone เพื่อให้การเทียบวันที่แม่นยำ
+    const offsetSpy = vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(0);
+    
+    try {
+      mockGetDocs.mockResolvedValue(makeQuerySnapshot([]));
+      await searchCompletedConsults(undefined, "2024-06-15");
+
+      expect(mockGetDocs).toHaveBeenCalledTimes(1);
+      expect(mockWhere).toHaveBeenCalledWith("status", "==", "completed");
+
+      const createdAtCalls = (mockWhere as Mock).mock.calls.filter((c) => c[0] === "createdAt");
+      // เทียบกับเวลาเริ่มและจบของวันนั้นๆ เป๊ะๆ
+      expect(createdAtCalls).toEqual([
+        ["createdAt", ">=", "2024-06-15T00:00:00.000Z"],
+        ["createdAt", "<", "2024-06-16T00:00:00.000Z"],
+      ]);
+    } finally {
+      // คืนค่า Timezone ปกติเมื่อเทสต์เสร็จ
+      offsetSpy.mockRestore();
+    }
   });
 });
 

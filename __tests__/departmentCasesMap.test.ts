@@ -152,6 +152,40 @@ describe("departmentCasesMap", () => {
       const map = buildDepartmentCasesMap([noRoom], "non-resus");
       expect(map["Gen Sx"]).toHaveLength(1);
     });
+
+    it("regression: correctly distinguishes 'Non-Resus' from 'Resus'", () => {
+      const resus = makeConsult({ room: "Resus", departments: { "Gen Sx": { status: "pending", completedAt: null } } });
+      const nonResus = makeConsult({ room: "Non-Resus", departments: { "Gen Sx": { status: "pending", completedAt: null } } });
+      
+      // Test filter='resus'
+      const resusMap = buildDepartmentCasesMap([resus, nonResus], "resus");
+      expect(resusMap["Gen Sx"]).toHaveLength(1);
+      expect(resusMap["Gen Sx"][0].room).toBe("Resus");
+
+      // Test filter='non-resus'
+      const nonResusMap = buildDepartmentCasesMap([resus, nonResus], "non-resus");
+      expect(nonResusMap["Gen Sx"]).toHaveLength(1);
+      expect(nonResusMap["Gen Sx"][0].room).toBe("Non-Resus");
+    });
+  });
+
+  describe("security: prototype pollution", () => {
+    it("is safe from inherited properties", () => {
+      // Create a case that might try to target an inherited property name
+      const malicious = makeConsult({
+        departments: {
+          "toString": { status: "pending", completedAt: null }
+        } as Record<string, { status: "pending"; completedAt: null }>
+      });
+
+      // The map should not have 'toString' as a valid department key even if it's in the input data,
+      // because our code filters by SURGERY_DEPTS/ORTHO_DEPTS.
+      // But more importantly, the map itself should be a null-prototype object.
+      const map = buildDepartmentCasesMap([malicious], "all");
+      
+      expect(Object.getPrototypeOf(map)).toBe(null);
+      expect(map["toString"]).toBeUndefined();
+    });
   });
 
   describe("sorting", () => {
