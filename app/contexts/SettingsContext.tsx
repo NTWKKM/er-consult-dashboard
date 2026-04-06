@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useCallback, ReactNode, useSyncExternalStore } from "react";
 
 interface SettingsContextType {
   darkMode: boolean;
@@ -16,39 +16,68 @@ const SettingsContext = createContext<SettingsContextType>({
   toggleSound: () => {},
 });
 
-function getInitialValue(key: string, fallback: boolean): boolean {
-  if (typeof window === "undefined") return fallback;
-  const saved = localStorage.getItem(key);
-  return saved !== null ? saved === "true" : fallback;
-}
+// For subscribing to window events (both cross-tab and same-tab)
+const subscribe = (callback: () => void) => {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", callback);
+  window.addEventListener("settings-change", callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener("settings-change", callback);
+  };
+};
+
+// Stable snapshot function references
+const getDarkModeSnapshot = () => {
+    if (typeof window === "undefined") return false;
+    const saved = localStorage.getItem("darkMode");
+    return saved !== null ? saved === "true" : false;
+};
+
+const getSoundEnabledSnapshot = () => {
+    if (typeof window === "undefined") return false;
+    const saved = localStorage.getItem("soundEnabled");
+    return saved !== null ? saved === "true" : false;
+};
+
+const darkModeServerSnapshot = () => false;
+const soundEnabledServerSnapshot = () => false;
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [darkMode, setDarkMode] = useState(() => getInitialValue("darkMode", false));
-  const [soundEnabled, setSoundEnabled] = useState(() => getInitialValue("soundEnabled", false));
-  const mounted = typeof window !== "undefined";
+  // Use modern React store synchronization for safe SSR/Hydration
+  const darkMode = useSyncExternalStore(
+    subscribe,
+    getDarkModeSnapshot,
+    darkModeServerSnapshot
+  );
+  
+  const soundEnabled = useSyncExternalStore(
+    subscribe,
+    getSoundEnabledSnapshot,
+    soundEnabledServerSnapshot
+  );
 
-  // Apply dark class to <html> element
+  // Helper to trigger UI updates in the current tab
+  const notifyChange = useCallback(() => {
+    window.dispatchEvent(new Event("settings-change"));
+  }, []);
+
+  // Synchronize dark class on <html> element
   useEffect(() => {
-    if (mounted) {
-      document.documentElement.classList.toggle("dark", darkMode);
-    }
-  }, [darkMode, mounted]);
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
 
   const toggleDarkMode = useCallback(() => {
-    setDarkMode((prev) => {
-      const next = !prev;
-      localStorage.setItem("darkMode", String(next));
-      return next;
-    });
-  }, []);
+    const nextValue = !darkMode;
+    localStorage.setItem("darkMode", String(nextValue));
+    notifyChange();
+  }, [darkMode, notifyChange]);
 
   const toggleSound = useCallback(() => {
-    setSoundEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem("soundEnabled", String(next));
-      return next;
-    });
-  }, []);
+    const nextValue = !soundEnabled;
+    localStorage.setItem("soundEnabled", String(nextValue));
+    notifyChange();
+  }, [soundEnabled, notifyChange]);
 
   return (
     <SettingsContext.Provider value={{ darkMode, soundEnabled, toggleDarkMode, toggleSound }}>

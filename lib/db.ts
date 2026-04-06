@@ -1,9 +1,10 @@
 import { db } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { sortConsults } from "./utils";
+import { getUtcRangeForLocalDate } from "./dateUtils";
 
 export interface ConsultDepartment {
-    status: "pending" | "completed";
+    status: "pending" | "completed" | "cancelled";
     completedAt: string | null;
     acceptedAt?: string | null;
     actionStatus?: string;
@@ -27,6 +28,23 @@ export interface Consult {
 
 const COLLECTION_NAME = "consults";
 
+/**
+ * Helper to map a Firestore document snapshot to a Consult object.
+ * Performs defensive checks and provides default values.
+ */
+function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult | null {
+    const data = document.data();
+    if (!data) return null;
+    return {
+        ...data,
+        id: document.id,
+        firstName: data.firstName ?? "",
+        lastName: data.lastName ?? "",
+    } as Consult;
+}
+
+
+
 // Real-time subscription instead of single fetch
 export function subscribeToConsultsByStatus(
     status: "pending" | "completed",
@@ -47,14 +65,10 @@ export function subscribeToConsultsByStatus(
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const consults: Consult[] = [];
         querySnapshot.forEach((document) => {
-            const data = document.data();
-            consults.push({
-                id: document.id,
-                firstName: data.firstName || "",
-                lastName: data.lastName || "",
-                ...data,
-            } as Consult);
+            const consult = mapDocToConsult(document);
+            if (consult && Boolean(consult.hn)) consults.push(consult);
         });
+
         
         onData(sortConsults(consults));
     }, (error) => {
@@ -74,36 +88,167 @@ export async function fetchCompletedConsultsPage(
     pageSize: number,
     lastDoc?: QueryDocumentSnapshot<DocumentData>
 ): Promise<{ consults: Consult[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
-    let q = query(
-        collection(db, COLLECTION_NAME),
-        where("status", "==", "completed"),
-        orderBy("createdAt", "desc"),
-        limit(pageSize + 1) // fetch one extra to check if there are more
-    );
+    // Track both valid consults and their corresponding Firestore docs.
+    // validDocs[i] is the snapshot for validConsults[i], enabling correct cursor tracking.
+    const validConsults: Consult[] = [];
+    const validDocs: QueryDocumentSnapshot<DocumentData>[] = [];
+    let currentCursor = lastDoc;
+    let hasMore = false;
 
-    if (lastDoc) {
-        q = query(q, startAfter(lastDoc));
+    // ดึงข้อมูลไปเรื่อยๆ จนกว่าจะได้เอกสารที่ถูกต้องครบ pageSize + 1 (เพื่อเช็ค hasMore)
+    while (validConsults.length <= pageSize) {
+        let q = query(
+            collection(db, COLLECTION_NAME),
+            where("status", "==", "completed"),
+            orderBy("createdAt", "desc"),
+            limit(pageSize + 1 - validConsults.length)
+        );
+
+        if (currentCursor) {
+            q = query(q, startAfter(currentCursor));
+        }
+
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) break;
+
+        snapshot.docs.forEach((doc) => {
+            if (validConsults.length <= pageSize) {
+                const c = mapDocToConsult(doc);
+                if (c !== null && Boolean(c.hn)) {
+                    validConsults.push(c);
+                    validDocs.push(doc);
+                }
+            }
+        });
+
+        currentCursor = snapshot.docs[snapshot.docs.length - 1];
     }
 
-    const snapshot = await getDocs(q);
-    const docs = snapshot.docs;
-    const hasMore = docs.length > pageSize;
-    const pageDocs = hasMore ? docs.slice(0, pageSize) : docs;
-
-    const consults: Consult[] = pageDocs.map((document) => {
-        const data = document.data();
-        return {
-            id: document.id,
-            firstName: data.firstName || "",
-            lastName: data.lastName || "",
-            ...data,
-        } as Consult;
-    });
+    hasMore = validConsults.length > pageSize;
+    const pageConsults = hasMore ? validConsults.slice(0, pageSize) : validConsults;
+    const pageLastDoc = pageConsults.length > 0 ? validDocs[pageConsults.length - 1] : null;
 
     return {
-        consults,
-        lastDoc: pageDocs.length > 0 ? pageDocs[pageDocs.length - 1] : null,
+        consults: pageConsults,
+        lastDoc: pageLastDoc,
         hasMore,
+    };
+}
+
+/**
+ * Search completed consults by exact HN or date range.
+ * This provides server-side filtering to bypass pagination limitations.
+ */
+export async function searchCompletedConsults(
+    searchHN?: string,
+    filterDate?: string
+): Promise<Consult[]> {
+    let consults: Consult[] = [];
+
+    // If searching by HN, query by exact HN with server-side status filter.
+    // NOTE: Queries on "hn" may require a composite index if you later add ordering
+    // or additional where clauses beyond status filtering.
+    if (searchHN) {
+        const q = query(
+            collection(db, COLLECTION_NAME),
+            where("hn", ">=", searchHN),
+            where("hn", "<", searchHN + "\uf8ff"),
+            where("status", "==", "completed")
+        );
+        const snapshot = await getDocs(q);
+
+        consults = snapshot.docs
+            .map(mapDocToConsult)
+            .filter((c): c is Consult => c !== null && Boolean(c.hn));
+
+
+        if (filterDate) {
+            const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
+            consults = consults.filter(c => c.createdAt && c.createdAt >= start && c.createdAt < endExclusive);
+        }
+
+        return consults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+
+    // If only filtering by date, use the existing status + createdAt index
+    if (filterDate) {
+        const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
+        
+        const q = query(
+            collection(db, COLLECTION_NAME),
+            where("status", "==", "completed"),
+            where("createdAt", ">=", start),
+            where("createdAt", "<", endExclusive),
+            orderBy("createdAt", "desc")
+        );
+        
+        const snapshot = await getDocs(q);
+        return snapshot.docs
+            .map(mapDocToConsult)
+            .filter((c): c is Consult => c !== null && Boolean(c.hn));
+
+    }
+
+    return [];
+}
+
+/**
+ * Fetch all completed cases within a date range (for exporting).
+ * Uses cursor-based pagination internally to fetch the entire result set.
+ */
+export async function fetchAllCompletedConsultsForExport(
+    startDate: string,
+    endDate: string
+): Promise<{ consults: Consult[]; truncated: boolean }> {
+    const { start } = getUtcRangeForLocalDate(startDate);
+    const { endExclusive } = getUtcRangeForLocalDate(endDate);
+
+    let allConsults: Consult[] = [];
+    let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
+    let truncated = false;
+    const BATCH_SIZE = 1000;
+    const MAX_RESULTS = 50000;
+
+    while (true) {
+        let q = query(
+            collection(db, COLLECTION_NAME),
+            where("status", "==", "completed"),
+            where("createdAt", ">=", start),
+            where("createdAt", "<", endExclusive),
+            orderBy("createdAt", "desc"),
+            limit(BATCH_SIZE)
+        );
+
+        if (lastDoc) {
+            q = query(q, startAfter(lastDoc));
+        }
+
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) break;
+
+        const batch = snapshot.docs
+            .map(mapDocToConsult)
+            .filter((c): c is Consult => c !== null && Boolean(c.hn));
+
+        allConsults.push(...batch);
+
+        // Safety limit to prevent unbounded memory growth
+        if (allConsults.length > MAX_RESULTS) {
+            allConsults = allConsults.slice(0, MAX_RESULTS);
+            console.warn(`Export truncated at ${MAX_RESULTS} results`);
+            truncated = true;
+            break;
+        }
+
+        // If we fetched fewer than batch size, we've reached the end
+        if (snapshot.docs.length < BATCH_SIZE) break;
+
+        lastDoc = snapshot.docs[snapshot.docs.length - 1];
+    }
+
+    return {
+        consults: allConsults,
+        truncated
     };
 }
 
@@ -113,10 +258,10 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
     if (docSnap.exists()) {
         const data = docSnap.data();
         return {
-            id: docSnap.id,
-            firstName: data.firstName || "",
-            lastName: data.lastName || "",
             ...data,
+            id: docSnap.id,
+            firstName: data.firstName ?? "",
+            lastName: data.lastName ?? "",
         } as Consult;
     }
     return undefined;
@@ -135,15 +280,126 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
     return newConsult;
 }
 
+export type ConsultUpdater = (current: Consult) => Partial<Omit<Consult, "id">> | null;
+
+export interface UpdateConsultOptions {
+    awaitRemote?: boolean;
+    onBackgroundError?: (error: unknown) => void;
+}
+
+export interface UpdateResults {
+    consult: Consult | null;
+    isQueued: boolean;
+    backgroundPromise: Promise<void> | null;
+}
+
 export async function updateConsult(
     id: string,
-    updates: Partial<Omit<Consult, "id">>
-): Promise<Consult | null> {
+    updater: ConsultUpdater | Partial<Omit<Consult, "id">>,
+    options: UpdateConsultOptions = {}
+): Promise<UpdateResults> {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) return null;
+    const { awaitRemote = true } = options;
 
-    await updateDoc(docRef, updates);
-    
-    return { id, ...docSnap.data(), ...updates } as Consult;
+    if (typeof updater === "function") {
+        if (!awaitRemote) {
+            // Optimistic Path: Return immediately after local read, then sync safely in background.
+            // Note: getDoc usually hit the local cache first, so this is fast.
+            const docSnap = await getDoc(docRef);
+            if (!docSnap.exists()) {
+                throw new Error(`Consult not found: ${id}`);
+            }
+
+            const data = docSnap.data();
+            const currentData = {
+                ...data,
+                id: docSnap.id,
+                firstName: data?.firstName ?? "",
+                lastName: data?.lastName ?? "",
+            } as Consult;
+
+            const updates = updater(currentData);
+            if (updates === null) {
+                return {
+                    consult: null,
+                    isQueued: false,
+                    backgroundPromise: null,
+                };
+            }
+            
+            // Perform the "real" update in background (Allows Offline persistence)
+            const rawPromise = updateDoc(docRef, updates);
+            rawPromise.catch(err => {
+                console.error("Background sync failed for updateConsult:", err);
+                if (options.onBackgroundError) {
+                    options.onBackgroundError(err);
+                }
+            });
+
+            return {
+                consult: {
+                    ...currentData,
+                    ...updates,
+                } as Consult,
+                isQueued: true,
+                backgroundPromise: rawPromise
+            };
+        }
+
+        // Standard Path (Awaited for server response)
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            throw new Error(`Consult not found: ${id}`);
+        }
+
+        const data = docSnap.data();
+        const currentData = {
+            ...data,
+            id: docSnap.id,
+            firstName: data?.firstName ?? "",
+            lastName: data?.lastName ?? "",
+        } as Consult;
+
+        const updates = updater(currentData);
+        if (updates === null) {
+            return {
+                consult: null,
+                isQueued: false,
+                backgroundPromise: null,
+            };
+        }
+        await updateDoc(docRef, updates);
+
+        return {
+            consult: {
+                ...currentData,
+                ...updates,
+            } as Consult,
+            isQueued: false,
+            backgroundPromise: null
+        };
+    } else {
+        // Direct object update
+        if (!awaitRemote) {
+            // FIRE AND FORGET
+            const rawPromise = updateDoc(docRef, updater);
+            rawPromise.catch(e => {
+                console.error("Delayed updateDoc error:", e);
+                if (options.onBackgroundError) {
+                    options.onBackgroundError(e);
+                }
+            });
+            return {
+                consult: null,
+                isQueued: true,
+                backgroundPromise: rawPromise
+            };
+        }
+        await updateDoc(docRef, updater);
+        return {
+            consult: null,
+            isQueued: false,
+            backgroundPromise: null
+        };
+    }
 }

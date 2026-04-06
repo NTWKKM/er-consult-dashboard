@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment } from "@/lib/db";
+import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport } from "@/lib/db";
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS } from "@/lib/constants";
 import { useSettings } from "../contexts/SettingsContext";
@@ -20,10 +20,20 @@ export default function CompletedPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
+  // Server-side Search
+  const [searchResults, setSearchResults] = useState<Consult[] | null>(null);
+  const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error" | "ready">("idle");
+
   // Search & Filter
   const [searchHN, setSearchHN] = useState("");
   const [filterDept, setFilterDept] = useState("");
   const [filterDate, setFilterDate] = useState("");
+
+  // Export
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   const { darkMode } = useSettings();
   const { addToast } = useToast();
@@ -52,6 +62,7 @@ export default function CompletedPage() {
     } catch (err) {
       console.error("Fetch error:", err);
       setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+      throw err;
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -60,34 +71,44 @@ export default function CompletedPage() {
 
   // Initial load
   useEffect(() => {
-    fetchPage(1);
+    void fetchPage(1).catch(() => {});
   }, [fetchPage]);
 
   // Navigate to a specific page
   const goToPage = useCallback((page: number) => {
     setCurrentPage(page);
-    fetchPage(page);
+    void fetchPage(page).catch(() => {});
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [fetchPage]);
 
-  // Filtered cases
   const filteredCases = useMemo(() => {
-    return cases.filter((c) => {
-      // HN search
-      if (searchHN && !c.hn.includes(searchHN)) return false;
+    const isSearchActive = Boolean(searchHN || filterDate);
+    let baseCases = cases;
 
-      // Department filter
-      if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
-
-      // Date filter
-      if (filterDate) {
-        const caseDate = new Date(c.createdAt).toISOString().split("T")[0];
-        if (caseDate !== filterDate) return false;
+    // เลือกอาร์เรย์เริ่มต้นที่จะนำมากรอง
+    if (isSearchActive) {
+      if (searchStatus === "error") return [];
+      if (searchStatus === "loading" && searchResults === null) {
+        if (filterDate) return []; // <-- ป้องกันไม่ให้เอาเคสปัจจุบันมาแสดงแวบเดียวตอนกรองวันที่
+        baseCases = cases;
+      } else if (searchResults !== null) {
+        baseCases = searchResults;
       }
+    }
 
+    // กรองด้วย HN และแผนกอย่างสม่ำเสมอในทุก ๆ กรณี
+    const lowerSearchHN = searchHN.toLowerCase();
+    return baseCases.filter((c) => {
+      if (searchHN && !c.hn.toLowerCase().startsWith(lowerSearchHN)) return false;
+      if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
       return true;
     });
-  }, [cases, searchHN, filterDept, filterDate]);
+  }, [cases, searchResults, searchStatus, searchHN, filterDept, filterDate]);
+
+  const viewStateRef = useRef({ currentPage, searchHN, filterDate });
+  useEffect(() => {
+    viewStateRef.current = { currentPage, searchHN, filterDate };
+  }, [currentPage, searchHN, filterDate]);
 
   const handleReConsult = async () => {
     if (!selectedCase || !newProblem.trim()) {
@@ -99,17 +120,69 @@ export default function CompletedPage() {
       return;
     }
     setIsUpdating(true);
+    const caseId = selectedCase.id;
+    
     try {
-      const updatedDepartments: Record<string, ConsultDepartment> = {};
-      selectedDepartments.forEach((dept) => {
-        updatedDepartments[dept] = { status: "pending", completedAt: null };
-      });
-      await updateConsult(selectedCase.id, {
-        status: "pending",
-        departments: updatedDepartments,
-        problem: `${selectedCase.problem}\n\n[Re-consult]: ${newProblem}`,
-        createdAt: new Date().toISOString(),
-      });
+      const result = await updateConsult(caseId, (current) => {
+        // Guard against missing department
+        if (!current.departments) return null;
+
+        const updatedDepartments: Record<string, ConsultDepartment> = {};
+        selectedDepartments.forEach((dept) => {
+          updatedDepartments[dept] = { status: "pending", completedAt: null };
+        });
+        return {
+          status: "pending",
+          departments: updatedDepartments,
+          problem: `${current.problem}\n\n[Re-consult]: ${newProblem}`,
+          createdAt: new Date().toISOString(),
+        };
+      }, { 
+        awaitRemote: false,
+        onBackgroundError: () => {
+          addToast({ 
+            type: "error", 
+            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+          });
+          
+          // Refetch directly instead of rolling back with stale snapshot
+          const { searchHN, filterDate, currentPage } = viewStateRef.current;
+          if (searchHN || filterDate) {
+            setSearchStatus("loading");
+            void searchCompletedConsults(searchHN, filterDate)
+              .then((res) => {
+                setSearchResults(res);
+                setSearchStatus("ready");
+              })
+              .catch((err) => {
+                console.error("Recovery refresh failed:", err);
+                setSearchStatus("error");
+              });
+          } else {
+            setLoading(true);
+            void fetchPage(currentPage).catch((err) => {
+               console.error("Recovery refresh failed:", err);
+            });
+          }
+        }
+      }); // OPTIMISTIC UPDATE
+
+      if (result.consult === null && !result.isQueued) {
+          setIsUpdating(false);
+          return;
+      }
+
+      // Instant UI response
+      setCases((prev) => prev.filter((c) => c.id !== caseId));
+      setSearchResults((prev) => prev !== null ? prev.filter((c) => c.id !== caseId) : null);
+      
+      // Wait for background sync if it was queued
+      if (result.backgroundPromise) {
+          result.backgroundPromise.catch(() => {
+              // Already handled by onBackgroundError
+          });
+      }
+
       setShowModal(false);
       setSelectedCase(null);
       setNewProblem("");
@@ -131,43 +204,95 @@ export default function CompletedPage() {
   };
 
   const handleExportExcel = async () => {
-    // Dynamic import to reduce bundle size
-    const XLSX = (await import("xlsx")).default;
+    if (!exportStartDate || !exportEndDate) {
+      addToast({ type: "error", message: "กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด" });
+      return;
+    }
+    if (exportStartDate > exportEndDate) {
+      addToast({ type: "error", message: "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด" });
+      return;
+    }
 
-    const exportData = filteredCases.map((c) => {
-      const depts = Object.keys(c.departments).join(", ");
+    setIsExporting(true);
+    try {
+      const { consults: exportList, truncated } = await fetchAllCompletedConsultsForExport(
+        exportStartDate, 
+        exportEndDate
+      );
+      
+      if (exportList.length === 0) {
+        addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
+        return;
+      }
 
-      const getTimesFor = (key: keyof ConsultDepartment) => {
-        return Object.entries(c.departments)
-          .map(([dept, data]) => {
-            const time = data[key] as string | undefined;
-            return time ? `${dept}: ${new Date(time).toLocaleString("th-TH")}` : null;
-          })
-          .filter(Boolean)
-          .join("\n");
-      };
+      if (truncated) {
+        addToast({ 
+          type: "warning", 
+          message: "ข้อมูลมีจำนวนมากเกินไป ระบบจะ Export เฉพาะ 50,000 รายการแรกเท่านั้น" 
+        });
+      }
 
-      return {
-        HN: c.hn || "-",
-        ชื่อ: c.firstName || "-",
-        นามสกุล: c.lastName || "-",
-        ห้อง: c.room || "-",
-        Dx: c.problem || "-",
-        แผนก: depts,
-        วันที่ส่ง: c.createdAt ? new Date(c.createdAt).toLocaleString("th-TH") : "-",
-        รับเคส: getTimesFor("acceptedAt") || "-",
-        Admit: getTimesFor("admittedAt") || "-",
-        "คืน ER": getTimesFor("returnedAt") || "-",
-        "D/C": getTimesFor("dischargedAt") || "-",
-        ปิดเคส: getTimesFor("completedAt") || "-",
-      };
-    });
+      // Dynamic import to reduce bundle size
+      const xlsxModule = await import("xlsx");
+      const XLSX = xlsxModule.default ?? xlsxModule;
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Cases");
-    XLSX.writeFile(workbook, `completed-cases-${new Date().toISOString().split("T")[0]}.xlsx`);
-    addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
+      const exportData = exportList.map((c) => {
+        const depts = Object.keys(c.departments).join(", ");
+
+        // Returns times for non-cancelled departments only (for "ปิดเคส")
+        const getTimesFor = (key: keyof ConsultDepartment, excludeStatus?: string) => {
+          return Object.entries(c.departments)
+            .map(([dept, data]) => {
+              const time = data[key] as string | undefined;
+              if (!time) return null;
+              if (excludeStatus && data.status === excludeStatus) return null;
+              return `${dept}: ${new Date(time).toLocaleString("th-TH")}`;
+            })
+            .filter(Boolean)
+            .join("\n");
+        };
+
+        // Returns times for cancelled departments only (for "ยกเลิก" column)
+        const getCancelledTimesFor = (key: keyof ConsultDepartment) => {
+          return Object.entries(c.departments)
+            .map(([dept, data]) => {
+              const time = data[key] as string | undefined;
+              if (!time || data.status !== "cancelled") return null;
+              return `${dept}: ${new Date(time).toLocaleString("th-TH")}`;
+            })
+            .filter(Boolean)
+            .join("\n");
+        };
+
+        return {
+          HN: c.hn || "-",
+          ชื่อ: c.firstName || "-",
+          นามสกุล: c.lastName || "-",
+          ห้อง: c.room || "-",
+          Dx: c.problem || "-",
+          แผนก: depts,
+          วันที่ส่ง: c.createdAt ? new Date(c.createdAt).toLocaleString("th-TH") : "-",
+          รับเคส: getTimesFor("acceptedAt") || "-",
+          Admit: getTimesFor("admittedAt") || "-",
+          "คืน ER": getTimesFor("returnedAt") || "-",
+          "D/C": getTimesFor("dischargedAt") || "-",
+          ปิดเคส: getTimesFor("completedAt", "cancelled") || "-",  // excluded cancelled
+          ยกเลิก: getCancelledTimesFor("completedAt") || "-",       // cancelled only
+        };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Cases");
+      XLSX.writeFile(workbook, `completed-cases-${exportStartDate}-to-${exportEndDate}.xlsx`);
+      addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error("Export error:", error);
+      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการ Export" });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const toggleDepartment = (dept: string) => {
@@ -179,13 +304,79 @@ export default function CompletedPage() {
   // With cursor pagination, display the current page's filtered cases directly
   const currentCases = filteredCases;
 
-  // Reset to page 1 and re-fetch when filters change
+  // Server-side search when searchHN or filterDate changes
   useEffect(() => {
-    setCurrentPage(1);
-    fetchPage(1);
-    cursorMapRef.current.clear();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchHN, filterDept, filterDate]);
+    if (!searchHN && !filterDate) {
+      setSearchResults(null);
+      setSearchStatus("idle");
+      return;
+    }
+
+    // Reset results when starting a server-side search to avoid showing stale data
+    setSearchResults(null);
+    setSearchStatus("loading");
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchCompletedConsults(searchHN, filterDate);
+        if (!cancelled) {
+          setSearchResults(results);
+          setSearchStatus("ready");
+        }
+      } catch (err) {
+        console.error("Search error:", err);
+        if (!cancelled) {
+          setSearchStatus("error");
+        }
+      }
+    }, 600);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchHN, filterDate]);
+
+  // Focus management for Export Modal
+  const exportModalRef = useRef<HTMLDivElement>(null);
+  const prevFocusedElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (showExportModal) {
+      prevFocusedElement.current = document.activeElement as HTMLElement;
+      // Focus the first input or the h2 heading
+      const firstInput = exportModalRef.current?.querySelector("input");
+      if (firstInput) {
+        firstInput.focus();
+      }
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setShowExportModal(false);
+        }
+        if (e.key === "Tab" && exportModalRef.current) {
+          const focusable = exportModalRef.current.querySelectorAll(
+            'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+          );
+          const first = focusable[0] as HTMLElement;
+          const last = focusable[focusable.length - 1] as HTMLElement;
+
+          if (e.shiftKey && document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+          }
+        }
+      };
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    } else if (prevFocusedElement.current) {
+      prevFocusedElement.current.focus();
+    }
+  }, [showExportModal]);
 
   if (loading) {
     return (
@@ -238,12 +429,16 @@ export default function CompletedPage() {
             >
               <span className={`font-semibold text-sm ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>ผลการค้นหา:</span>
               <span className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
-                {filteredCases.length}
+                {searchStatus === "loading" ? "..." : filteredCases.length}
               </span>
               <span className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>เคส</span>
             </div>
             <button
-              onClick={handleExportExcel}
+              onClick={() => {
+                setExportStartDate("");
+                setExportEndDate("");
+                setShowExportModal(true);
+              }}
               className="inline-flex items-center gap-2 bg-[#699D5D] hover:bg-[#58854D] text-white px-4 py-1.5 rounded-full shadow-sm font-semibold text-sm transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -416,10 +611,12 @@ export default function CompletedPage() {
                             >
                               <span
                                 className={`font-bold border-b pb-0.5 mb-0.5 block ${
-                                  darkMode ? "border-gray-700 text-gray-200" : "border-[#014167]/10 text-black"
+                                  data.status === "cancelled" 
+                                    ? "text-red-500 line-through decoration-2" 
+                                    : darkMode ? "border-gray-700 text-gray-200" : "border-[#014167]/10 text-black"
                                 }`}
                               >
-                                {dept}
+                                {dept} {data.status === "cancelled" && "(ยกเลิก)"}
                               </span>
                               <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 ${darkMode ? "text-gray-400" : "text-black/70"}`}>
                                 {data.acceptedAt && (
@@ -448,7 +645,9 @@ export default function CompletedPage() {
                                 )}
                                 {data.completedAt && (
                                   <div>
-                                    <span className="text-[#E55143] font-semibold">ปิด:</span>{" "}
+                                    <span className={data.status === "cancelled" ? "text-red-500 font-semibold" : "text-[#E55143] font-semibold"}>
+                                      {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
+                                    </span>{" "}
                                     {new Date(data.completedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
@@ -520,18 +719,55 @@ export default function CompletedPage() {
                   <p className={`text-xs mb-2 whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
                     {caseData.problem}
                   </p>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {Object.keys(caseData.departments).map((dept) => (
-                      <span
-                        key={dept}
-                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium border ${
-                          darkMode
-                            ? "bg-gray-600 text-gray-200 border-gray-500"
-                            : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
-                        }`}
-                      >
-                        {dept}
-                      </span>
+                  <div className="flex flex-col gap-1.5 mb-2">
+                    {Object.entries(caseData.departments).map(([dept, data]) => (
+                      <div key={dept} className={`p-1.5 rounded shadow-sm border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-white/60 border-[#014167]/10"}`}>
+                        <span
+                          className={`inline-block px-2 py-0.5 mb-1 rounded text-[10px] font-medium border ${
+                            data.status === "cancelled"
+                              ? "bg-red-500/20 text-red-500 line-through border-red-500/30"
+                              : darkMode
+                                ? "bg-gray-600 text-gray-200 border-gray-500"
+                                : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
+                          }`}
+                        >
+                          {dept} {data.status === "cancelled" && "(ยกเลิก)"}
+                        </span>
+                        <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] ${darkMode ? "text-gray-400" : "text-black/70"}`}>
+                          {data.acceptedAt && (
+                            <div>
+                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รับ:</span>{" "}
+                              {new Date(data.acceptedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {data.admittedAt && (
+                            <div>
+                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>Admit:</span>{" "}
+                              {new Date(data.admittedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {data.returnedAt && (
+                            <div>
+                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>คืน ER:</span>{" "}
+                              {new Date(data.returnedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {data.dischargedAt && (
+                            <div>
+                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>D/C:</span>{" "}
+                              {new Date(data.dischargedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {data.completedAt && (
+                            <div>
+                              <span className={data.status === "cancelled" ? "text-red-500 font-semibold" : "text-[#E55143] font-semibold"}>
+                                {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
+                              </span>{" "}
+                              {new Date(data.completedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ))}
                   </div>
                   <div className={`text-[11px] ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
@@ -569,55 +805,64 @@ export default function CompletedPage() {
           </div>
 
           {/* Pagination */}
-          {(currentPage > 1 || hasMore) && (
+          {(currentPage > 1 || hasMore || Boolean(searchHN || filterDate)) && (
             <div
               className={`px-4 py-3 border-t flex items-center justify-between ${
                 darkMode ? "bg-gray-800/50 border-gray-700" : "bg-[#014167]/10 border-[#014167]/20"
               }`}
             >
-              <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                หน้า {currentPage} — แสดง {filteredCases.length} เคส
-                {loadingMore && " (กำลังโหลด...)"}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => goToPage(currentPage - 1)}
-                  disabled={currentPage === 1 || loadingMore}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    currentPage === 1 || loadingMore
-                      ? darkMode
-                        ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                        : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                      : darkMode
-                      ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
-                      : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
-                  }`}
-                >
-                  ← ก่อนหน้า
-                </button>
-                <span
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                    darkMode ? "bg-gray-700 text-gray-200" : "bg-[#699D5D] text-white"
-                  }`}
-                >
-                  {currentPage}
-                </span>
-                <button
-                  onClick={() => goToPage(currentPage + 1)}
-                  disabled={!hasMore || loadingMore}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    !hasMore || loadingMore
-                      ? darkMode
-                        ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                        : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                      : darkMode
-                      ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
-                      : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
-                  }`}
-                >
-                  ถัดไป →
-                </button>
-              </div>
+  <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+    {searchStatus === "error" ? (
+      <span className="text-[#E55143] font-bold">⚠️ การค้นหาล้มเหลว</span>
+    ) : Boolean(searchHN || filterDate) ? (
+      searchStatus === "loading"
+        ? "พบทั้งหมด ... เคส"
+        : `พบทั้งหมด ${filteredCases.length} เคส`
+    ) : (
+      `หน้า ${currentPage} — แสดง ${filteredCases.length} เคส`
+    )}
+  </div>
+              {!Boolean(searchHN || filterDate) && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={currentPage === 1 || loadingMore}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      currentPage === 1 || loadingMore
+                        ? darkMode
+                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
+                        : darkMode
+                        ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
+                        : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
+                    }`}
+                  >
+                    ← ก่อนหน้า
+                  </button>
+                  <span
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                      darkMode ? "bg-gray-700 text-gray-200" : "bg-[#699D5D] text-white"
+                    }`}
+                  >
+                    {currentPage}
+                  </span>
+                  <button
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={!hasMore || loadingMore}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      !hasMore || loadingMore
+                        ? darkMode
+                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
+                        : darkMode
+                        ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
+                        : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
+                    }`}
+                  >
+                    ถัดไป →
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -733,6 +978,118 @@ export default function CompletedPage() {
                       />
                     </svg>
                     <span>ส่งปรึกษาใหม่</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Options Modal */}
+      {showExportModal && (
+        <div 
+          className="fixed inset-0 bg-[#000000]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-modal-title"
+        >
+          <div
+            ref={exportModalRef}
+            className={`rounded-xl shadow-xl max-w-md w-full p-6 border animate-scale-in ${
+              darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 id="export-modal-title" className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
+                Export ข้อมูล Excel
+              </h2>
+              <button
+                type="button"
+                aria-label="ปิดหน้าต่าง Export"
+                onClick={() => setShowExportModal(false)}
+                className={`transition-colors ${darkMode ? "text-gray-400 hover:text-red-400" : "text-[#014167] hover:text-[#E55143]"}`}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <p className={`text-sm ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+                กรุณาเลือกช่วงวันที่เริ่มต้นและสิ้นสุดของข้อมูลที่ต้องการ Export
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="exportStartDate" className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                    ตั้งแต่วันที่
+                  </label>
+                  <input
+                    id="exportStartDate"
+                    type="date"
+                    value={exportStartDate}
+                    onChange={(e) => setExportStartDate(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
+                      darkMode
+                        ? "bg-gray-900 border-gray-700 text-gray-200"
+                        : "bg-white border-[#C7CFDA] text-[#014167]"
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="exportEndDate" className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                    ถึงวันที่
+                  </label>
+                  <input
+                    id="exportEndDate"
+                    type="date"
+                    value={exportEndDate}
+                    onChange={(e) => setExportEndDate(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
+                      darkMode
+                        ? "bg-gray-900 border-gray-700 text-gray-200"
+                        : "bg-white border-[#C7CFDA] text-[#014167]"
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowExportModal(false)}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all text-sm ${
+                  darkMode
+                    ? "bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600"
+                    : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
+                }`}
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate}
+                aria-disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
+                  isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate
+                    ? darkMode
+                      ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                      : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
+                    : "bg-[#699D5D] text-white hover:shadow-md"
+                }`}
+              >
+                {isExporting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>กำลังดึงข้อมูล...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Export</span>
                   </>
                 )}
               </button>

@@ -6,15 +6,16 @@ import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
 import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
-import { sortConsults, findNewCaseIds } from "@/lib/utils";
+import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
+import { buildDepartmentCasesMap, type RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
 
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
-  const [roomFilter, setRoomFilter] = useState<"all" | "resus" | "non-resus">("all");
+  const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
 
   const { darkMode, soundEnabled } = useSettings();
 
@@ -124,40 +125,17 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, []);
 
-  const departmentCasesMap = useMemo(() => {
-    const map: { [key: string]: Consult[] } = {};
-    const allDepts = [...SURGERY_DEPTS, ...ORTHO_DEPTS];
-
-    allDepts.forEach((dept) => {
-      const filtered = allCases.filter((caseData) => {
-        if (!caseData.departments[dept] || caseData.departments[dept].status !== "pending")
-          return false;
-
-        const isResus = caseData.room && caseData.room.toLowerCase().includes("resus");
-        if (roomFilter === "resus" && !isResus) return false;
-        if (roomFilter === "non-resus" && isResus) return false;
-
-        return true;
-      });
-
-      map[dept] = sortConsults(filtered);
-    });
-
-    return map;
+  const filteredAllCases = useMemo(() => {
+    return allCases.filter((caseData) => matchesRoomFilter(caseData, roomFilter));
   }, [allCases, roomFilter]);
+
+  const departmentCasesMap = useMemo(() => {
+    return buildDepartmentCasesMap(filteredAllCases, "all");
+  }, [filteredAllCases]);
 
   const getCasesForDepartment = (deptName: string) => {
     return departmentCasesMap[deptName] || [];
   };
-
-  const filteredAllCases = useMemo(() => {
-    return allCases.filter((caseData) => {
-      const isResus = caseData.room && caseData.room.toLowerCase().includes("resus");
-      if (roomFilter === "resus" && !isResus) return false;
-      if (roomFilter === "non-resus" && isResus) return false;
-      return true;
-    });
-  }, [allCases, roomFilter]);
 
   const totalPendingCases = filteredAllCases.length;
 
@@ -312,7 +290,7 @@ export default function Dashboard() {
                   <button
                     key={dept}
                     onClick={() => scrollToDepartment(dept)}
-                    className={`rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
+                    className={`rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
                       darkMode
                         ? `bg-gray-700 hover:text-white text-gray-200 ${
                             isSurgery
@@ -380,7 +358,7 @@ export default function Dashboard() {
                       <div
                         className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                           darkMode
-                            ? "bg-gray-950 border-gray-800"
+                            ? "bg-[#E55143]/10 border-[#E55143]/20"
                             : "bg-[#012a47] border-[#E55143]/20"
                         }`}
                       >
@@ -480,7 +458,7 @@ export default function Dashboard() {
                       <div
                         className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                           darkMode
-                            ? "bg-gray-950 border-gray-800"
+                            ? "bg-[#699D5D]/10 border-[#699D5D]/20"
                             : "bg-[#014a3d] border-[#699D5D]/20"
                         }`}
                       >

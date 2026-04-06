@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, enableMultiTabIndexedDbPersistence } from "firebase/firestore";
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, type Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -11,23 +11,36 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
+// [NEW] Runtime validation for environment variables to prevent silent failures
+if (typeof window !== "undefined" && !firebaseConfig.apiKey) {
+  console.error(
+    "🚨 Firebase Configuration Error: 'NEXT_PUBLIC_FIREBASE_API_KEY' is missing. " +
+    "Please check your environment variables (.env.local) to ensure the dashboard functions correctly."
+  );
+}
+
 // Initialize Firebase only if it hasn't been initialized already (important for Next.js hot-reloading)
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-const db = getFirestore(app);
 
-// Enable offline persistence (IndexedDB cache)
+// Initialize Firestore with persistent local cache for offline support.
 // ER environments may have unstable WiFi — this lets doctors view cached data
 // and queued writes auto-sync when connectivity returns.
-if (typeof window !== "undefined") {
-  enableMultiTabIndexedDbPersistence(db).catch((err) => {
-    if (err.code === "failed-precondition") {
-      // Multiple tabs open; persistence can only be enabled in one tab at a time
-      console.warn("Firestore persistence unavailable: multiple tabs open.");
-    } else if (err.code === "unimplemented") {
-      // The current browser does not support IndexedDB persistence
-      console.warn("Firestore persistence unavailable: browser not supported.");
-    }
-  });
+let db: Firestore;
+if (typeof window === "undefined") {
+  // Server-side: skip persistence APIs (IndexedDB not available)
+  db = getFirestore(app);
+} else {
+  try {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch (error) {
+    // Firestore already initialized (e.g. Next.js hot-reload) or persistence unavailable
+    console.warn("Firestore: falling back to existing instance.", error);
+    db = getFirestore(app);
+  }
 }
 
 export { db };
