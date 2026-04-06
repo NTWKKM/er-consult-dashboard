@@ -5,7 +5,6 @@ import "./globals.css"; // Ensure standard Tailwind classes are loaded
 
 export default function GlobalError({
   error,
-  reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
@@ -31,9 +30,6 @@ export default function GlobalError({
           </p>
           <button
             onClick={() => {
-              // Try to recover by resetting the global error boundary
-              reset();
-              // Fallback: force a hard reload if reset doesn't work for global layout issues
               window.location.reload();
             }}
             className="w-full font-bold py-3 px-4 rounded-lg transition-all duration-200 shadow-md text-sm flex items-center justify-center gap-2 bg-[#014167] dark:bg-gray-700 text-white hover:bg-[#012a47] dark:hover:bg-gray-600 border border-transparent dark:border-gray-600"

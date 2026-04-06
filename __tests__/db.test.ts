@@ -621,7 +621,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     expect(result.consults).toEqual([]);
     expect(result.truncated).toBe(false);
-    expect(result.returnedCount).toBe(0);
+    expect(result.consults).toHaveLength(0);
   });
 
   it("returns all consults and truncated=false when under MAX_RESULTS", async () => {
@@ -634,7 +634,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     expect(result.consults).toHaveLength(3);
     expect(result.truncated).toBe(false);
-    expect(result.returnedCount).toBe(3);
+    expect(result.consults).toHaveLength(3);
   });
 
   it("fetches next batch using cursor pagination when batch is full", async () => {

@@ -199,7 +199,7 @@ export async function searchCompletedConsults(
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
     endDate: string
-): Promise<{ consults: Consult[]; truncated: boolean; returnedCount: number }> {
+): Promise<{ consults: Consult[]; truncated: boolean }> {
     const { start } = getUtcRangeForLocalDate(startDate);
     const { endExclusive } = getUtcRangeForLocalDate(endDate);
 
@@ -248,8 +248,7 @@ export async function fetchAllCompletedConsultsForExport(
 
     return {
         consults: allConsults,
-        truncated,
-        returnedCount: allConsults.length
+        truncated
     };
 }
 
