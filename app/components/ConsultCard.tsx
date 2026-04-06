@@ -95,6 +95,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     : "-";
 
   const actionStatus = caseData.departments[departmentName]?.actionStatus || "";
+  const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
 
   const handleActionStatusChange = useCallback(async (newStatus: string) => {
     if (isUpdating) return;
@@ -591,14 +592,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   </div>
                   <button
                     onClick={() => setShowConfirm(true)}
-                    disabled={isUpdating}
+                    disabled={isUpdating || !isStatusSelected}
                     className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
-                      isUpdating
+                      isUpdating || !isStatusSelected
                         ? darkMode
-                          ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
+                          ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
+                          : "bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300 shadow-inner"
                         : "bg-[#E55143] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5"
                     }`}
+                    title={!isStatusSelected ? "กรุณาเลือกสถานะ (Admit, คืน ER, D/C) ก่อนปิดเคส" : "ปิดเคส"}
                   >
                     {isUpdating ? (
                       <>
@@ -617,6 +619,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 </>
               )}
               </div>
+              {isAccepted && !isStatusSelected && (
+                <div className={`text-center text-[10px] w-full pt-1 font-bold animate-pulse ${darkMode ? "text-amber-400" : "text-amber-600"}`}>
+                  * กรุณาเลือกสถานะก่อนปิดเคส
+                </div>
+              )}
               {!isAccepted && (
                 <div className={`text-center text-[10px] w-full pt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
                   * ต้องรับเคสก่อนจึงจะปิดเคสได้

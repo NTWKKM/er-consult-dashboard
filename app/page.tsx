@@ -646,6 +646,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
   const dept = caseData.departments[deptName];
   const isAccepted = !!dept?.acceptedAt;
   const actionStatus = dept?.actionStatus || "";
+  const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
 
   const handleAccept = async () => {
@@ -785,8 +786,15 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
               </select>
               <button
                 onClick={() => setShowConfirm(true)}
-                disabled={isUpdating}
-                className={`flex-1 h-full rounded text-[10px] font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#E55143] text-white hover:bg-[#d44639]"}`}
+                disabled={isUpdating || !isStatusSelected}
+                className={`flex-1 h-full rounded text-[10px] font-bold transition-all ${
+                  isUpdating || !isStatusSelected
+                    ? darkMode
+                      ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
+                      : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-inner"
+                    : "bg-[#E55143] text-white hover:bg-[#d44639]"
+                }`}
+                title={!isStatusSelected ? "กรุณาเลือกสถานะก่อนปิดเคส" : "ปิดเคส"}
               >
                 {isUpdating ? "..." : "ปิดเคส"}
               </button>
