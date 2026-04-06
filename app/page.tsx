@@ -8,7 +8,7 @@ import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
-import { buildDepartmentCasesMap, RoomFilter } from "@/lib/departmentCasesMap";
+import { buildDepartmentCasesMap, RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
 
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);
@@ -134,12 +134,7 @@ export default function Dashboard() {
   };
 
   const filteredAllCases = useMemo(() => {
-    return allCases.filter((caseData) => {
-      const isResus = caseData.room && caseData.room.toLowerCase().includes("resus");
-      if (roomFilter === "resus" && !isResus) return false;
-      if (roomFilter === "non-resus" && isResus) return false;
-      return true;
-    });
+    return allCases.filter((caseData) => matchesRoomFilter(caseData, roomFilter));
   }, [allCases, roomFilter]);
 
   const totalPendingCases = filteredAllCases.length;

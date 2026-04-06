@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { addConsult } from "@/lib/db";
 import { ALL_DEPARTMENTS, ROOMS } from "@/lib/constants";
@@ -30,7 +30,7 @@ export default function SubmitPage() {
     setIsMac(navigator.platform.toUpperCase().indexOf('MAC') >= 0 || navigator.userAgent.toUpperCase().indexOf('MAC') >= 0);
   }, []);
 
-  const validateForm = () => {
+  const validateForm = useCallback(() => {
     const newErrors: { [key: string]: string } = {};
 
     if (!hn.trim()) {
@@ -61,7 +61,7 @@ export default function SubmitPage() {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
+  }, [hn, firstName, lastName, room, problem, selectedDepts]);
 
   const handleCheckboxChange = (dept: string) => {
     setSelectedDepts((prev) =>
@@ -77,7 +77,7 @@ export default function SubmitPage() {
     }
   };
 
-  const handleSubmit = async (isUrgent: boolean = false) => {
+  const handleSubmit = useCallback(async (isUrgent: boolean = false) => {
     if (submitInFlightRef.current) return;
 
     if (!validateForm()) {
@@ -133,9 +133,8 @@ export default function SubmitPage() {
       submitInFlightRef.current = false;
       setIsLoading(false);
     }
-  };
+  }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router]);
 
-  // Keyboard shortcut: Ctrl/Cmd + Enter to submit
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Enter") {
@@ -144,7 +143,6 @@ export default function SubmitPage() {
           e.preventDefault();
           handleSubmit(false);
         } else if (e.shiftKey) {
-          // If the focus is in the textarea, Shift+Enter will submit Fast Track instead of newline
           e.preventDefault();
           handleSubmit(true);
         }
@@ -152,8 +150,7 @@ export default function SubmitPage() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hn, firstName, lastName, room, problem, selectedDepts, isLoading]);
+  }, [handleSubmit, isLoading]);
 
   const inputClasses = (fieldName: string) =>
     `w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all duration-200 text-sm ${errors[fieldName]

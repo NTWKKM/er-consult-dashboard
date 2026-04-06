@@ -1,13 +1,17 @@
-import { Consult } from "./db";
+import type { Consult } from "./db";
 import { SURGERY_DEPTS, ORTHO_DEPTS } from "./constants";
 import { sortConsults } from "./utils";
 
 export type RoomFilter = "all" | "resus" | "non-resus";
 
-/**
- * Groups a list of consults by their pending departments and applies room filtering.
- * Each department bucket is sorted by urgency and creation date.
- */
+// เพิ่มฟังก์ชัน Helper นี้
+export function matchesRoomFilter(caseData: Consult, roomFilter: RoomFilter): boolean {
+  const isResus = !!caseData.room?.toLowerCase().includes("resus");
+  if (roomFilter === "resus" && !isResus) return false;
+  if (roomFilter === "non-resus" && isResus) return false;
+  return true;
+}
+
 export function buildDepartmentCasesMap(
   allCases: Consult[],
   roomFilter: RoomFilter
@@ -20,9 +24,8 @@ export function buildDepartmentCasesMap(
   }, {} as { [key: string]: Consult[] });
 
   allCases.forEach((caseData) => {
-    const isResus = !!caseData.room?.toLowerCase().includes("resus");
-    if (roomFilter === "resus" && !isResus) return;
-    if (roomFilter === "non-resus" && isResus) return;
+    // นำ Helper มาใช้งาน
+    if (!matchesRoomFilter(caseData, roomFilter)) return;
 
     Object.entries(caseData.departments).forEach(([deptName, deptInfo]) => {
       if (map[deptName] && deptInfo.status === "pending") {

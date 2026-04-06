@@ -119,6 +119,8 @@ export default function CompletedPage() {
     }
     setIsUpdating(true);
     const caseId = selectedCase.id;
+    const prevCases = [...cases];
+    const prevSearchResults = searchResults ? [...searchResults] : null;
     
     try {
       const result = await updateConsult(caseId, (current) => {
@@ -138,19 +140,32 @@ export default function CompletedPage() {
       }, { 
         awaitRemote: false,
         onBackgroundError: () => {
-          // แจ้งเตือนและสั่งโหลดหน้าใหม่แทนการพ่นข้อมูลเก่ากลับคืนมา
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+        addToast({ 
+          type: "error", 
+          message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+        });
+        
+        const { searchHN, filterDate, currentPage } = viewStateRef.current;
+        if (searchHN || filterDate) {
+          void searchCompletedConsults(searchHN, filterDate)
+            .then((res) => {
+              setSearchResults(res);
+              setSearchStatus("ready");
+            })
+            .catch((err) => {
+              console.error("Recovery refresh failed:", err);
+              setSearchStatus("error");
+              setCases(prevCases); // Rollback หากโหลดใหม่ล้มเหลว
+              setSearchResults(prevSearchResults);
+            });
+        } else {
+          void fetchPage(currentPage).catch((err) => {
+             console.error("Recovery refresh failed:", err);
+             setCases(prevCases); // Rollback หากโหลดใหม่ล้มเหลว
+             setSearchResults(prevSearchResults);
           });
-          
-          const { searchHN, filterDate, currentPage } = viewStateRef.current;
-          if (searchHN || filterDate) {
-            searchCompletedConsults(searchHN, filterDate).then(res => setSearchResults(res));
-          } else {
-            fetchPage(currentPage);
-          }
         }
+      }
       }); // OPTIMISTIC UPDATE
 
       if (result.consult === null && !result.isQueued) {
@@ -761,16 +776,17 @@ export default function CompletedPage() {
                 darkMode ? "bg-gray-800/50 border-gray-700" : "bg-[#014167]/10 border-[#014167]/20"
               }`}
             >
-              <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                {searchStatus === "error" ? (
-                  <span className="text-[#E55143] font-bold">⚠️ การค้นหาล้มเหลว</span>
-                ) : Boolean(searchHN || filterDate) ? (
-                  `พบทั้งหมด ${filteredCases.length} เคส`
-                ) : (
-                  `หน้า ${currentPage} — แสดง ${filteredCases.length} เคส`
-                )}
-                {searchStatus === "loading" && " (กำลังโหลด...)"}
-              </div>
+  <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+    {searchStatus === "error" ? (
+      <span className="text-[#E55143] font-bold">⚠️ การค้นหาล้มเหลว</span>
+    ) : Boolean(searchHN || filterDate) ? (
+      searchStatus === "loading"
+        ? "พบทั้งหมด ... เคส"
+        : `พบทั้งหมด ${filteredCases.length} เคส`
+    ) : (
+      `หน้า ${currentPage} — แสดง ${filteredCases.length} เคส`
+    )}
+  </div>
               {!Boolean(searchHN || filterDate) && (
                 <div className="flex gap-2">
                   <button
@@ -954,6 +970,8 @@ export default function CompletedPage() {
                 Export ข้อมูล Excel
               </h2>
               <button
+                type="button"
+                aria-label="ปิดหน้าต่าง Export"
                 onClick={() => setShowExportModal(false)}
                 className={`transition-colors ${darkMode ? "text-gray-400 hover:text-red-400" : "text-[#014167] hover:text-[#E55143]"}`}
               >
