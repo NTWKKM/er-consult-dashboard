@@ -379,10 +379,10 @@ export default function Dashboard() {
                 <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
                   <tr>
                     <th className="p-3 w-[15%] font-bold">HN</th>
-                    <th className="p-3 w-[15%] font-bold">ชื่อ-สกุล</th>
-                    <th className="p-3 w-[10%] font-bold">ห้อง</th>
-                    <th className="p-3 w-[25%] font-bold">ปัญหา (Dx)</th>
-                    <th className="p-3 w-[35%] font-bold">แผนก & การจัดการ</th>
+                    <th className="p-3 w-[15%] font-bold">NAME</th>
+                    <th className="p-3 w-[10%] font-bold">DEPARTMENT</th>
+                    <th className="p-3 w-[25%] font-bold">DX</th>
+                    <th className="p-3 w-[35%] font-bold">MANAGEMENT</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
