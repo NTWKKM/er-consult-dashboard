@@ -649,7 +649,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
     : "";
 
   return (
-    <tr className={`transition-colors align-top border-l-4 ${caseData.isUrgent ? "border-[#E55143] ring-2 ring-[#E55143]/30" : "border-transparent"} ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
+    <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
       <td className={`p-3 font-bold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
         <div className="flex items-center gap-2">
           {caseData.hn}
