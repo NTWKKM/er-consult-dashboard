@@ -168,7 +168,7 @@ export default function Dashboard() {
               <span
                 className={`text-2xl font-bold ${
                   totalPendingCases > 0
-                    ? "text-[#E55143] pulse-urgent"
+                    ? "text-[#E55143]"
                     : darkMode
                     ? "text-gray-300"
                     : "text-[#014167]"
@@ -373,7 +373,7 @@ export default function Dashboard() {
         {/* ------------------------------------------------------------------------ */}
 
         {displayMode === "table" ? (
-          <div className={`rounded-xl shadow-lg border transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
+          <div className={`rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[900px]">
                 <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
@@ -443,7 +443,7 @@ export default function Dashboard() {
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
                               cases.length > 0
-                                ? "bg-[#E55143]/20 text-[#E55143] pulse-urgent"
+                                ? "bg-[#E55143]/20 text-[#E55143]"
                                 : "bg-[#699D5D]/20 text-[#699D5D]"
                             }`}
                           >
@@ -529,7 +529,7 @@ export default function Dashboard() {
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
                               cases.length > 0
-                                ? "bg-[#E55143]/20 text-[#E55143] pulse-urgent"
+                                ? "bg-[#E55143]/20 text-[#E55143]"
                                 : "bg-[#699D5D]/20 text-[#699D5D]"
                             }`}
                           >
@@ -596,30 +596,6 @@ export default function Dashboard() {
 // ===========================================================================
 
 function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
-  const calculateRelativeTime = useCallback(() => {
-    if (!caseData.createdAt) return "";
-    const diff = Date.now() - new Date(caseData.createdAt).getTime();
-    const mins = Math.floor(diff / 60000);
-    const hrs = Math.floor(mins / 60);
-    const remainMins = mins % 60;
-
-    if (hrs > 0) {
-      return `รอ ${hrs} ชม. ${remainMins} นาที`;
-    } else {
-      return `รอ ${remainMins} นาที`;
-    }
-  }, [caseData.createdAt]);
-
-  const [relativeTime, setRelativeTime] = useState(calculateRelativeTime);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRelativeTime(calculateRelativeTime());
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [calculateRelativeTime]);
-
   // กรองเฉพาะแผนกที่สถานะยังรออยู่ (pending) ของเคสนี้
   const pendingDepts = Object.keys(caseData.departments).filter(
     (d) => caseData.departments[d].status === "pending"
@@ -629,34 +605,18 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
 
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
   const timeStr = caseData.createdAt
-    ? new Date(caseData.createdAt).toLocaleString("th-TH")
-    : "-";
+    ? new Date(caseData.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
+    : "";
 
   return (
-    <tr className={`transition-colors align-top border-b last:border-0 ${
-      darkMode 
-        ? `hover:bg-gray-800/50 even:bg-white/[0.02] ${caseData.isUrgent ? "bg-[#E55143]/5 pulse-urgent" : ""}` 
-        : `hover:bg-[#014167]/5 even:bg-gray-50 ${caseData.isUrgent ? "bg-[#E55143]/5 pulse-urgent" : ""}`
-    } ${darkMode ? "border-gray-800" : "border-[#014167]/5"} ${caseData.isUrgent ? "border-l-4 border-l-[#E55143]" : "border-l-4 border-l-transparent"}`}>
+    <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
       <td className={`p-3 font-bold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
         {caseData.hn}
         {caseData.isUrgent && (
-          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-md">FAST</span>
+          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
         )}
-        <div className={`text-[11px] mt-1 font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-          <div className="flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>{timeStr}</span>
-          </div>
-          {relativeTime && (
-            <div className={`mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-              darkMode ? "bg-amber-500/20 text-amber-400" : "bg-amber-500/15 text-amber-700"
-            }`}>
-              {relativeTime}
-            </div>
-          )}
+        <div className={`text-xs mt-1 font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+          เวลาส่ง: {timeStr}
         </div>
       </td>
       <td className={`p-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{fullName || "-"}</td>
@@ -788,115 +748,75 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
     }
   };
 
-  const formatTime = (iso: string) =>
-    new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" });
-
-  const acceptedTime = dept?.acceptedAt ? formatTime(dept.acceptedAt) : null;
-  const admittedTime = dept?.admittedAt ? formatTime(dept.admittedAt) : null;
-  const returnedTime = dept?.returnedAt ? formatTime(dept.returnedAt) : null;
-  const dischargedTime = dept?.dischargedAt ? formatTime(dept.dischargedAt) : null;
-
   return (
     <>
-      <div className={`p-1.5 rounded-lg border flex flex-col gap-1.5 transition-all ${darkMode ? "bg-gray-800 border-gray-700 shadow-sm" : "bg-white border-[#C7CFDA]/50 shadow-sm"}`}>
-        <div className="flex flex-row items-center gap-2">
-          <span className={`font-bold text-xs min-w-[65px] truncate ${darkMode ? "text-gray-300" : "text-[#014167]"}`} title={deptName}>
-            {deptName}
-          </span>
+      <div className={`p-1.5 rounded-lg border flex flex-row items-center gap-2 transition-all ${darkMode ? "bg-gray-800 border-gray-700 shadow-sm" : "bg-white border-[#C7CFDA]/50 shadow-sm"}`}>
+        <span className={`font-bold text-xs min-w-[65px] truncate ${darkMode ? "text-gray-300" : "text-[#014167]"}`} title={deptName}>
+          {deptName}
+        </span>
+        
+        <div className="flex-1 flex gap-1 items-center h-7">
+          {!isAccepted ? (
+            <>
+              <button
+                onClick={handleAccept}
+                disabled={isUpdating}
+                className={`flex-1 h-full rounded text-[10px] font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
+              >
+                {isUpdating ? "..." : "รับเคส"}
+              </button>
+              <button disabled className={`flex-1 h-full rounded text-[10px] font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
+                ปิดเคส
+              </button>
+            </>
+          ) : (
+            <>
+              <select
+                value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
+                onChange={(e) => handleStatusChange(e.target.value)}
+                disabled={isUpdating}
+                className={`flex-1 h-full rounded text-[10px] font-bold border text-center appearance-none cursor-pointer ${
+                  actionStatus && actionStatus !== ACCEPT_STATUS
+                    ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-400/10 text-amber-700 border-amber-400")
+                    : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-gray-50 text-[#014167] border-[#C7CFDA]")
+                }`}
+              >
+                <option value="" disabled>สถานะ</option>
+                {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <button
+                onClick={() => setShowConfirm(true)}
+                disabled={isUpdating || !isStatusSelected}
+                className={`flex-1 h-full rounded text-[10px] font-bold transition-all ${
+                  isUpdating || !isStatusSelected
+                    ? darkMode
+                      ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
+                      : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-inner"
+                    : "bg-[#E55143] text-white hover:bg-[#d44639]"
+                }`}
+              >
+                {isUpdating ? "..." : "ปิดเคส"}
+              </button>
+            </>
+          )}
           
-          <div className="flex-1 flex gap-1 items-center h-7">
-            {!isAccepted ? (
-              <>
-                <button
-                  onClick={handleAccept}
-                  disabled={isUpdating}
-                  className={`flex-1 h-full rounded text-[10px] font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
-                >
-                  {isUpdating ? "..." : "รับเคส"}
-                </button>
-                <button disabled className={`flex-1 h-full rounded text-[10px] font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
-                  ปิดเคส
-                </button>
-              </>
-            ) : (
-              <>
-                <select
-                  value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                  disabled={isUpdating}
-                  className={`flex-1 h-full rounded text-[10px] font-bold border text-center appearance-none cursor-pointer ${
-                    actionStatus && actionStatus !== ACCEPT_STATUS
-                      ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-400/10 text-amber-700 border-amber-400")
-                      : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-gray-50 text-[#014167] border-[#C7CFDA]")
-                  }`}
-                >
-                  <option value="" disabled>สถานะ</option>
-                  {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <button
-                  onClick={() => setShowConfirm(true)}
-                  disabled={isUpdating || !isStatusSelected}
-                  className={`flex-1 h-full rounded text-[10px] font-bold transition-all ${
-                    isUpdating || !isStatusSelected
-                      ? darkMode
-                        ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
-                        : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-inner"
-                      : "bg-[#E55143] text-white hover:bg-[#d44639]"
-                  }`}
-                >
-                  {isUpdating ? "..." : "ปิดเคส"}
-                </button>
-              </>
-            )}
-            
-            <button
-              onClick={() => setShowCancelConfirm(true)}
-              disabled={isUpdating}
-              className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-500 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
-              title="ยกเลิก"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+          <button
+            onClick={() => setShowCancelConfirm(true)}
+            disabled={isUpdating}
+            className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-500 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
+            title="ยกเลิก"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
-
-        {/* Status Timestamps (Consistency with Card View) */}
-        {isAccepted && (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] px-1 font-bold">
-            <div className={`flex items-center gap-0.5 ${darkMode ? "text-green-400/90" : "text-green-700/80"}`}>
-              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              รับ: {acceptedTime}
-            </div>
-            {admittedTime && (
-              <div className={`flex items-center gap-0.5 ${darkMode ? "text-blue-400/90" : "text-blue-700/80"}`}>
-                <span className="opacity-40">→</span>
-                Admit: {admittedTime}
-              </div>
-            )}
-            {returnedTime && (
-              <div className={`flex items-center gap-0.5 ${darkMode ? "text-amber-400/90" : "text-amber-700/80"}`}>
-                <span className="opacity-40">→</span>
-                คืน ER: {returnedTime}
-              </div>
-            )}
-            {dischargedTime && (
-              <div className={`flex items-center gap-0.5 ${darkMode ? "text-purple-400/90" : "text-purple-700/80"}`}>
-                <span className="opacity-40">→</span>
-                D/C: {dischargedTime}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <ConfirmModal
         isOpen={showConfirm}
         title="ปิดเคส"
-        message={`คุณแน่ใจหรือไม่ที่จะปิดเคสของ HN: ${caseData.hn}${fullName ? ` (${fullName})` : ""} แผนก: ${deptName}?`}
+        message={`คุณแน่ใจหรือไม่ที่จะปิดเคส HN: ${caseData.hn}${fullName ? ` (${fullName})` : ""} แผนก: ${deptName}?`}
         confirmText="ยืนยันปิดเคส"
         cancelText="ยกเลิก"
         variant="danger"

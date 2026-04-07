@@ -427,7 +427,7 @@ export default function SubmitPage() {
                     disabled={isLoading}
                     className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
                         ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                        : "bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5 pulse-urgent"
+                        : "bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5"
                       }`}
                   >
                     {isLoading ? (

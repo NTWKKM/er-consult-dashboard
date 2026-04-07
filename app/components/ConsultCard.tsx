@@ -360,12 +360,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           darkMode
             ? `bg-gray-800 ${
                 isUrgent
-                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent"
+                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30"
                   : "border-l-4 border-gray-700"
               }`
             : `bg-[#C7CFDA] ${
                 isUrgent
-                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent"
+                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30"
                   : "border-l-4 border-[#699D5D]/50"
               }`
         }`}
@@ -393,7 +393,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           <div className="flex items-center gap-2">
             <div
               className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${
-                isUrgent ? "bg-[#E55143] pulse-urgent" : "bg-[#699D5D]"
+                isUrgent ? "bg-[#E55143]" : "bg-[#699D5D]"
               }`}
             >
               {isUrgent ? (
