@@ -373,10 +373,10 @@ export default function Dashboard() {
         {/* ------------------------------------------------------------------------ */}
 
         {displayMode === "table" ? (
-          <div className={`rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
-            <div className="overflow-x-auto">
+          <div className={`rounded-xl shadow-lg border transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
+            <div className="overflow-x-auto max-h-[80vh]">
               <table className="w-full text-left border-collapse min-w-[900px]">
-                <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
+                <thead className={`text-sm sticky top-0 z-10 ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700 shadow-md" : "bg-[#014167] text-white shadow-md"}`}>
                   <tr>
                     <th className="p-3 w-[15%] font-bold">HN</th>
                     <th className="p-3 w-[15%] font-bold">NAME</th>
@@ -596,6 +596,30 @@ export default function Dashboard() {
 // ===========================================================================
 
 function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
+  const calculateRelativeTime = useCallback(() => {
+    if (!caseData.createdAt) return "";
+    const diffMs = new Date().getTime() - new Date(caseData.createdAt).getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return "เมื่อครู่";
+    if (diffMins < 60) return `${diffMins} นาทีที่แล้ว`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} ชั่วโมงที่แล้ว`;
+    
+    return `${Math.floor(diffHours / 24)} วันที่แล้ว`;
+  }, [caseData.createdAt]);
+
+  const [relativeTime, setRelativeTime] = useState(calculateRelativeTime);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRelativeTime(calculateRelativeTime());
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [calculateRelativeTime]);
+
   // กรองเฉพาะแผนกที่สถานะยังรออยู่ (pending) ของเคสนี้
   const pendingDepts = Object.keys(caseData.departments).filter(
     (d) => caseData.departments[d].status === "pending"
@@ -609,14 +633,19 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
     : "";
 
   return (
-    <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
+    <tr className={`transition-colors align-top border-b last:border-0 ${
+      darkMode 
+        ? "hover:bg-gray-800/50 even:bg-white/[0.02]" 
+        : "hover:bg-[#014167]/5 even:bg-gray-50"
+    } ${darkMode ? "border-gray-800" : "border-[#014167]/5"}`}>
       <td className={`p-3 font-bold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
         {caseData.hn}
         {caseData.isUrgent && (
           <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
         )}
-        <div className={`text-xs mt-1 font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+        <div className={`text-[11px] mt-1 font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
           เวลาส่ง: {timeStr}
+          {relativeTime && <span className="block italic mt-0.5 opacity-80">({relativeTime})</span>}
         </div>
       </td>
       <td className={`p-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{fullName || "-"}</td>
