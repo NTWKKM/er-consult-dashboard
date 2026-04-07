@@ -598,16 +598,16 @@ export default function Dashboard() {
 function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
   const calculateRelativeTime = useCallback(() => {
     if (!caseData.createdAt) return "";
-    const diffMs = new Date().getTime() - new Date(caseData.createdAt).getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 1) return "เมื่อครู่";
-    if (diffMins < 60) return `${diffMins} นาทีที่แล้ว`;
-    
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours} ชั่วโมงที่แล้ว`;
-    
-    return `${Math.floor(diffHours / 24)} วันที่แล้ว`;
+    const diff = Date.now() - new Date(caseData.createdAt).getTime();
+    const mins = Math.floor(diff / 60000);
+    const hrs = Math.floor(mins / 60);
+    const remainMins = mins % 60;
+
+    if (hrs > 0) {
+      return `รอ ${hrs} ชม. ${remainMins} นาที`;
+    } else {
+      return `รอ ${remainMins} นาที`;
+    }
   }, [caseData.createdAt]);
 
   const [relativeTime, setRelativeTime] = useState(calculateRelativeTime);
@@ -629,8 +629,8 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
 
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
   const timeStr = caseData.createdAt
-    ? new Date(caseData.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
-    : "";
+    ? new Date(caseData.createdAt).toLocaleString("th-TH")
+    : "-";
 
   return (
     <tr className={`transition-colors align-top border-b last:border-0 ${
@@ -644,8 +644,19 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
         )}
         <div className={`text-[11px] mt-1 font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-          เวลาส่ง: {timeStr}
-          {relativeTime && <span className="block italic mt-0.5 opacity-80">({relativeTime})</span>}
+          <div className="flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{timeStr}</span>
+          </div>
+          {relativeTime && (
+            <div className={`mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+              darkMode ? "bg-amber-500/20 text-amber-400" : "bg-amber-500/15 text-amber-700"
+            }`}>
+              {relativeTime}
+            </div>
+          )}
         </div>
       </td>
       <td className={`p-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{fullName || "-"}</td>
