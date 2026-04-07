@@ -481,30 +481,38 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             )}
             {isAccepted && (
               <div className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                <div className="flex items-center gap-1">
-                  <svg className="w-3 h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="font-semibold">รับเคส {acceptedTime}</span>
-                </div>
-                {admittedTime && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[#014167]/40 dark:text-gray-600">→</span>
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">Admit {admittedTime}</span>
-                  </div>
-                )}
-                {returnedTime && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[#014167]/40 dark:text-gray-600">→</span>
-                    <span className="font-semibold text-amber-600 dark:text-amber-400">คืน ER {returnedTime}</span>
-                  </div>
-                )}
-                {dischargedTime && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[#014167]/40 dark:text-gray-600">→</span>
-                    <span className="font-semibold text-purple-600 dark:text-purple-400">D/C {dischargedTime}</span>
-                  </div>
-                )}
+                {(() => {
+                  const milestones = [
+                    { label: "รับ", time: acceptedTime, raw: dept?.acceptedAt, color: "text-[#699D5D]", icon: (
+                      <svg className="w-3 h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )},
+                    { label: "Admit", time: admittedTime, raw: dept?.admittedAt, color: "text-blue-600 dark:text-blue-400", icon: null },
+                    { label: "คืน ER", time: returnedTime, raw: dept?.returnedAt, color: "text-amber-600 dark:text-amber-400", icon: null },
+                    { label: "D/C", time: dischargedTime, raw: dept?.dischargedAt, color: "text-purple-600 dark:text-purple-400", icon: null },
+                  ].filter(m => m.time && m.raw);
+
+                  // Sort by raw timestamp descending to find latest 3
+                  const latest3 = [...milestones]
+                    .sort((a, b) => new Date(b.raw!).getTime() - new Date(a.raw!).getTime())
+                    .slice(0, 3);
+
+                  // Sort latest3 back into chronological order for display
+                  return milestones
+                    .filter(m => latest3.includes(m))
+                    .map((m, idx, arr) => (
+                      <React.Fragment key={m.label}>
+                        <div className="flex items-center gap-1">
+                          {m.icon}
+                          <span className={`font-semibold ${m.color}`}>{m.label} {m.time}</span>
+                        </div>
+                        {idx < arr.length - 1 && (
+                          <span className="text-[#014167]/40 dark:text-gray-600">→</span>
+                        )}
+                      </React.Fragment>
+                    ));
+                })()}
               </div>
             )}
           </div>

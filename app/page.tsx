@@ -855,30 +855,35 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           
           {isAccepted && (
             <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-bold ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
-              <div className="flex items-center gap-0.5">
-                <svg className="w-2.5 h-2.5 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span className="text-[#699D5D]">รับ {acceptedTime}</span>
-              </div>
-              {admittedTime && (
-                <div className="flex items-center gap-0.5">
-                  <span className="opacity-40">→</span>
-                  <span className="text-blue-600 dark:text-blue-400">Admit {admittedTime}</span>
-                </div>
-              )}
-              {returnedTime && (
-                <div className="flex items-center gap-0.5">
-                  <span className="opacity-40">→</span>
-                  <span className="text-amber-600 dark:text-amber-400">คืน {returnedTime}</span>
-                </div>
-              )}
-              {dischargedTime && (
-                <div className="flex items-center gap-0.5">
-                  <span className="opacity-40">→</span>
-                  <span className="text-purple-600 dark:text-purple-400">D/C {dischargedTime}</span>
-                </div>
-              )}
+              {(() => {
+                const milestones = [
+                  { label: "รับ", time: acceptedTime, raw: dept?.acceptedAt, color: "text-[#699D5D]", icon: (
+                    <svg className="w-2.5 h-2.5 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )},
+                  { label: "Admit", time: admittedTime, raw: dept?.admittedAt, color: "text-blue-600 dark:text-blue-400", icon: null },
+                  { label: "คืน", time: returnedTime, raw: dept?.returnedAt, color: "text-amber-600 dark:text-amber-400", icon: null },
+                  { label: "D/C", time: dischargedTime, raw: dept?.dischargedAt, color: "text-purple-600 dark:text-purple-400", icon: null },
+                ].filter(m => m.time && m.raw);
+
+                // Sort by raw timestamp descending to find latest 3
+                const latest3 = [...milestones]
+                  .sort((a, b) => new Date(b.raw!).getTime() - new Date(a.raw!).getTime())
+                  .slice(0, 3);
+
+                // Sort back into chronological order for display
+                return milestones
+                  .filter(m => latest3.includes(m))
+                  .map((m, idx) => (
+                    <React.Fragment key={m.label}>
+                      <div className="flex items-center gap-0.5">
+                        {m.icon || (idx > 0 && <span className="opacity-40">→</span>)}
+                        <span className={m.color}>{m.label} {m.time}</span>
+                      </div>
+                    </React.Fragment>
+                  ));
+              })()}
             </div>
           )}
 
