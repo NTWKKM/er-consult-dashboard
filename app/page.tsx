@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import ConsultCard from "@/app/components/ConsultCard";
 import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
@@ -11,6 +11,46 @@ import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
 import { useToast } from "./contexts/ToastContext";
 import { buildDepartmentCasesMap, type RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
+
+// Helper for formatting status times
+const formatTime = (iso: string) =>
+  new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" });
+
+const PatientTableElapsedTime = React.memo(function PatientTableElapsedTime({ createdAt, darkMode }: { createdAt: string; darkMode: boolean }) {
+  const [elapsed, setElapsed] = useState("");
+
+  useEffect(() => {
+    const update = () => {
+      const diff = Date.now() - new Date(createdAt).getTime();
+      const mins = Math.floor(diff / 60000);
+      const hrs = Math.floor(mins / 60);
+      const remainMins = mins % 60;
+
+      if (hrs > 0) {
+        setElapsed(`${hrs} ชม. ${remainMins} นาที`);
+      } else {
+        setElapsed(`${remainMins} นาที`);
+      }
+    };
+
+    update();
+    const interval = setInterval(update, 60000);
+    return () => clearInterval(interval);
+  }, [createdAt]);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold elapsed-tick ${
+        darkMode ? "bg-amber-500/20 text-amber-400" : "bg-amber-500/15 text-amber-700"
+      }`}
+    >
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      รอ {elapsed}
+    </span>
+  );
+});
 
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);
@@ -604,19 +644,27 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
   if (pendingDepts.length === 0) return null;
 
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
-  const timeStr = caseData.createdAt
-    ? new Date(caseData.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
+  const sentTimeFull = caseData.createdAt
+    ? new Date(caseData.createdAt).toLocaleString("th-TH")
     : "";
 
   return (
-    <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
+    <tr className={`transition-colors align-top border-l-4 ${caseData.isUrgent ? "border-[#E55143] ring-2 ring-[#E55143]/30" : "border-transparent"} ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
       <td className={`p-3 font-bold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
-        {caseData.hn}
-        {caseData.isUrgent && (
-          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
-        )}
-        <div className={`text-xs mt-1 font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-          เวลาส่ง: {timeStr}
+        <div className="flex items-center gap-2">
+          {caseData.hn}
+          {caseData.isUrgent && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
+          )}
+        </div>
+        <div className={`text-[10px] mt-1 font-medium flex flex-col gap-1 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+          <div className="flex items-center gap-1">
+             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+             </svg>
+             {sentTimeFull}
+          </div>
+          <PatientTableElapsedTime createdAt={caseData.createdAt || ""} darkMode={darkMode} />
         </div>
       </td>
       <td className={`p-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{fullName || "-"}</td>
@@ -648,6 +696,11 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
   const actionStatus = dept?.actionStatus || "";
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
+
+  const acceptedTime = dept?.acceptedAt ? formatTime(dept.acceptedAt) : null;
+  const admittedTime = dept?.admittedAt ? formatTime(dept.admittedAt) : null;
+  const returnedTime = dept?.returnedAt ? formatTime(dept.returnedAt) : null;
+  const dischargedTime = dept?.dischargedAt ? formatTime(dept.dischargedAt) : null;
 
   const handleAccept = async () => {
     if (isUpdating) return;
@@ -800,6 +853,35 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
             </>
           )}
           
+          {isAccepted && (
+            <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-bold ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
+              <div className="flex items-center gap-0.5">
+                <svg className="w-2.5 h-2.5 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-[#699D5D]">รับ {acceptedTime}</span>
+              </div>
+              {admittedTime && (
+                <div className="flex items-center gap-0.5">
+                  <span className="opacity-40">→</span>
+                  <span className="text-blue-600 dark:text-blue-400">Admit {admittedTime}</span>
+                </div>
+              )}
+              {returnedTime && (
+                <div className="flex items-center gap-0.5">
+                  <span className="opacity-40">→</span>
+                  <span className="text-amber-600 dark:text-amber-400">คืน {returnedTime}</span>
+                </div>
+              )}
+              {dischargedTime && (
+                <div className="flex items-center gap-0.5">
+                  <span className="opacity-40">→</span>
+                  <span className="text-purple-600 dark:text-purple-400">D/C {dischargedTime}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           <button
             onClick={() => setShowCancelConfirm(true)}
             disabled={isUpdating}
