@@ -810,58 +810,71 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
 
   return (
     <>
-      <div className={`p-1.5 rounded-lg border flex flex-row items-center gap-2 transition-all ${darkMode ? "bg-gray-800 border-gray-700 shadow-sm" : "bg-white border-[#C7CFDA]/50 shadow-sm"}`}>
-        <span className={`font-bold text-xs min-w-[65px] truncate ${darkMode ? "text-gray-300" : "text-[#014167]"}`} title={deptName}>
+      <div className={`p-1.5 rounded-lg border flex flex-row items-start gap-2 transition-all ${darkMode ? "bg-gray-800 border-gray-700 shadow-sm" : "bg-white border-[#C7CFDA]/50 shadow-sm"}`}>
+        <span className={`font-bold text-xs min-w-[65px] truncate mt-1.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`} title={deptName}>
           {deptName}
         </span>
         
-        <div className="flex-1 flex gap-1 items-center h-7">
-          {!isAccepted ? (
-            <>
-              <button
-                onClick={handleAccept}
-                disabled={isUpdating}
-                className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
-              >
-                {isUpdating ? "..." : "รับเคส"}
-              </button>
-              <button disabled className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
-                ปิดเคส
-              </button>
-            </>
-          ) : (
-            <>
-              <select
-                value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                disabled={isUpdating}
-                className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold border text-center appearance-none cursor-pointer ${
-                  actionStatus && actionStatus !== ACCEPT_STATUS
-                    ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-400/10 text-amber-700 border-amber-400")
-                    : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-gray-50 text-[#014167] border-[#C7CFDA]")
-                }`}
-              >
-                <option value="" disabled>สถานะ</option>
-                {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <button
-                onClick={() => setShowConfirm(true)}
-                disabled={isUpdating || !isStatusSelected}
-                className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${
-                  isUpdating || !isStatusSelected
-                    ? darkMode
-                      ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
-                      : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-inner"
-                    : "bg-[#E55143] text-white hover:bg-[#d44639]"
-                }`}
-              >
-                {isUpdating ? "..." : "ปิดเคส"}
-              </button>
-            </>
-          )}
-          
+        <div className="flex-1 flex flex-col gap-1.5">
+          <div className="flex gap-1 items-center h-7">
+            {!isAccepted ? (
+              <>
+                <button
+                  onClick={handleAccept}
+                  disabled={isUpdating}
+                  className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
+                >
+                  {isUpdating ? "..." : "รับเคส"}
+                </button>
+                <button disabled className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
+                  ปิดเคส
+                </button>
+              </>
+            ) : (
+              <>
+                <select
+                  value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  disabled={isUpdating}
+                  className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold border text-center appearance-none cursor-pointer ${
+                    actionStatus && actionStatus !== ACCEPT_STATUS
+                      ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-400/10 text-amber-700 border-amber-400")
+                      : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-gray-50 text-[#014167] border-[#C7CFDA]")
+                  }`}
+                >
+                  <option value="" disabled>สถานะ</option>
+                  {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <button
+                  onClick={() => setShowConfirm(true)}
+                  disabled={isUpdating || !isStatusSelected}
+                  className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${
+                    isUpdating || !isStatusSelected
+                      ? darkMode
+                        ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
+                        : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-inner"
+                      : "bg-[#E55143] text-white hover:bg-[#d44639]"
+                  }`}
+                >
+                  {isUpdating ? "..." : "ปิดเคส"}
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={() => setShowCancelConfirm(true)}
+              disabled={isUpdating}
+              className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-400 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
+              title="ยกเลิก"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
           {isAccepted && (
-            <div className={`hidden md:flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-bold ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
+            <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-bold ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
               {(() => {
                 const milestones = [
                   { label: "รับ", time: acceptedTime, raw: dept?.acceptedAt, color: "text-[#699D5D]", icon: (
@@ -874,12 +887,10 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
                   { label: "D/C", time: dischargedTime, raw: dept?.dischargedAt, color: "text-purple-600 dark:text-purple-400", icon: null },
                 ].filter(m => m.time && m.raw);
 
-                // Sort by raw timestamp descending to find latest 3
                 const latest3 = [...milestones]
                   .sort((a, b) => new Date(b.raw!).getTime() - new Date(a.raw!).getTime())
                   .slice(0, 3);
 
-                // Sort back into chronological order for display
                 return milestones
                   .filter(m => latest3.includes(m))
                   .map((m, idx) => (
@@ -893,17 +904,6 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
               })()}
             </div>
           )}
-
-          <button
-            onClick={() => setShowCancelConfirm(true)}
-            disabled={isUpdating}
-            className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-400 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
-            title="ยกเลิก"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
       </div>
 
