@@ -3,6 +3,11 @@ import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSn
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 
+export interface ConsultTransfer {
+    to: string;
+    at: string; // ISO string
+}
+
 export interface ConsultDepartment {
     status: "pending" | "completed" | "cancelled";
     completedAt: string | null;
@@ -11,6 +16,7 @@ export interface ConsultDepartment {
     admittedAt?: string | null;
     returnedAt?: string | null;
     dischargedAt?: string | null;
+    transfers?: ConsultTransfer[];
 }
 
 export interface Consult {
@@ -402,4 +408,28 @@ export async function updateConsult(
             backgroundPromise: null
         };
     }
+}
+export async function transferConsultRoom(id: string, newRoom: string): Promise<void> {
+    const now = new Date().toISOString();
+    await updateConsult(id, (current) => {
+        if (current.room === newRoom) return null;
+
+        const updatedDepts = { ...current.departments };
+        // Add transfer milestone to all departments that aren't cancelled or completed
+        Object.keys(updatedDepts).forEach(deptKey => {
+            const dept = updatedDepts[deptKey];
+            if (dept.status === "pending") {
+                const transfers = dept.transfers || [];
+                updatedDepts[deptKey] = {
+                    ...dept,
+                    transfers: [...transfers, { to: newRoom, at: now }]
+                };
+            }
+        });
+
+        return {
+            room: newRoom,
+            departments: updatedDepts
+        };
+    });
 }

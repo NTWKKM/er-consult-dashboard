@@ -1,0 +1,134 @@
+"use client";
+
+import React, { useState, useRef, useEffect } from "react";
+import { ROOMS } from "../../lib/constants";
+import { transferConsultRoom } from "../../lib/db";
+import { useToast } from "../contexts/ToastContext";
+
+interface RoomTransferButtonProps {
+  consultId: string;
+  currentRoom: string;
+  darkMode: boolean;
+  onTransferStart?: () => void;
+  onTransferEnd?: () => void;
+}
+
+export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
+  consultId,
+  currentRoom,
+  darkMode,
+  onTransferStart,
+  onTransferEnd,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isTransferring, setIsTransferring] = useState(false);
+  const { addToast } = useToast();
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Reorder rooms to put SSW first
+  const sortedRooms = [...ROOMS].sort((a, b) => {
+    if (a === "SSW") return -1;
+    if (b === "SSW") return 1;
+    return 0; // Maintain original order for others
+  });
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const handleTransfer = async (newRoom: string) => {
+    if (newRoom === currentRoom) {
+      setIsOpen(false);
+      return;
+    }
+
+    try {
+      setIsTransferring(true);
+      onTransferStart?.();
+      setIsOpen(false);
+      
+      await transferConsultRoom(consultId, newRoom);
+      addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+    } catch (error) {
+      console.error("Transfer error:", error);
+      addToast({ message: "ไม่สามารถย้ายห้องได้ กรุณาลองใหม่", type: "error" });
+    } finally {
+      setIsTransferring(false);
+      onTransferEnd?.();
+    }
+  };
+
+  return (
+    <div className="relative inline-block ml-1" ref={dropdownRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        disabled={isTransferring}
+        title="เปลี่ยนห้อง"
+        className={`p-1 rounded-full transition-all duration-200 ${
+          isTransferring ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-500/10 hover:rotate-180"
+        } ${darkMode ? "text-blue-400" : "text-blue-600"}`}
+      >
+        {isTransferring ? (
+          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+        ) : (
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+        )}
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute z-50 mt-1 right-0 w-40 rounded-lg shadow-xl border overflow-hidden animate-in fade-in zoom-in duration-200 ${
+            darkMode ? "bg-gray-800 border-gray-700 shadow-black/40" : "bg-white border-gray-200 shadow-gray-300/50"
+          }`}
+        >
+          <div className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider border-b ${
+            darkMode ? "text-gray-500 border-gray-700 bg-gray-900/50" : "text-gray-400 border-gray-100 bg-gray-50"
+          }`}>
+            ย้ายผู้ป่วยไปยัง...
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {sortedRooms.map((room) => (
+              <button
+                key={room}
+                onClick={() => handleTransfer(room)}
+                className={`w-full text-left px-3 py-2 text-xs font-semibold transition-colors flex items-center justify-between group ${
+                  room === currentRoom
+                    ? darkMode
+                      ? "bg-blue-900/40 text-blue-400"
+                      : "bg-blue-50 text-blue-700"
+                    : darkMode
+                    ? "text-gray-300 hover:bg-gray-700"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <span>{room}</span>
+                {room === currentRoom && (
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

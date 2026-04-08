@@ -5,7 +5,9 @@ import ConsultCard from "@/app/components/ConsultCard";
 import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
 import ConfirmModal from "@/app/components/ConfirmModal";
+import { RoomTransferButton } from "@/app/components/RoomTransferButton";
 import { subscribeToConsultsByStatus, Consult, updateConsult, ConsultDepartment } from "@/lib/db";
+import { getMilestones } from "@/lib/utils";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
@@ -674,9 +676,16 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
       </td>
       <td className={`p-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{fullName || "-"}</td>
       <td className="p-3">
-        <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
-          {caseData.room}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
+            {caseData.room}
+          </span>
+          <RoomTransferButton 
+            consultId={caseData.id}
+            currentRoom={caseData.room}
+            darkMode={darkMode}
+          />
+        </div>
       </td>
       <td className={`p-3 text-sm whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
         {caseData.problem}
@@ -704,10 +713,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
 
-  const acceptedTime = dept?.acceptedAt ? formatTime(dept.acceptedAt) : null;
-  const admittedTime = dept?.admittedAt ? formatTime(dept.admittedAt) : null;
-  const returnedTime = dept?.returnedAt ? formatTime(dept.returnedAt) : null;
-  const dischargedTime = dept?.dischargedAt ? formatTime(dept.dischargedAt) : null;
+  const milestones = getMilestones(dept, formatTime);
 
   const handleAccept = async () => {
     if (isUpdating) return;
@@ -873,37 +879,29 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
             </button>
           </div>
 
-          {isAccepted && (
-            <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-bold ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
-              {(() => {
-                const milestones = [
-                  { label: "รับ", time: acceptedTime, raw: dept?.acceptedAt, color: "text-[#699D5D]", icon: (
-                    <svg className="w-2.5 h-2.5 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )},
-                  { label: "Admit", time: admittedTime, raw: dept?.admittedAt, color: "text-blue-600 dark:text-blue-400", icon: null },
-                  { label: "คืน", time: returnedTime, raw: dept?.returnedAt, color: "text-amber-600 dark:text-amber-400", icon: null },
-                  { label: "D/C", time: dischargedTime, raw: dept?.dischargedAt, color: "text-purple-600 dark:text-purple-400", icon: null },
-                ].filter(m => m.time && m.raw);
-
-                const latest3 = [...milestones]
-                  .sort((a, b) => new Date(b.raw!).getTime() - new Date(a.raw!).getTime())
-                  .slice(0, 3);
-
-                return milestones
-                  .filter(m => latest3.includes(m))
-                  .map((m, idx) => (
-                    <React.Fragment key={m.label}>
-                      <div className="flex items-center gap-0.5">
-                        {m.icon || (idx > 0 && <span className="opacity-40">→</span>)}
-                        <span className={m.color}>{m.label} {m.time}</span>
-                      </div>
-                    </React.Fragment>
-                  ));
-              })()}
-            </div>
-          )}
+            {isAccepted && milestones.length > 0 && (
+              <div className={`hidden md:flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-2 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
+                {milestones.map((m, idx, arr) => (
+                  <React.Fragment key={`${m.label}-${m.raw}`}>
+                    <div className="flex items-center gap-1 text-[10px]">
+                      {m.icon === "check" ? (
+                        <svg className="w-2.5 h-2.5 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : m.icon === "transfer" ? (
+                        <svg className="w-2.5 h-2.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      ) : null}
+                      <span className={`font-bold ${m.color}`}>{m.label} {m.time}</span>
+                    </div>
+                    {idx < arr.length - 1 && (
+                      <span className="text-[#014167]/20 dark:text-gray-700">→</span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
         </div>
       </div>
 

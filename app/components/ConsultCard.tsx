@@ -5,6 +5,8 @@ import { updateConsult, Consult, ConsultDepartment } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmModal from "./ConfirmModal";
+import { RoomTransferButton } from "./RoomTransferButton";
+import { getMilestones } from "@/lib/utils";
 
 interface ConsultCardProps {
   caseData: Consult;
@@ -86,10 +88,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const completedTime = dept?.completedAt
     ? new Date(dept.completedAt).toLocaleString("th-TH")
     : null;
-  const acceptedTime = isAccepted ? formatTime(isAccepted) : null;
-  const admittedTime = dept?.admittedAt ? formatTime(dept.admittedAt) : null;
-  const returnedTime = dept?.returnedAt ? formatTime(dept.returnedAt) : null;
-  const dischargedTime = dept?.dischargedAt ? formatTime(dept.dischargedAt) : null;
   const timeAgo = caseData.createdAt
     ? new Date(caseData.createdAt).toLocaleString("th-TH")
     : "-";
@@ -426,6 +424,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{departmentName}</span>
                 <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>•</span>
                 <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{room}</span>
+                <RoomTransferButton 
+                  consultId={caseId}
+                  currentRoom={room}
+                  darkMode={darkMode}
+                />
               </div>
               {Object.keys(caseData.departments).filter(
                 (d) => d !== departmentName && caseData.departments[d].status === "pending"
@@ -482,36 +485,27 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             {isAccepted && (
               <div className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                 {(() => {
-                  const milestones = [
-                    { label: "รับ", time: acceptedTime, raw: dept?.acceptedAt, color: "text-[#699D5D]", icon: (
-                      <svg className="w-3 h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )},
-                    { label: "Admit", time: admittedTime, raw: dept?.admittedAt, color: "text-blue-600 dark:text-blue-400", icon: null },
-                    { label: "คืน ER", time: returnedTime, raw: dept?.returnedAt, color: "text-amber-600 dark:text-amber-400", icon: null },
-                    { label: "D/C", time: dischargedTime, raw: dept?.dischargedAt, color: "text-purple-600 dark:text-purple-400", icon: null },
-                  ].filter(m => m.time && m.raw);
+                  const milestones = getMilestones(dept, formatTime);
 
-                  // Sort by raw timestamp descending to find latest 3
-                  const latest3 = [...milestones]
-                    .sort((a, b) => new Date(b.raw!).getTime() - new Date(a.raw!).getTime())
-                    .slice(0, 3);
-
-                  // Sort latest3 back into chronological order for display
-                  return milestones
-                    .filter(m => latest3.includes(m))
-                    .map((m, idx, arr) => (
-                      <React.Fragment key={m.label}>
-                        <div className="flex items-center gap-1">
-                          {m.icon}
-                          <span className={`font-semibold ${m.color}`}>{m.label} {m.time}</span>
-                        </div>
-                        {idx < arr.length - 1 && (
-                          <span className="text-[#014167]/40 dark:text-gray-600">→</span>
-                        )}
-                      </React.Fragment>
-                    ));
+                  return milestones.map((m, idx, arr) => (
+                    <React.Fragment key={`${m.label}-${m.raw}`}>
+                      <div className="flex items-center gap-1">
+                        {m.icon === "check" ? (
+                          <svg className="w-3 h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : m.icon === "transfer" ? (
+                          <svg className="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        ) : null}
+                        <span className={`font-semibold ${m.color}`}>{m.label} {m.time}</span>
+                      </div>
+                      {idx < arr.length - 1 && (
+                        <span className="text-[#014167]/40 dark:text-gray-600">→</span>
+                      )}
+                    </React.Fragment>
+                  ));
                 })()}
               </div>
             )}
