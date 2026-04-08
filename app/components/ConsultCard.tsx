@@ -460,7 +460,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
         <div className="mb-2 bg-[#014167]/40 p-2 rounded-lg border border-[#FDFCDF]/10">
           <p className="text-xs text-[#FDFCDF] font-semibold mb-0.5">Dx:</p>
-          <p className="text-sm text-[#FDFCDF] leading-snug">{problem}</p>
+          <p className="text-sm text-[#FDFCDF] leading-snug whitespace-pre-wrap">{problem}</p>
         </div>
 
         <div className="flex flex-col gap-2 text-xs">

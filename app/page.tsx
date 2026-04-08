@@ -673,7 +673,10 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           {caseData.room}
         </span>
       </td>
-      <td className={`p-3 text-sm whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{caseData.problem}</td>
+      <td className={`p-3 text-sm whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+        <div className={`text-[10px] font-bold mb-0.5 opacity-70 ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>Dx:</div>
+        {caseData.problem}
+      </td>
       <td className="p-3">
         <div className="flex flex-col gap-2">
           {pendingDepts.map(dept => (

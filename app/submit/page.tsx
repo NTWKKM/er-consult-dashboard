@@ -393,57 +393,63 @@ export default function SubmitPage() {
 
               {/* Submit buttons */}
               <div className={`pt-3 border-t ${darkMode ? "border-gray-700" : "border-[#C7CFDA]/30"}`}>
-                <div className={`text-[10px] mb-2 text-center flex flex-col gap-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                  <p>💡 {isMac ? "⌘+Enter" : "Ctrl+Enter"}: ส่งเคสปกติ</p>
-                  <p>⚡ Shift+Enter: ส่ง Fast Track</p>
-                </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSubmit(false)}
-                    disabled={isLoading}
-                    className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
-                        ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                        : "bg-[#699D5D] text-white hover:shadow-md transform hover:-translate-y-0.5"
-                      }`}
-                  >
-                    {isLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span className="hidden sm:inline">กำลังส่ง...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                        </svg>
-                        Consult
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSubmit(true)}
-                    disabled={isLoading}
-                    className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
-                        ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                        : "bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5"
-                      }`}
-                  >
-                    {isLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span className="hidden sm:inline">กำลังส่ง...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        Consult FastTrack
-                      </>
-                    )}
-                  </button>
+                  <div className="flex flex-col gap-1.5">
+                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+                      💡 {isMac ? "⌘+Enter" : "Ctrl+Enter"}: ส่งเคสปกติ
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleSubmit(false)}
+                      disabled={isLoading}
+                      className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
+                          ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
+                          : "bg-[#699D5D] text-white hover:shadow-md transform hover:-translate-y-0.5"
+                        }`}
+                    >
+                      {isLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span className="hidden sm:inline">กำลังส่ง...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                          </svg>
+                          Consult
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+                      ⚡ Shift+Enter: ส่ง Fast Track
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleSubmit(true)}
+                      disabled={isLoading}
+                      className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
+                          ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
+                          : "bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5"
+                        }`}
+                    >
+                      {isLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span className="hidden sm:inline">กำลังส่ง...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          Consult FastTrack
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </fieldset>
