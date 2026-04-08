@@ -815,17 +815,17 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           {deptName}
         </span>
         
-        <div className="flex-1 flex gap-1 items-center h-10 md:h-7">
+        <div className="flex-1 flex gap-1 items-center h-7">
           {!isAccepted ? (
             <>
               <button
                 onClick={handleAccept}
                 disabled={isUpdating}
-                className={`flex-1 h-full rounded-md md:rounded text-[10px] sm:text-xs font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
+                className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
               >
                 {isUpdating ? "..." : "รับเคส"}
               </button>
-              <button disabled className={`flex-1 h-full rounded-md md:rounded text-[10px] sm:text-xs font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
+              <button disabled className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
                 ปิดเคส
               </button>
             </>
@@ -835,7 +835,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
                 value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                 onChange={(e) => handleStatusChange(e.target.value)}
                 disabled={isUpdating}
-                className={`flex-1 h-full rounded-md md:rounded text-[10px] sm:text-xs font-bold border text-center appearance-none cursor-pointer ${
+                className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold border text-center appearance-none cursor-pointer ${
                   actionStatus && actionStatus !== ACCEPT_STATUS
                     ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-400/10 text-amber-700 border-amber-400")
                     : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-gray-50 text-[#014167] border-[#C7CFDA]")
@@ -847,7 +847,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
               <button
                 onClick={() => setShowConfirm(true)}
                 disabled={isUpdating || !isStatusSelected}
-                className={`flex-1 h-full rounded-md md:rounded text-[10px] sm:text-xs font-bold transition-all ${
+                className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${
                   isUpdating || !isStatusSelected
                     ? darkMode
                       ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
@@ -861,7 +861,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           )}
           
           {isAccepted && (
-            <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-bold ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
+            <div className={`hidden md:flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-bold ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
               {(() => {
                 const milestones = [
                   { label: "รับ", time: acceptedTime, raw: dept?.acceptedAt, color: "text-[#699D5D]", icon: (
@@ -897,7 +897,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           <button
             onClick={() => setShowCancelConfirm(true)}
             disabled={isUpdating}
-            className={`w-8 md:w-6 h-10 md:h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-500 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
+            className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-400 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
             title="ยกเลิก"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
