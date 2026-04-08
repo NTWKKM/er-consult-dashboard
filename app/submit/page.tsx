@@ -65,7 +65,7 @@ export default function SubmitPage() {
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return newErrors;
   }, [hn, firstName, lastName, room, problem, selectedDepts]);
 
   const handleCheckboxChange = (dept: string) => {
@@ -85,8 +85,19 @@ export default function SubmitPage() {
   const handleSubmit = useCallback(async (isUrgent: boolean = false) => {
     if (submitInFlightRef.current) return;
 
-    if (!validateForm()) {
+    const currentErrors = validateForm();
+    if (Object.keys(currentErrors).length > 0) {
       addToast({ type: "error", message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+      
+      // UX Improvement: Auto-focus and scroll to the first error field
+      const firstErrorKey = Object.keys(currentErrors)[0];
+      setTimeout(() => {
+        const errorElement = document.getElementById(firstErrorKey);
+        if (errorElement) {
+          errorElement.focus();
+          errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 50);
       return;
     }
 
@@ -339,7 +350,7 @@ export default function SubmitPage() {
                   </svg>
                   แผนกที่ปรึกษา <span className="text-[#E55143]">*</span>
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div id="departments" className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {ALL_DEPARTMENTS.map((dept) => (
                     <div
                       key={dept}

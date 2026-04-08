@@ -525,7 +525,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   <button
                     onClick={handleAcceptCase}
                     disabled={isUpdating}
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
+                    className={`flex-1 px-3 py-2 min-h-[40px] md:min-h-[44px] rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
                       isUpdating
                         ? darkMode
                           ? "bg-gray-700 text-gray-400 cursor-not-allowed"
@@ -549,7 +549,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   </button>
                   <button
                     disabled
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs cursor-not-allowed flex items-center justify-center gap-1 ${
+                    className={`flex-1 px-3 py-2 min-h-[40px] md:min-h-[44px] rounded-lg font-bold text-xs cursor-not-allowed flex items-center justify-center gap-1 ${
                       darkMode
                         ? "bg-gray-800 border border-gray-700 text-gray-500"
                         : "bg-gray-200 border border-gray-300 text-gray-400 shadow-inner"
@@ -568,7 +568,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                       aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                       onChange={(e) => handleActionStatusChange(e.target.value)}
-                      className={`w-full h-full px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${
+                      className={`w-full h-full min-h-[40px] px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${
                         actionStatus && actionStatus !== ACCEPT_STATUS
                           ? darkMode
                             ? "bg-amber-500/20 text-amber-300 border border-amber-500"
@@ -600,7 +600,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   <button
                     onClick={() => setShowConfirm(true)}
                     disabled={isUpdating || !isStatusSelected}
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
+                    className={`flex-1 px-3 py-2 min-h-[40px] md:min-h-[44px] rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
                       isUpdating || !isStatusSelected
                         ? darkMode
                           ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"

@@ -414,7 +414,12 @@ export default function Dashboard() {
 
         {displayMode === "table" ? (
           <div className={`rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
-            <div className="overflow-x-auto">
+            {/* UX Improvement: เพิ่ม Visual Hint บอกว่าสามารถเลื่อนตารางแนวนอนได้บนมือถือ */}
+            <div className={`text-right text-[10px] px-3 py-1 font-medium md:hidden ${darkMode ? "text-gray-400 bg-gray-800/50" : "text-[#014167]/60 bg-[#C7CFDA]/20"}`}>
+               👉 เลื่อนซ้าย-ขวา เพื่อดูข้อมูลเพิ่มเติม
+            </div>
+            {/* UX Improvement: เพิ่ม inset shadow บางๆ ตอน scroll ขวา เพื่อเป็น Hint */}
+            <div className="overflow-x-auto relative w-full shadow-[inset_-10px_0_10px_-10px_rgba(0,0,0,0.1)]">
               <table className="w-full text-left border-collapse min-w-[900px]">
                 <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
                   <tr>
@@ -810,17 +815,17 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           {deptName}
         </span>
         
-        <div className="flex-1 flex gap-1 items-center h-7">
+        <div className="flex-1 flex gap-1 items-center h-10">
           {!isAccepted ? (
             <>
               <button
                 onClick={handleAccept}
                 disabled={isUpdating}
-                className={`flex-1 h-full rounded text-[10px] font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
+                className={`flex-1 h-full rounded-md text-[10px] sm:text-xs font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
               >
                 {isUpdating ? "..." : "รับเคส"}
               </button>
-              <button disabled className={`flex-1 h-full rounded text-[10px] font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
+              <button disabled className={`flex-1 h-full rounded-md text-[10px] sm:text-xs font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
                 ปิดเคส
               </button>
             </>
@@ -830,7 +835,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
                 value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                 onChange={(e) => handleStatusChange(e.target.value)}
                 disabled={isUpdating}
-                className={`flex-1 h-full rounded text-[10px] font-bold border text-center appearance-none cursor-pointer ${
+                className={`flex-1 h-full rounded-md text-[10px] sm:text-xs font-bold border text-center appearance-none cursor-pointer ${
                   actionStatus && actionStatus !== ACCEPT_STATUS
                     ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-400/10 text-amber-700 border-amber-400")
                     : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-gray-50 text-[#014167] border-[#C7CFDA]")
@@ -842,7 +847,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
               <button
                 onClick={() => setShowConfirm(true)}
                 disabled={isUpdating || !isStatusSelected}
-                className={`flex-1 h-full rounded text-[10px] font-bold transition-all ${
+                className={`flex-1 h-full rounded-md text-[10px] sm:text-xs font-bold transition-all ${
                   isUpdating || !isStatusSelected
                     ? darkMode
                       ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
@@ -892,7 +897,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           <button
             onClick={() => setShowCancelConfirm(true)}
             disabled={isUpdating}
-            className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-500 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
+            className={`w-8 h-10 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-500 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
             title="ยกเลิก"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
