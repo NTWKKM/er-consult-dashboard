@@ -425,11 +425,11 @@ export default function Dashboard() {
               <table className="w-full text-left border-collapse min-w-[900px]">
                 <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
                   <tr>
-                    <th className="p-3 w-[15%] font-bold">HN</th>
+                    <th className="p-3 w-[10%] font-bold">HN</th>
                     <th className="p-3 w-[15%] font-bold">NAME</th>
-                    <th className="p-3 w-[10%] font-bold">DEPARTMENT</th>
-                    <th className="p-3 w-[25%] font-bold">DX</th>
-                    <th className="p-3 w-[35%] font-bold">MANAGEMENT</th>
+                    <th className="p-3 w-[15%] font-bold">DEPARTMENT</th>
+                    <th className="p-3 w-[35%] font-bold">DX</th>
+                    <th className="p-3 w-[25%] font-bold">MANAGEMENT</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
@@ -676,7 +676,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
       </td>
       <td className={`p-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{fullName || "-"}</td>
       <td className="p-3">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 whitespace-nowrap">
           <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
             {caseData.room}
           </span>
