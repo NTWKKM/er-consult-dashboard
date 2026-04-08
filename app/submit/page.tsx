@@ -146,11 +146,9 @@ export default function SubmitPage() {
         if (isLoading) return; // Prevent double submission
         if (e.metaKey || e.ctrlKey) {
           e.preventDefault();
-          handleSubmit(false);
-        } else if (e.shiftKey) {
-          e.preventDefault();
-          handleSubmit(true);
+          handleSubmit(true); // Cmd/Ctrl + Enter triggers Fast Track
         }
+        // Enter and Shift + Enter are now free to create newlines in textarea
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -396,7 +394,7 @@ export default function SubmitPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="flex flex-col gap-1.5">
                     <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                      💡 {isMac ? "⌘+Enter" : "Ctrl+Enter"}: ส่งเคสปกติ
+                      💡 คลิกเพื่อส่งเคสปกติ
                     </p>
                     <button
                       type="button"
@@ -424,7 +422,7 @@ export default function SubmitPage() {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                      ⚡ Shift+Enter: ส่ง Fast Track
+                      ⚡ {isMac ? "⌘+Enter" : "Ctrl+Enter"}: ส่ง Fast Track
                     </p>
                     <button
                       type="button"
