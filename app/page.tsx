@@ -703,7 +703,6 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
     setShowCancelConfirm(false);
     await handleCancel();
   };
-  };
 
   return (
     <>
