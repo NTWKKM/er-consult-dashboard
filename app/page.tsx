@@ -139,6 +139,14 @@ export default function Dashboard() {
     return allCases.filter((caseData) => matchesRoomFilter(caseData, roomFilter));
   }, [allCases, roomFilter]);
 
+  const visibleTableCases = useMemo(
+    () =>
+      filteredAllCases.filter((caseData) =>
+        Object.values(caseData.departments).some((dept) => dept.status === "pending")
+      ),
+    [filteredAllCases]
+  );
+
   const departmentCasesMap = useMemo(() => {
     return buildDepartmentCasesMap(filteredAllCases, "all");
   }, [filteredAllCases]);
@@ -395,14 +403,14 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
-                  {filteredAllCases.length === 0 ? (
+                  {visibleTableCases.length === 0 ? (
                     <tr>
                       <td colSpan={4} className={`p-8 text-center font-bold ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
                         ไม่มีเคสรอปรึกษา
                       </td>
                     </tr>
                   ) : (
-                    filteredAllCases.map((caseData) => (
+                    visibleTableCases.map((caseData) => (
                       <PatientTableRow key={caseData.id} caseData={caseData} darkMode={darkMode} />
                     ))
                   )}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { ROOMS } from "../../lib/constants";
 import { transferConsultRoom } from "../../lib/db";
 import { useToast } from "../contexts/ToastContext";
@@ -42,46 +42,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-      } else if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setFocusedIndex((prev) => (prev < sortedRooms.length - 1 ? prev + 1 : 0));
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setFocusedIndex((prev) => (prev > 0 ? prev - 1 : sortedRooms.length - 1));
-      } else if (event.key === "Enter" && focusedIndex >= 0) {
-        event.preventDefault();
-        handleTransfer(sortedRooms[focusedIndex]);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      document.addEventListener("keydown", handleKeyDown);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, focusedIndex, sortedRooms]);
-
-  useEffect(() => {
-    if (focusedIndex >= 0 && itemRefs.current[focusedIndex]) {
-      itemRefs.current[focusedIndex]?.focus();
-    }
-  }, [focusedIndex]);
-
-  const handleTransfer = async (newRoom: string) => {
+  const handleTransfer = useCallback(async (newRoom: string) => {
     if (newRoom === currentRoom) {
       setIsOpen(false);
       return;
@@ -113,7 +74,47 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     } finally {
       setIsTransferring(false);
     }
-  };
+  }, [consultId, currentRoom, addToast, onTransferStart, onTransferEnd]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setFocusedIndex((prev) => (prev < sortedRooms.length - 1 ? prev + 1 : 0));
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setFocusedIndex((prev) => (prev > 0 ? prev - 1 : sortedRooms.length - 1));
+      } else if (event.key === "Enter" && focusedIndex >= 0) {
+        event.preventDefault();
+        handleTransfer(sortedRooms[focusedIndex]);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, focusedIndex, sortedRooms, handleTransfer]);
+
+  useEffect(() => {
+    if (focusedIndex >= 0 && itemRefs.current[focusedIndex]) {
+      itemRefs.current[focusedIndex]?.focus();
+    }
+  }, [focusedIndex]);
+
+
 
   return (
     <div className="relative inline-block ml-1" ref={dropdownRef}>
