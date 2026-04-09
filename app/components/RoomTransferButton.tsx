@@ -91,10 +91,20 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       onTransferStart?.();
       setIsOpen(false);
       
-      const { transferred } = await transferConsultRoom(consultId, newRoom);
+      const { transferred, backgroundPromise } = await transferConsultRoom(
+        consultId, 
+        newRoom,
+        (err) => {
+          console.error("Background transfer error:", err);
+          addToast({ message: "เครือข่ายไม่เสถียร การย้ายห้องอาจล่าช้ากว่าปกติ", type: "error" });
+        }
+      );
       if (transferred) {
         addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
         onTransferEnd?.(); // success callback
+        if (backgroundPromise) {
+            backgroundPromise.catch(() => {});
+        }
       }
     } catch (error) {
       console.error("Transfer error:", error);

@@ -40,7 +40,8 @@ export interface Milestone {
   label: string;
   time: string | null;
   raw: string | null | undefined;
-  color: string;
+  colorLight: string;
+  colorDark: string;
   icon?: string | ReactNode;
 }
 
@@ -54,26 +55,30 @@ export function getMilestones(dept: ConsultDepartment, formatTime: (iso: string)
       label: "รับ", 
       time: dept?.acceptedAt ? formatTime(dept.acceptedAt) : null, 
       raw: dept?.acceptedAt, 
-      color: "text-[#699D5D]",
+      colorLight: "text-[#699D5D]",
+      colorDark: "text-[#699D5D]",
       icon: "check"
     },
     { 
       label: "Admit", 
       time: dept?.admittedAt ? formatTime(dept.admittedAt) : null, 
       raw: dept?.admittedAt, 
-      color: "text-blue-600 dark:text-blue-400" 
+      colorLight: "text-blue-600",
+      colorDark: "text-blue-400" 
     },
     { 
       label: "คืน ER", 
       time: dept?.returnedAt ? formatTime(dept.returnedAt) : null, 
       raw: dept?.returnedAt, 
-      color: "text-amber-600 dark:text-amber-400" 
+      colorLight: "text-amber-600",
+      colorDark: "text-amber-400" 
     },
     { 
       label: "D/C", 
       time: dept?.dischargedAt ? formatTime(dept.dischargedAt) : null, 
       raw: dept?.dischargedAt, 
-      color: "text-purple-600 dark:text-purple-400" 
+      colorLight: "text-purple-600",
+      colorDark: "text-purple-400" 
     },
   ];
 
@@ -82,7 +87,8 @@ export function getMilestones(dept: ConsultDepartment, formatTime: (iso: string)
     label: `ย้าย ${t.to}`,
     time: formatTime(t.at),
     raw: t.at,
-    color: "text-blue-500",
+    colorLight: "text-blue-500",
+    colorDark: "text-blue-400",
     icon: "transfer"
   }));
 

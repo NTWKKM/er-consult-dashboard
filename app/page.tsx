@@ -398,7 +398,7 @@ export default function Dashboard() {
                 <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
                   {filteredAllCases.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className={`p-8 text-center font-bold ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
+                      <td colSpan={4} className={`p-8 text-center font-bold ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
                         ไม่มีเคสรอปรึกษา
                       </td>
                     </tr>
@@ -708,7 +708,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
 
   return (
     <>
-      <div className={`py-2 px-1 flex flex-row items-start gap-2 transition-all border-b last:border-b-0 ${darkMode ? "border-gray-800/80" : "border-[#014167]/10"}`}>
+      <div className={`p-1.5 rounded-lg border flex flex-row items-start gap-2 transition-all ${darkMode ? "bg-gray-800 border-gray-700 shadow-sm" : "bg-white border-[#C7CFDA]/50 shadow-sm"}`}>
         <span className={`font-bold text-xs min-w-[65px] truncate mt-1.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`} title={deptName}>
           {deptName}
         </span>
@@ -786,7 +786,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                       ) : null}
-                      <span className={`font-bold whitespace-nowrap ${m.color}`}>{m.label} {m.time}</span>
+                      <span className={`font-bold whitespace-nowrap ${darkMode ? m.colorDark : m.colorLight}`}>{m.label} {m.time}</span>
                     </div>
                     {idx < arr.length - 1 && (
                       <span className={darkMode ? "text-gray-700" : "text-[#014167]/20"}>→</span>

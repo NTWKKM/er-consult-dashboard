@@ -418,23 +418,20 @@ export async function transferConsultRoom(
     const result = await updateConsult(id, (current) => {
         if (current.room === newRoom) return null;
 
-        const updatedDepts = { ...current.departments };
+        const payload: Record<string, any> = {
+            room: newRoom
+        };
+        
         // Add transfer milestone to all departments that aren't cancelled or completed
-        Object.keys(updatedDepts).forEach(deptKey => {
-            const dept = updatedDepts[deptKey];
+        Object.keys(current.departments).forEach(deptKey => {
+            const dept = current.departments[deptKey];
             if (dept.status === "pending") {
                 const transfers = dept.transfers || [];
-                updatedDepts[deptKey] = {
-                    ...dept,
-                    transfers: [...transfers, { to: newRoom, at: now }]
-                };
+                payload[`departments.${deptKey}.transfers`] = [...transfers, { to: newRoom, at: now }];
             }
         });
 
-        return {
-            room: newRoom,
-            departments: updatedDepts
-        };
+        return payload as Partial<Omit<Consult, "id">>;
     }, {
         awaitRemote: false,
         onBackgroundError,
