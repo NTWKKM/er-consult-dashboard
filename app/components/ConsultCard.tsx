@@ -184,9 +184,9 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           </div>
         </div>
 
-        <div className="mb-2 bg-[#014167]/40 p-2 rounded-lg border border-[#FDFCDF]/10">
-          <p className="text-xs text-[#FDFCDF] font-semibold mb-0.5">Dx:</p>
-          <p className="text-sm text-[#FDFCDF] leading-snug whitespace-pre-wrap">{problem}</p>
+        <div className={`mb-2 p-2 rounded-lg border ${darkMode ? "bg-gray-900/50 border-gray-700" : "bg-white/70 border-[#014167]/10 shadow-[inset_0_1px_3px_rgba(0,0,0,0.03)]"}`}>
+          <p className={`text-xs font-semibold mb-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>Dx:</p>
+          <p className={`text-sm leading-snug whitespace-pre-wrap ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>{problem}</p>
         </div>
 
         <div className="flex flex-col gap-2 text-xs">
@@ -206,7 +206,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               </div>
             )}
             {isAccepted && (
-              <div className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+              <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] sm:text-xs tracking-tight ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                 {(() => {
                   const milestones = getMilestones(dept, formatTime);
 
@@ -214,15 +214,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     <React.Fragment key={`${m.label}-${m.raw}`}>
                       <div className="flex items-center gap-1">
                         {m.icon === "check" ? (
-                          <svg className="w-3 h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
                         ) : m.icon === "transfer" ? (
-                          <svg className="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                           </svg>
                         ) : null}
-                        <span className={`font-semibold ${m.color}`}>{m.label} {m.time}</span>
+                        <span className={`font-semibold whitespace-nowrap ${m.color}`}>{m.label} {m.time}</span>
                       </div>
                       {idx < arr.length - 1 && (
                         <span className={darkMode ? "text-gray-600" : "text-[#014167]/40"}>→</span>

@@ -409,7 +409,11 @@ export async function updateConsult(
         };
     }
 }
-export async function transferConsultRoom(id: string, newRoom: string): Promise<{ transferred: boolean }> {
+export async function transferConsultRoom(
+    id: string,
+    newRoom: string,
+    onBackgroundError?: (error: unknown) => void
+): Promise<{ transferred: boolean; backgroundPromise: Promise<void> | null }> {
     const now = new Date().toISOString();
     const result = await updateConsult(id, (current) => {
         if (current.room === newRoom) return null;
@@ -431,7 +435,13 @@ export async function transferConsultRoom(id: string, newRoom: string): Promise<
             room: newRoom,
             departments: updatedDepts
         };
+    }, {
+        awaitRemote: false,
+        onBackgroundError,
     });
 
-    return { transferred: result.consult !== null || result.isQueued };
+    return {
+        transferred: result.consult !== null || result.isQueued,
+        backgroundPromise: result.backgroundPromise,
+    };
 }

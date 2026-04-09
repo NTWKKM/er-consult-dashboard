@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { ROOMS } from "../../lib/constants";
 import { transferConsultRoom } from "../../lib/db";
 import { useToast } from "../contexts/ToastContext";
@@ -28,11 +28,19 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Reorder rooms to put SSW first
-  const sortedRooms = [...ROOMS].sort((a, b) => {
-    if (a === "SSW") return -1;
-    if (b === "SSW") return 1;
-    return 0; // Maintain original order for others
-  });
+  const sortedRooms = useMemo(() => {
+    return [...ROOMS].sort((a, b) => {
+      if (a === "SSW") return -1;
+      if (b === "SSW") return 1;
+      return 0; // Maintain original order for others
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFocusedIndex(-1); // Reset focus when opening
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -59,7 +67,6 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("keydown", handleKeyDown);
-      setFocusedIndex(-1); // Reset focus when opening
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);

@@ -334,7 +334,7 @@ export default function Dashboard() {
               </svg>
             </summary>
             <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-1 xl:gap-2">
                 {[...SURGERY_DEPTS, ...ORTHO_DEPTS].map((dept) => {
                   const cases = getCasesForDepartment(dept);
                   const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
@@ -389,10 +389,9 @@ export default function Dashboard() {
               <table className="w-full text-left border-collapse min-w-[900px]">
                 <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
                   <tr>
-                    <th className="p-3 w-[10%] font-bold">HN</th>
-                    <th className="p-3 w-[15%] font-bold">NAME</th>
-                    <th className="p-3 w-[13%] font-bold">ROOM</th>
-                    <th className="p-3 w-[32%] font-bold">DX</th>
+                    <th className="p-3 w-[20%] font-bold">PATIENT</th>
+                    <th className="p-3 w-[10%] font-bold">ROOM</th>
+                    <th className="p-3 w-[40%] font-bold">DX</th>
                     <th className="p-3 w-[30%] font-bold">MANAGEMENT</th>
                   </tr>
                 </thead>
@@ -621,14 +620,19 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
 
   return (
     <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
-      <td className={`p-3 font-bold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
-        <div className="flex items-center gap-2">
-          {caseData.hn}
+      <td className={`p-3 align-top ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-bold">{caseData.hn}</span>
           {caseData.isUrgent && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
           )}
         </div>
-        <div className={`text-[10px] mt-1 font-medium flex flex-col gap-1 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+        {fullName && (
+          <div className={`text-sm font-medium mb-2 ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+            {fullName}
+          </div>
+        )}
+        <div className={`text-[10px] font-medium flex flex-col gap-1 ${darkMode ? "text-gray-500" : "text-[#014167]/60"}`}>
           <div className="flex items-center gap-1">
              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -638,7 +642,6 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           <PatientTableElapsedTime createdAt={caseData.createdAt || ""} darkMode={darkMode} />
         </div>
       </td>
-      <td className={`p-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{fullName || "-"}</td>
       <td className="p-3">
         <div className="flex items-center gap-1 whitespace-nowrap">
           <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
@@ -668,7 +671,6 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
 function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Consult; deptName: string; darkMode: boolean }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const { addToast } = useToast();
 
   const dept = caseData.departments[deptName];
   const isAccepted = !!dept?.acceptedAt;
@@ -706,7 +708,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
 
   return (
     <>
-      <div className={`p-1.5 rounded-lg border flex flex-row items-start gap-2 transition-all ${darkMode ? "bg-gray-800 border-gray-700 shadow-sm" : "bg-white border-[#C7CFDA]/50 shadow-sm"}`}>
+      <div className={`py-2 px-1 flex flex-row items-start gap-2 transition-all border-b last:border-b-0 ${darkMode ? "border-gray-800/80" : "border-[#014167]/10"}`}>
         <span className={`font-bold text-xs min-w-[65px] truncate mt-1.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`} title={deptName}>
           {deptName}
         </span>
@@ -762,6 +764,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
               disabled={isUpdating}
               className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-400 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
               title="ยกเลิก"
+              aria-label="ยกเลิกการปรึกษา"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -770,7 +773,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           </div>
 
             {isAccepted && milestones.length > 0 && (
-              <div className={`hidden md:flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-2 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
+              <div className={`hidden md:flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
                 {milestones.map((m, idx, arr) => (
                   <React.Fragment key={`${m.label}-${m.raw}`}>
                     <div className="flex items-center gap-1 text-[10px]">
@@ -783,7 +786,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                       ) : null}
-                      <span className={`font-bold ${m.color}`}>{m.label} {m.time}</span>
+                      <span className={`font-bold whitespace-nowrap ${m.color}`}>{m.label} {m.time}</span>
                     </div>
                     {idx < arr.length - 1 && (
                       <span className={darkMode ? "text-gray-700" : "text-[#014167]/20"}>→</span>
