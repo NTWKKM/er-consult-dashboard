@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { updateConsult, Consult, ConsultDepartment } from "@/lib/db";
-import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
+import React, { useState, useEffect, useCallback } from "react";
+import { useConsultActions } from "../hooks/useConsultActions";
+import { Consult } from "@/lib/db";
+import { POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmModal from "./ConfirmModal";
 import { RoomTransferButton } from "./RoomTransferButton";
-import { getMilestones } from "@/lib/utils";
+import { getMilestones, formatTime } from "@/lib/utils";
+import { ElapsedTime } from "./ElapsedTime";
 
 interface ConsultCardProps {
   caseData: Consult;
@@ -17,63 +19,12 @@ interface ConsultCardProps {
   animationDelay?: number;
 }
 
-const formatTime = (iso: string) =>
-  new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
-const ElapsedTime = React.memo(function ElapsedTime({ createdAt, darkMode }: { createdAt: string; darkMode: boolean }) {
-  const [elapsed, setElapsed] = useState("");
-
-  useEffect(() => {
-    const update = () => {
-      const diff = Date.now() - new Date(createdAt).getTime();
-      const mins = Math.floor(diff / 60000);
-      const hrs = Math.floor(mins / 60);
-      const remainMins = mins % 60;
-
-      if (hrs > 0) {
-        setElapsed(`${hrs} ชม. ${remainMins} นาที`);
-      } else {
-        setElapsed(`${remainMins} นาที`);
-      }
-    };
-
-    update();
-    const interval = setInterval(update, 60000);
-    return () => clearInterval(interval);
-  }, [createdAt]);
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold elapsed-tick ${
-        darkMode ? "bg-amber-500/20 text-amber-400" : "bg-amber-500/15 text-amber-700"
-      }`}
-    >
-      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      รอ {elapsed}
-    </span>
-  );
-});
 
 function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate, animationDelay = 0 }: ConsultCardProps) {
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const { addToast } = useToast();
-
-  const pendingSyncCountRef = useRef(0);
-
-  const beginSync = useCallback(() => {
-    pendingSyncCountRef.current += 1;
-    setIsSyncing(true);
-  }, []);
-
-  const endSync = useCallback(() => {
-    pendingSyncCountRef.current = Math.max(0, pendingSyncCountRef.current - 1);
-    setIsSyncing(pendingSyncCountRef.current > 0);
-  }, []);
 
   const hn = caseData.hn || "-";
   const firstName = caseData.firstName || "";
@@ -95,261 +46,33 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const actionStatus = caseData.departments[departmentName]?.actionStatus || "";
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
 
+  const {
+    isUpdating,
+    isSyncing,
+    handleAccept,
+    handleStatusChange,
+    handleComplete,
+    handleCancel,
+  } = useConsultActions(caseId, departmentName, hn, onUpdate);
+
   const handleActionStatusChange = useCallback(async (newStatus: string) => {
-    if (isUpdating) return;
-    setIsUpdating(true); // Immediate local "busy" state
-    beginSync();         // Track remote sync
-    try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
-          return null;
-        }
-
-        const updatedDepartments = { ...current.departments };
-        const now = new Date().toISOString();
-
-        updatedDepartments[departmentName] = {
-          ...updatedDepartments[departmentName],
-          acceptedAt: updatedDepartments[departmentName].acceptedAt || now,
-          actionStatus: newStatus,
-        };
-
-        if (newStatus === "Admit") {
-          updatedDepartments[departmentName].admittedAt = now;
-        } else if (newStatus === "คืน ER") {
-          updatedDepartments[departmentName].returnedAt = now;
-        } else if (newStatus === "D/C") {
-          updatedDepartments[departmentName].dischargedAt = now;
-        }
-
-        return { departments: updatedDepartments };
-      }, { 
-        awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
-        }
-      });
-
-      if (result.consult === null && !result.isQueued) {
-           endSync();
-           setIsUpdating(false);
-           return;
-      }
-
-      setIsUpdating(false); // Immediate UI release after local enqueue
-
-      if (result.backgroundPromise) {
-          result.backgroundPromise.then(() => {
-              endSync();
-          }).catch(() => {
-              endSync();
-          });
-      } else {
-          endSync();
-      }
-      
-      addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
-      onUpdate?.();
-    } catch (error) {
-      console.error("Error updating status:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
-      setIsUpdating(false);
-      endSync();
-    }
-  }, [isUpdating, caseId, departmentName, addToast, onUpdate, beginSync, endSync]);
+    await handleStatusChange(newStatus);
+  }, [handleStatusChange]);
 
   const handleAcceptCase = useCallback(async () => {
-    if (isUpdating) return;
-    setIsUpdating(true);
-    beginSync();
-    try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
-          return null;
-        }
-
-        const updatedDepartments = { ...current.departments };
-        const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
-        const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
-        const now = new Date().toISOString();
-
-        Object.keys(updatedDepartments).forEach((dept) => {
-          if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
-            updatedDepartments[dept] = {
-              ...updatedDepartments[dept],
-              // ใช้ acceptedAt เดิมถ้ามีอยู่แล้ว ถ้าไม่มีถึงจะใช้เวลา now ป้องกันการเขียนทับ
-              acceptedAt: updatedDepartments[dept].acceptedAt || now,
-              actionStatus: ACCEPT_STATUS,
-            };
-          }
-        });
-
-        return { departments: updatedDepartments };
-      }, { 
-        awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
-        }
-      });
-
-      if (result.consult === null && !result.isQueued) {
-           endSync();
-           setIsUpdating(false);
-           return;
-      }
-
-      setIsUpdating(false); // UI release
-
-      if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
-      } else {
-          endSync();
-      }
-
-      addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
-      onUpdate?.();
-    } catch (error) {
-      console.error("Error accepting case:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
-      setIsUpdating(false);
-      endSync();
-    }
-  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
+    await handleAccept();
+  }, [handleAccept]);
 
   const handleCancelConsult = useCallback(async () => {
-    if (isUpdating) return;
     setShowCancelConfirm(false);
-    setIsUpdating(true);
-    beginSync();
-    try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
-          return null;
-        }
-
-        const updatedDepartments = { ...current.departments };
-        updatedDepartments[departmentName] = {
-          ...updatedDepartments[departmentName],
-          status: "cancelled",
-          completedAt: new Date().toISOString(),
-        };
-
-        const allFinished = Object.values(updatedDepartments).every(
-          (dept: ConsultDepartment) => dept.status === "completed" || dept.status === "cancelled"
-        );
-
-        return {
-          departments: updatedDepartments,
-          ...(allFinished && { status: "completed" }),
-        };
-      }, { 
-        awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
-        }
-      });
-
-      if (result.consult === null && !result.isQueued) {
-           endSync();
-           setIsUpdating(false);
-           return;
-      }
-
-      setIsUpdating(false); // UI release
-
-      if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
-      } else {
-          endSync();
-      }
-
-      addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
-      onUpdate?.();
-    } catch (error) {
-      console.error("Error cancelling consult:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
-      setIsUpdating(false);
-      endSync();
-    }
-  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
+    await handleCancel();
+  }, [handleCancel]);
 
   const handleCompleteCase = useCallback(async () => {
-    if (isUpdating || isTerminal) return;
+    if (isTerminal) return;
     setShowConfirm(false);
-    setIsUpdating(true);
-    beginSync();
-    try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
-          return null;
-        }
-
-        const updatedDepartments = { ...current.departments };
-        updatedDepartments[departmentName] = {
-          ...updatedDepartments[departmentName],
-          status: "completed",
-          completedAt: new Date().toISOString(),
-        };
-        const allCompleted = Object.values(updatedDepartments).every(
-          (dept: ConsultDepartment) =>
-            dept.status === "completed" || dept.status === "cancelled"
-        );
-        return {
-          departments: updatedDepartments,
-          ...(allCompleted && { status: "completed" }),
-        };
-      }, { 
-        awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
-        }
-      });
-
-      if (result.consult === null && !result.isQueued) {
-           endSync();
-           setIsUpdating(false);
-           return;
-      }
-
-      setIsUpdating(false); // UI release
-
-      if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
-      } else {
-          endSync();
-      }
-
-      addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
-      onUpdate?.();
-    } catch (error) {
-      console.error("Error updating case:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
-      setIsUpdating(false);
-      endSync();
-    }
-  }, [isUpdating, isTerminal, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
+    await handleComplete();
+  }, [isTerminal, handleComplete]);
 
   return (
     <>
@@ -502,7 +225,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                         <span className={`font-semibold ${m.color}`}>{m.label} {m.time}</span>
                       </div>
                       {idx < arr.length - 1 && (
-                        <span className="text-[#014167]/40 dark:text-gray-600">→</span>
+                        <span className={darkMode ? "text-gray-600" : "text-[#014167]/40"}>→</span>
                       )}
                     </React.Fragment>
                   ));

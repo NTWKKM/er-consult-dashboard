@@ -350,7 +350,7 @@ export default function SubmitPage() {
                   </svg>
                   แผนกที่ปรึกษา <span className="text-[#E55143]">*</span>
                 </label>
-                <div id="departments" className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div id="departments" tabIndex={-1} className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {ALL_DEPARTMENTS.map((dept) => (
                     <div
                       key={dept}

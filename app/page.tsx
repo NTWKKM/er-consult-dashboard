@@ -1,58 +1,22 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useConsultActions } from "./hooks/useConsultActions";
 import ConsultCard from "@/app/components/ConsultCard";
 import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
 import ConfirmModal from "@/app/components/ConfirmModal";
 import { RoomTransferButton } from "@/app/components/RoomTransferButton";
-import { subscribeToConsultsByStatus, Consult, updateConsult, ConsultDepartment } from "@/lib/db";
-import { getMilestones } from "@/lib/utils";
+import { subscribeToConsultsByStatus, Consult, ConsultDepartment } from "@/lib/db";
+import { getMilestones, formatTime } from "@/lib/utils";
+import { ElapsedTime as PatientTableElapsedTime } from "@/app/components/ElapsedTime";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
 import { useToast } from "./contexts/ToastContext";
 import { buildDepartmentCasesMap, type RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
 
-// Helper for formatting status times
-const formatTime = (iso: string) =>
-  new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
-const PatientTableElapsedTime = React.memo(function PatientTableElapsedTime({ createdAt, darkMode }: { createdAt: string; darkMode: boolean }) {
-  const [elapsed, setElapsed] = useState("");
-
-  useEffect(() => {
-    const update = () => {
-      const diff = Date.now() - new Date(createdAt).getTime();
-      const mins = Math.floor(diff / 60000);
-      const hrs = Math.floor(mins / 60);
-      const remainMins = mins % 60;
-
-      if (hrs > 0) {
-        setElapsed(`${hrs} ชม. ${remainMins} นาที`);
-      } else {
-        setElapsed(`${remainMins} นาที`);
-      }
-    };
-
-    update();
-    const interval = setInterval(update, 60000);
-    return () => clearInterval(interval);
-  }, [createdAt]);
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold elapsed-tick ${
-        darkMode ? "bg-amber-500/20 text-amber-400" : "bg-amber-500/15 text-amber-700"
-      }`}
-    >
-      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      รอ {elapsed}
-    </span>
-  );
-});
 
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);
@@ -427,7 +391,7 @@ export default function Dashboard() {
                   <tr>
                     <th className="p-3 w-[10%] font-bold">HN</th>
                     <th className="p-3 w-[15%] font-bold">NAME</th>
-                    <th className="p-3 w-[13%] font-bold">DEPARTMENT</th>
+                    <th className="p-3 w-[13%] font-bold">ROOM</th>
                     <th className="p-3 w-[32%] font-bold">DX</th>
                     <th className="p-3 w-[30%] font-bold">MANAGEMENT</th>
                   </tr>
@@ -702,7 +666,6 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
 }
 
 function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Consult; deptName: string; darkMode: boolean }) {
-  const [isUpdating, setIsUpdating] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const { addToast } = useToast();
@@ -715,103 +678,31 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
 
   const milestones = getMilestones(dept, formatTime);
 
-  const handleAccept = async () => {
-    if (isUpdating) return;
-    setIsUpdating(true);
-    try {
-      await updateConsult(caseData.id, (current) => {
-        if (!current.departments || !current.departments[deptName] || current.departments[deptName].status !== "pending") return null;
-        const updated = { ...current.departments };
-        const targetDepts = (SURGERY_DEPTS as readonly string[]).includes(deptName) ? SURGERY_DEPTS : ORTHO_DEPTS;
-        const now = new Date().toISOString();
-        
-        Object.keys(updated).forEach((d) => {
-          if ((targetDepts as readonly string[]).includes(d) && updated[d].status === "pending") {
-            updated[d] = { ...updated[d], acceptedAt: updated[d].acceptedAt || now, actionStatus: ACCEPT_STATUS };
-          }
-        });
-        return { departments: updated };
-      }, { awaitRemote: false, onBackgroundError: () => addToast({ type: "error", message: "ระบบอัปเดตไม่สำเร็จ ข้อมูลกำลังรีเฟรช" }) });
-      
-      addToast({ type: "success", message: `รับเคส HN: ${caseData.hn} สำเร็จ` });
-    } catch (err) {
-      console.error(err);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาด" });
-    } finally {
-      setIsUpdating(false);
-    }
+  const {
+    isUpdating,
+    handleAccept,
+    handleStatusChange,
+    handleComplete,
+    handleCancel,
+  } = useConsultActions(caseData.id, deptName, caseData.hn);
+
+  const onAccept = async () => {
+    await handleAccept();
   };
 
-  const handleStatusChange = async (newStatus: string) => {
-    if (isUpdating) return;
-    setIsUpdating(true);
-    try {
-      await updateConsult(caseData.id, (current) => {
-        if (!current.departments || !current.departments[deptName] || current.departments[deptName].status !== "pending") return null;
-        const updated = { ...current.departments };
-        const now = new Date().toISOString();
-        updated[deptName] = { ...updated[deptName], acceptedAt: updated[deptName].acceptedAt || now, actionStatus: newStatus };
-        
-        if (newStatus === "Admit") updated[deptName].admittedAt = now;
-        else if (newStatus === "คืน ER") updated[deptName].returnedAt = now;
-        else if (newStatus === "D/C") updated[deptName].dischargedAt = now;
-
-        return { departments: updated };
-      }, { awaitRemote: false, onBackgroundError: () => addToast({ type: "error", message: "ระบบอัปเดตไม่สำเร็จ ข้อมูลกำลังรีเฟรช" }) });
-      
-      addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
-    } catch (err) {
-      console.error(err);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาด" });
-    } finally {
-      setIsUpdating(false);
-    }
+  const onStatusChange = async (newStatus: string) => {
+    await handleStatusChange(newStatus);
   };
 
-  const handleComplete = async () => {
-    if (isUpdating) return;
+  const onComplete = async () => {
     setShowConfirm(false);
-    setIsUpdating(true);
-    try {
-      await updateConsult(caseData.id, (current) => {
-        if (!current.departments || !current.departments[deptName] || current.departments[deptName].status !== "pending") return null;
-        const updated = { ...current.departments };
-        updated[deptName] = { ...updated[deptName], status: "completed", completedAt: new Date().toISOString() };
-        
-        const allFinished = Object.values(updated).every((d: ConsultDepartment) => d.status === "completed" || d.status === "cancelled");
-        return { departments: updated, ...(allFinished && { status: "completed" }) };
-      }, { awaitRemote: false, onBackgroundError: () => addToast({ type: "error", message: "ระบบอัปเดตไม่สำเร็จ ข้อมูลกำลังรีเฟรช" }) });
-      
-      addToast({ type: "success", message: `ปิดเคส HN: ${caseData.hn} (${deptName}) สำเร็จ` });
-    } catch (err) {
-      console.error(err);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
-    } finally {
-      setIsUpdating(false);
-    }
+    await handleComplete();
   };
 
-  const handleCancel = async () => {
-    if (isUpdating) return;
+  const onCancel = async () => {
     setShowCancelConfirm(false);
-    setIsUpdating(true);
-    try {
-      await updateConsult(caseData.id, (current) => {
-        if (!current.departments || !current.departments[deptName] || current.departments[deptName].status !== "pending") return null;
-        const updated = { ...current.departments };
-        updated[deptName] = { ...updated[deptName], status: "cancelled", completedAt: new Date().toISOString() };
-        
-        const allFinished = Object.values(updated).every((d: ConsultDepartment) => d.status === "completed" || d.status === "cancelled");
-        return { departments: updated, ...(allFinished && { status: "completed" }) };
-      }, { awaitRemote: false, onBackgroundError: () => addToast({ type: "error", message: "ระบบอัปเดตไม่สำเร็จ ข้อมูลกำลังรีเฟรช" }) });
-      
-      addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${caseData.hn} (${deptName}) สำเร็จ` });
-    } catch (err) {
-      console.error(err);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
-    } finally {
-      setIsUpdating(false);
-    }
+    await handleCancel();
+  };
   };
 
   return (
@@ -826,7 +717,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
             {!isAccepted ? (
               <>
                 <button
-                  onClick={handleAccept}
+                  onClick={onAccept}
                   disabled={isUpdating}
                   className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
                 >
@@ -840,7 +731,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
               <>
                 <select
                   value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                  onChange={(e) => handleStatusChange(e.target.value)}
+                  onChange={(e) => onStatusChange(e.target.value)}
                   disabled={isUpdating}
                   className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold border text-center appearance-none cursor-pointer ${
                     actionStatus && actionStatus !== ACCEPT_STATUS
@@ -896,7 +787,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
                       <span className={`font-bold ${m.color}`}>{m.label} {m.time}</span>
                     </div>
                     {idx < arr.length - 1 && (
-                      <span className="text-[#014167]/20 dark:text-gray-700">→</span>
+                      <span className={darkMode ? "text-gray-700" : "text-[#014167]/20"}>→</span>
                     )}
                   </React.Fragment>
                 ))}
@@ -912,7 +803,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
         confirmText="ยืนยันปิดเคส"
         cancelText="ยกเลิก"
         variant="danger"
-        onConfirm={handleComplete}
+        onConfirm={onComplete}
         onCancel={() => setShowConfirm(false)}
       />
 
@@ -923,7 +814,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
         confirmText="ยืนยันยกเลิก"
         cancelText="ไม่ยกเลิก"
         variant="warning"
-        onConfirm={handleCancel}
+        onConfirm={onCancel}
         onCancel={() => setShowCancelConfirm(false)}
       />
     </>

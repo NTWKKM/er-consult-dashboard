@@ -22,8 +22,10 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
   const { addToast } = useToast();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Reorder rooms to put SSW first
   const sortedRooms = [...ROOMS].sort((a, b) => {
@@ -38,13 +40,38 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
         setIsOpen(false);
       }
     };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setFocusedIndex((prev) => (prev < sortedRooms.length - 1 ? prev + 1 : 0));
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setFocusedIndex((prev) => (prev > 0 ? prev - 1 : sortedRooms.length - 1));
+      } else if (event.key === "Enter" && focusedIndex >= 0) {
+        event.preventDefault();
+        handleTransfer(sortedRooms[focusedIndex]);
+      }
+    };
+
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+      setFocusedIndex(-1); // Reset focus when opening
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isOpen, focusedIndex, sortedRooms]);
+
+  useEffect(() => {
+    if (focusedIndex >= 0 && itemRefs.current[focusedIndex]) {
+      itemRefs.current[focusedIndex]?.focus();
+    }
+  }, [focusedIndex]);
 
   const handleTransfer = async (newRoom: string) => {
     if (newRoom === currentRoom) {
@@ -57,14 +84,16 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       onTransferStart?.();
       setIsOpen(false);
       
-      await transferConsultRoom(consultId, newRoom);
-      addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+      const { transferred } = await transferConsultRoom(consultId, newRoom);
+      if (transferred) {
+        addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+        onTransferEnd?.(); // success callback
+      }
     } catch (error) {
       console.error("Transfer error:", error);
       addToast({ message: "ไม่สามารถย้ายห้องได้ กรุณาลองใหม่", type: "error" });
     } finally {
       setIsTransferring(false);
-      onTransferEnd?.();
     }
   };
 
@@ -74,6 +103,8 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         disabled={isTransferring}
         title="เปลี่ยนห้อง"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         className={`p-1 rounded-full transition-all duration-200 ${
           isTransferring ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-500/10 hover:rotate-180"
         } ${darkMode ? "text-blue-400" : "text-blue-600"}`}
@@ -94,6 +125,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 
       {isOpen && (
         <div
+          role="listbox"
           className={`absolute z-50 mt-1 right-0 w-40 rounded-lg shadow-xl border overflow-hidden animate-in fade-in zoom-in duration-200 ${
             darkMode ? "bg-gray-800 border-gray-700 shadow-black/40" : "bg-white border-gray-200 shadow-gray-300/50"
           }`}
@@ -104,15 +136,23 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
             ย้ายผู้ป่วยไปยัง...
           </div>
           <div className="max-h-48 overflow-y-auto">
-            {sortedRooms.map((room) => (
+            {sortedRooms.map((room, index) => (
               <button
                 key={room}
+                ref={(el) => { itemRefs.current[index] = el; }}
                 onClick={() => handleTransfer(room)}
-                className={`w-full text-left px-3 py-2 text-xs font-semibold transition-colors flex items-center justify-between group ${
+                tabIndex={focusedIndex === index ? 0 : -1}
+                role="option"
+                aria-selected={room === currentRoom}
+                className={`w-full text-left px-3 py-2 text-xs font-semibold transition-colors flex items-center justify-between outline-none group ${
                   room === currentRoom
                     ? darkMode
                       ? "bg-blue-900/40 text-blue-400"
                       : "bg-blue-50 text-blue-700"
+                    : focusedIndex === index
+                    ? darkMode
+                      ? "bg-gray-700 text-white"
+                      : "bg-gray-100 text-[#014167]"
                     : darkMode
                     ? "text-gray-300 hover:bg-gray-700"
                     : "text-gray-700 hover:bg-gray-50"

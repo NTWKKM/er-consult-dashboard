@@ -1,4 +1,11 @@
+import type { ReactNode } from "react";
 import type { Consult, ConsultDepartment, ConsultTransfer } from "./db";
+
+/**
+ * Helper for formatting status times in Thai locale
+ */
+export const formatTime = (iso: string) =>
+  new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
 /**
  * Sort consults by urgency first (urgent cases on top), then by creation date (newest first).
@@ -34,7 +41,7 @@ export interface Milestone {
   time: string | null;
   raw: string | null | undefined;
   color: string;
-  icon?: string | React.ReactNode;
+  icon?: string | ReactNode;
 }
 
 /**
@@ -81,11 +88,8 @@ export function getMilestones(dept: ConsultDepartment, formatTime: (iso: string)
 
   const allFiltered = [...milestones, ...transferMilestones].filter((m): m is Milestone => !!(m.time && m.raw));
 
-  // Sort by raw timestamp descending to find latest 3
-  const latest3 = [...allFiltered]
-    .sort((a, b) => new Date(b.raw!).getTime() - new Date(a.raw!).getTime())
-    .slice(0, 3);
-
-  // Return back in chronological order
-  return allFiltered.filter(m => latest3.includes(m));
+  // Sort chronologically, take last 3 (most recent)
+  return [...allFiltered]
+    .sort((a, b) => new Date(a.raw!).getTime() - new Date(b.raw!).getTime())
+    .slice(-3);
 }

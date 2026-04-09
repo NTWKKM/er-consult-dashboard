@@ -409,9 +409,9 @@ export async function updateConsult(
         };
     }
 }
-export async function transferConsultRoom(id: string, newRoom: string): Promise<void> {
+export async function transferConsultRoom(id: string, newRoom: string): Promise<{ transferred: boolean }> {
     const now = new Date().toISOString();
-    await updateConsult(id, (current) => {
+    const result = await updateConsult(id, (current) => {
         if (current.room === newRoom) return null;
 
         const updatedDepts = { ...current.departments };
@@ -432,4 +432,6 @@ export async function transferConsultRoom(id: string, newRoom: string): Promise<
             departments: updatedDepts
         };
     });
+
+    return { transferred: result.consult !== null || result.isQueued };
 }
