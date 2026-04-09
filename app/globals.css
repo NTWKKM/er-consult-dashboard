@@ -167,22 +167,18 @@ body {
 
 /* Task 4: Elapsed time color escalation */
 .elapsed-safe {
-  --tw-bg-opacity: 1;
   background-color: rgba(105, 157, 93, 0.15);
   color: #4a7c3f;
 }
 .elapsed-warning {
-  --tw-bg-opacity: 1;
   background-color: rgba(217, 119, 6, 0.15);
   color: #b45309;
 }
 .elapsed-danger {
-  --tw-bg-opacity: 1;
   background-color: rgba(229, 81, 67, 0.2);
   color: #dc2626;
 }
 .elapsed-critical {
-  --tw-bg-opacity: 1;
   background-color: rgba(229, 81, 67, 0.25);
   color: #dc2626;
   animation: tick 0.6s ease-in-out infinite alternate;
@@ -207,22 +203,22 @@ body {
 }
 
 /* Task 10: Success flash for card accept */
-@keyframes successFlash {
+@keyframes success-flash {
   0% { box-shadow: 0 0 0 0 rgba(105, 157, 93, 0.6); }
   50% { box-shadow: 0 0 0 8px rgba(105, 157, 93, 0.2); }
   100% { box-shadow: 0 0 0 0 rgba(105, 157, 93, 0); }
 }
 .animate-success-flash {
-  animation: successFlash 0.6s ease-out;
+  animation: success-flash 0.6s ease-out;
 }
 
 /* Task 10: Slide out for card completion */
-@keyframes slideOutRight {
+@keyframes slide-out-right {
   to {
     transform: translateX(100%);
     opacity: 0;
   }
 }
 .animate-slide-out {
-  animation: slideOutRight 0.4s ease-in forwards;
+  animation: slide-out-right 0.4s ease-in forwards;
 }

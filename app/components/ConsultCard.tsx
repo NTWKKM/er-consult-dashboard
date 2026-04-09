@@ -209,12 +209,17 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 <span className="font-semibold">{dept?.status === "cancelled" ? "ยกเลิก" : "ปิด"}: {completedTime}</span>
               </div>
             )}
-            {isAccepted && (
-              <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] sm:text-xs tracking-tight ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                {(() => {
-                  const milestones = getMilestones(dept, formatTime);
+            {(() => {
+              const allMilestones = getMilestones(dept, formatTime);
+              const milestonesToRender = isAccepted 
+                ? allMilestones 
+                : allMilestones.filter(m => m.icon === "transfer");
+                
+              if (milestonesToRender.length === 0) return null;
 
-                  return milestones.map((m, idx, arr) => (
+              return (
+                <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] sm:text-xs tracking-tight ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                  {milestonesToRender.map((m, idx, arr) => (
                     <React.Fragment key={`${m.label}-${m.raw}`}>
                       <div className="flex items-center gap-1">
                         {m.icon === "check" ? (
@@ -232,10 +237,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                         <span className={darkMode ? "text-gray-600" : "text-[#014167]/40"}>→</span>
                       )}
                     </React.Fragment>
-                  ));
-                })()}
-              </div>
-            )}
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {!isTerminal && (

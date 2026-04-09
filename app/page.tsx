@@ -198,6 +198,7 @@ export default function Dashboard() {
               }`}
             >
               <button
+                aria-pressed={displayMode === "card"}
                 className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 glow-hover ${
                   displayMode === "card"
                     ? "bg-[#014167] text-white shadow-sm"
@@ -213,6 +214,7 @@ export default function Dashboard() {
                 Card View
               </button>
               <button
+                aria-pressed={displayMode === "table"}
                 className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 glow-hover ${
                   displayMode === "table"
                     ? "bg-[#699D5D] text-white shadow-sm"
@@ -235,6 +237,7 @@ export default function Dashboard() {
               }`}
             >
               <button
+                aria-pressed={roomFilter === "resus"}
                 className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
                   roomFilter === "resus"
                     ? "bg-[#E55143] text-white"
@@ -247,6 +250,7 @@ export default function Dashboard() {
                 Resus
               </button>
               <button
+                aria-pressed={roomFilter === "non-resus"}
                 className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
                   roomFilter === "non-resus"
                     ? "bg-[#699D5D] text-white"
@@ -259,6 +263,7 @@ export default function Dashboard() {
                 Non-Resus
               </button>
               <button
+                aria-pressed={roomFilter === "all"}
                 className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
                   roomFilter === "all"
                     ? "bg-[#014167] text-white"
@@ -279,6 +284,7 @@ export default function Dashboard() {
                 }`}
               >
                 <button
+                  aria-pressed={view === "surgery"}
                   className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
                     view === "surgery"
                       ? "bg-[#E55143] text-white"
@@ -291,6 +297,7 @@ export default function Dashboard() {
                   Surgery
                 </button>
                 <button
+                  aria-pressed={view === "ortho"}
                   className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
                     view === "ortho"
                       ? "bg-[#699D5D] text-[#FDFCDF]"
@@ -303,6 +310,7 @@ export default function Dashboard() {
                   Ortho
                 </button>
                 <button
+                  aria-pressed={view === "both"}
                   className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
                     view === "both"
                       ? "bg-[#F1AE9E] text-[#014167]"
@@ -840,7 +848,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
             </button>
           </div>
 
-            {isAccepted && milestones.length > 0 && (
+            {milestones.length > 0 && (
               <div className={`hidden md:flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
                 {milestones.map((m, idx, arr) => (
                   <React.Fragment key={`${m.label}-${m.raw}`}>

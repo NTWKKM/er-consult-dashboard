@@ -30,7 +30,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th" suppressHydrationWarning className={`${inter.variable} ${notoSansThai.variable}`}>
-      <body className="font-sans bg-[#014167] dark:bg-gray-900 min-h-screen transition-colors duration-300">
+      <body className="bg-[#014167] dark:bg-gray-900 min-h-screen transition-colors duration-300">
         <SettingsProvider>
           <ToastProvider>
             <Navbar />

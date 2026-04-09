@@ -103,19 +103,25 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         const updatedDepartments = { ...current.departments };
         const now = new Date().toISOString();
 
-        updatedDepartments[departmentName] = {
+        const nextDept = {
           ...updatedDepartments[departmentName],
           acceptedAt: updatedDepartments[departmentName].acceptedAt || now,
           actionStatus: newStatus,
         };
 
+        delete nextDept.admittedAt;
+        delete nextDept.returnedAt;
+        delete nextDept.dischargedAt;
+
         if (newStatus === "Admit") {
-          updatedDepartments[departmentName].admittedAt = now;
+          nextDept.admittedAt = now;
         } else if (newStatus === "คืน ER") {
-          updatedDepartments[departmentName].returnedAt = now;
+          nextDept.returnedAt = now;
         } else if (newStatus === "D/C") {
-          updatedDepartments[departmentName].dischargedAt = now;
+          nextDept.dischargedAt = now;
         }
+
+        updatedDepartments[departmentName] = nextDept;
 
         return { departments: updatedDepartments };
       }, { 
