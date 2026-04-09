@@ -321,8 +321,9 @@ export default function Dashboard() {
 
         {displayMode === "card" && (
           <details
+            open
             className={`mb-4 rounded-xl shadow-md border overflow-hidden transition-colors ${
-              darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#014167]/20"
+              darkMode ? "bg-gray-800 border-gray-700" : "bg-white/90 border-[#014167]/20"
             }`}
           >
             <summary
@@ -386,38 +387,49 @@ export default function Dashboard() {
         {/* ------------------------------------------------------------------------ */}
 
         {displayMode === "table" ? (
-          <div className={`rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
-            {/* UX Improvement: เพิ่ม Visual Hint บอกว่าสามารถเลื่อนตารางแนวนอนได้บนมือถือ */}
-            <div className={`text-right text-[10px] px-3 py-1 font-medium md:hidden ${darkMode ? "text-gray-400 bg-gray-800/50" : "text-[#014167]/60 bg-[#C7CFDA]/20"}`}>
-               👉 เลื่อนซ้าย-ขวา เพื่อดูข้อมูลเพิ่มเติม
-            </div>
-            {/* UX Improvement: เพิ่ม inset shadow บางๆ ตอน scroll ขวา เพื่อเป็น Hint */}
-            <div className="overflow-x-auto relative w-full shadow-[inset_-10px_0_10px_-10px_rgba(0,0,0,0.1)]">
-              <table className="w-full text-left border-collapse min-w-[900px]">
-                <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
-                  <tr>
-                    <th className="p-3 w-[20%] font-bold">PATIENT</th>
-                    <th className="p-3 w-[10%] font-bold">ROOM</th>
-                    <th className="p-3 w-[40%] font-bold">DX</th>
-                    <th className="p-3 w-[30%] font-bold">MANAGEMENT</th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
-                  {visibleTableCases.length === 0 ? (
+          <>
+            {/* Desktop Table View */}
+            <div className={`hidden md:block rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
+              <div className="overflow-x-auto relative w-full">
+                <table className="w-full text-left border-collapse min-w-[900px]">
+                  <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
                     <tr>
-                      <td colSpan={4} className={`p-8 text-center font-bold ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
-                        ไม่มีเคสรอปรึกษา
-                      </td>
+                      <th className="p-3 w-[20%] font-bold">PATIENT</th>
+                      <th className="p-3 w-[10%] font-bold">ROOM</th>
+                      <th className="p-3 w-[40%] font-bold">DX</th>
+                      <th className="p-3 w-[30%] font-bold">MANAGEMENT</th>
                     </tr>
-                  ) : (
-                    visibleTableCases.map((caseData) => (
-                      <PatientTableRow key={caseData.id} caseData={caseData} darkMode={darkMode} />
-                    ))
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
+                    {visibleTableCases.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className={`p-8 text-center font-bold ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
+                          ไม่มีเคสรอปรึกษา
+                        </td>
+                      </tr>
+                    ) : (
+                      visibleTableCases.map((caseData) => (
+                        <PatientTableRow key={caseData.id} caseData={caseData} darkMode={darkMode} />
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+
+            {/* Mobile Stacked Card Layout */}
+            <div className="md:hidden flex flex-col gap-3 slide-in">
+              {visibleTableCases.length === 0 ? (
+                <div className={`text-center py-8 rounded-xl border font-bold ${darkMode ? "bg-gray-800 border-gray-700 text-gray-400" : "bg-white border-[#C7CFDA] text-[#014167]"}`}>
+                  ไม่มีเคสรอปรึกษา
+                </div>
+              ) : (
+                visibleTableCases.map((caseData) => (
+                  <MobilePatientCard key={caseData.id} caseData={caseData} darkMode={darkMode} />
+                ))
+              )}
+            </div>
+          </>
         ) : (
           /* ORIGINAL CARD VIEW */
           <div className="flex flex-col lg:flex-row gap-4">
@@ -469,24 +481,14 @@ export default function Dashboard() {
                         </div>
                         {cases.length === 0 ? (
                           <div
-                            className={`text-center py-4 px-3 rounded-lg border flex flex-col items-center justify-center ${
+                            className={`text-center py-1.5 px-3 rounded-md border ${
                               darkMode
-                                ? "bg-gray-800/80 border-gray-700 shadow-inner"
-                                : "bg-[#FDFCDF]/90 border-[#014167]/20 shadow-inner"
+                                ? "bg-gray-800/50 border-gray-700/50"
+                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
                             }`}
                           >
-                            <svg
-                              className={`w-10 h-10 mx-auto mb-2 opacity-80 ${
-                                darkMode ? "text-gray-400" : "text-[#014167]"
-                              }`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <p className={`font-medium text-xs ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                              ไม่มีเคสค้าง
+                            <p className={`font-medium text-xs ${darkMode ? "text-gray-500" : "text-[#699D5D]"}`}>
+                              ✓ ไม่มีเคสค้าง
                             </p>
                           </div>
                         ) : (
@@ -555,24 +557,14 @@ export default function Dashboard() {
                         </div>
                         {cases.length === 0 ? (
                           <div
-                            className={`text-center py-4 px-3 rounded-lg border flex flex-col items-center justify-center ${
+                            className={`text-center py-1.5 px-3 rounded-md border ${
                               darkMode
-                                ? "bg-gray-800/80 border-gray-700 shadow-inner"
-                                : "bg-[#FDFCDF]/90 border-[#014167]/20 shadow-inner"
+                                ? "bg-gray-800/50 border-gray-700/50"
+                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
                             }`}
                           >
-                            <svg
-                              className={`w-10 h-10 mx-auto mb-2 opacity-80 ${
-                                darkMode ? "text-gray-400" : "text-[#014167]"
-                              }`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <p className={`font-medium text-xs ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                              ไม่มีเคสค้าง
+                            <p className={`font-medium text-xs ${darkMode ? "text-gray-500" : "text-[#699D5D]"}`}>
+                              ✓ ไม่มีเคสค้าง
                             </p>
                           </div>
                         ) : (
@@ -611,6 +603,75 @@ export default function Dashboard() {
 // ===========================================================================
 // SUB-COMPONENTS FOR TABLE VIEW
 // ===========================================================================
+
+function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
+  const pendingDepts = Object.keys(caseData.departments).filter(
+    (d) => caseData.departments[d].status === "pending"
+  );
+  if (pendingDepts.length === 0) return null;
+
+  const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
+  const sentTimeFull = caseData.createdAt
+    ? new Date(caseData.createdAt).toLocaleString("th-TH")
+    : "";
+
+  return (
+    <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white border-[#C7CFDA] shadow-sm"} flex flex-col gap-3`}>
+      {/* Header: HN & Fast Track */}
+      <div className="flex justify-between items-start">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>{caseData.hn}</span>
+            {caseData.isUrgent && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
+            )}
+          </div>
+          {fullName && (
+            <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+              {fullName}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1 whitespace-nowrap">
+            <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
+              {caseData.room}
+            </span>
+            <RoomTransferButton 
+              consultId={caseData.id}
+              currentRoom={caseData.room}
+              darkMode={darkMode}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* DX Section */}
+      <div className={`text-sm p-3 rounded-md ${darkMode ? "bg-gray-900/50 text-gray-300" : "bg-gray-50 text-[#014167]"}`}>
+        <div className={`text-xs font-semibold mb-1 opacity-70`}>Dx / Problem</div>
+        <div className="whitespace-pre-wrap">{caseData.problem}</div>
+      </div>
+
+      {/* Time Info */}
+      <div className={`flex justify-between items-center text-[10px] font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+        <div className="flex items-center gap-1">
+           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+           </svg>
+           {sentTimeFull}
+        </div>
+        <PatientTableElapsedTime createdAt={caseData.createdAt || ""} darkMode={darkMode} />
+      </div>
+
+      {/* Management Actions */}
+      <div className="flex flex-col gap-2 mt-1">
+        {pendingDepts.map(dept => (
+          <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
   // กรองเฉพาะแผนกที่สถานะยังรออยู่ (pending) ของเคสนี้

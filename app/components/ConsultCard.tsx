@@ -24,6 +24,7 @@ interface ConsultCardProps {
 function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate, animationDelay = 0 }: ConsultCardProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [flashSuccess, setFlashSuccess] = useState(false);
 
   const hn = caseData.hn || "-";
   const firstName = caseData.firstName || "";
@@ -60,6 +61,8 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
   const handleAcceptCase = useCallback(async () => {
     await handleAccept();
+    setFlashSuccess(true);
+    setTimeout(() => setFlashSuccess(false), 700);
   }, [handleAccept]);
 
   const handleCancelConsult = useCallback(async () => {
@@ -77,13 +80,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     <>
       <div
         className={`card-shadow hover:card-shadow-hover transition-all duration-200 rounded-lg p-3 hover:-translate-y-1 animate-stagger-in relative ${
+          flashSuccess ? "animate-success-flash" : ""
+        } ${
           darkMode
             ? `bg-gray-800 ${
                 isUrgent
                   ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30"
                   : "border-l-4 border-gray-700"
               }`
-            : `bg-[#C7CFDA] ${
+            : `bg-white/95 ${
                 isUrgent
                   ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30"
                   : "border-l-4 border-[#699D5D]/50"
@@ -128,7 +133,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className={`text-base font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
+                <h3 className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
                   HN: {hn}
                 </h3>
                 {isUrgent && (
@@ -267,12 +272,13 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     disabled
                     className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs cursor-not-allowed flex items-center justify-center gap-1 ${
                       darkMode
-                        ? "bg-gray-800 border border-gray-700 text-gray-500"
-                        : "bg-gray-200 border border-gray-300 text-gray-400 shadow-inner"
+                        ? "bg-gray-800 border border-dashed border-gray-600 text-gray-500"
+                        : "bg-gray-100 border border-dashed border-gray-300 text-gray-400"
                     }`}
+                    title="กรุณารับเคสก่อน"
                   >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    <svg className="w-3 h-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                     <span>ปิดเคส</span>
                   </button>
@@ -316,11 +322,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   <button
                     onClick={() => setShowConfirm(true)}
                     disabled={isUpdating || !isStatusSelected}
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
+                    title={!isStatusSelected ? "กรุณาเลือกสถานะก่อนปิดเคส" : undefined}
+                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 tap-feedback ${
                       isUpdating || !isStatusSelected
                         ? darkMode
-                          ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
-                          : "bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300 shadow-inner"
+                          ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-dashed border-gray-600"
+                          : "bg-gray-100 text-gray-400 cursor-not-allowed border border-dashed border-gray-300"
                         : "bg-[#E55143] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5"
                     }`}
                   >

@@ -96,9 +96,6 @@ export default function BottomNav() {
                 d="M12 4v16m8-8H4"
               />
             </svg>
-            {pathname !== "/submit" && (
-              <div className="absolute -top-1 -right-1 w-2 h-2 bg-[#E55143] rounded-full animate-pulse"></div>
-            )}
           </div>
           <span
             className={`text-xs font-bold transition-transform ${

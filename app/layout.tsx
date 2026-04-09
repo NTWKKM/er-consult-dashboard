@@ -1,9 +1,22 @@
 import type { Metadata } from "next";
+import { Inter, Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { ToastProvider } from "./contexts/ToastContext";
 import Navbar from "./components/Navbar";
 import BottomNav from "./components/BottomNav";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const notoSansThai = Noto_Sans_Thai({
+  subsets: ["thai"],
+  variable: "--font-thai",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "ER Consult MNRH",
@@ -16,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" suppressHydrationWarning>
+    <html lang="th" suppressHydrationWarning className={`${inter.variable} ${notoSansThai.variable}`}>
       <body className="font-sans bg-[#014167] dark:bg-gray-900 min-h-screen transition-colors duration-300">
         <SettingsProvider>
           <ToastProvider>

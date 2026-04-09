@@ -183,36 +183,13 @@ export default function SubmitPage() {
         }`}
     >
       <div className="relative max-w-4xl w-full">
-        <div
-          className={`p-2.5 rounded-xl shadow-md mb-3 z-10 relative border transition-colors ${darkMode
-              ? "bg-gray-700 text-gray-100 border-gray-600"
-              : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
-            }`}
-        >
-          <div className="flex items-center justify-center gap-2">
-            <div
-              className={`w-8 h-8 backdrop-blur-sm rounded-lg flex items-center justify-center ${darkMode ? "bg-gray-600" : "bg-[#014167]/20"
-                }`}
-            >
-              <svg
-                className={`w-4 h-4 ${darkMode ? "text-gray-200" : "text-[#014167]"}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-lg font-bold drop-shadow-sm">ส่งเคสปรึกษา</h1>
-              <p className={`text-xs font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>ER MNRH</p>
-            </div>
+        <div className="flex items-center gap-2 mb-3 px-2">
+          <div className={`w-6 h-6 rounded-md flex items-center justify-center ${darkMode ? "bg-gray-700 text-gray-300" : "bg-[#014167]/10 text-[#014167]"}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </div>
+          <h1 className={`text-base font-bold ${darkMode ? "text-gray-200" : "text-white"}`}>ส่งเคสปรึกษาแบบฟอร์ม</h1>
         </div>
 
         <div

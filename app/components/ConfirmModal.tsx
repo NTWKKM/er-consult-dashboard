@@ -24,11 +24,12 @@ export default function ConfirmModal({
   onCancel,
 }: ConfirmModalProps) {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (isOpen) {
-      // Focus the cancel button by default (safer UX)
-      setTimeout(() => confirmRef.current?.focus(), 100);
+      // Focus the cancel button by default (safer UX for destructive actions)
+      setTimeout(() => cancelRef.current?.focus(), 100);
     }
   }, [isOpen]);
 
@@ -94,6 +95,7 @@ export default function ConfirmModal({
         </div>
         <div className="flex gap-3 justify-end mt-6">
           <button
+            ref={cancelRef}
             onClick={onCancel}
             className="px-4 py-2 rounded-xl font-semibold text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
           >

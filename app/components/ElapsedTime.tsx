@@ -8,11 +8,23 @@ interface ElapsedTimeProps {
 }
 
 /**
+ * Returns the CSS class for elapsed time color escalation.
+ * < 90 min = green (safe), 90-150 min = yellow (warning), > 150 min = red (danger/critical)
+ */
+function getElapsedClass(totalMinutes: number): string {
+  if (totalMinutes < 90) return "elapsed-safe";
+  if (totalMinutes <= 150) return "elapsed-warning";
+  return totalMinutes > 240 ? "elapsed-critical" : "elapsed-danger";
+}
+
+/**
  * Component to display the elapsed time since a consult was created.
  * Updates every minute and uses Thai locale for time units.
+ * Color escalates based on wait duration for urgency awareness.
  */
 export const ElapsedTime = React.memo(function ElapsedTime({ createdAt, darkMode }: ElapsedTimeProps) {
   const [elapsed, setElapsed] = useState("");
+  const [totalMins, setTotalMins] = useState(0);
 
   useEffect(() => {
     const update = () => {
@@ -21,6 +33,7 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt, darkMode
       const hrs = Math.floor(mins / 60);
       const remainMins = mins % 60;
 
+      setTotalMins(mins);
       if (hrs > 0) {
         setElapsed(`${hrs} ชม. ${remainMins} นาที`);
       } else {
@@ -33,11 +46,11 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt, darkMode
     return () => clearInterval(interval);
   }, [createdAt]);
 
+  const escalationClass = getElapsedClass(totalMins);
+
   return (
     <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold elapsed-tick ${
-        darkMode ? "bg-amber-500/20 text-amber-400" : "bg-amber-500/15 text-amber-700"
-      }`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold tracking-tight ${escalationClass}`}
     >
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
