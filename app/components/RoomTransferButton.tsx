@@ -72,6 +72,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, focusedIndex, sortedRooms]);
 
   useEffect(() => {

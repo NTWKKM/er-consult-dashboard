@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { useConsultActions } from "../hooks/useConsultActions";
 import { Consult } from "@/lib/db";
 import { POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
@@ -24,7 +24,6 @@ interface ConsultCardProps {
 function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate, animationDelay = 0 }: ConsultCardProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const { addToast } = useToast();
 
   const hn = caseData.hn || "-";
   const firstName = caseData.firstName || "";

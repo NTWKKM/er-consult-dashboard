@@ -418,7 +418,7 @@ export async function transferConsultRoom(
     const result = await updateConsult(id, (current) => {
         if (current.room === newRoom) return null;
 
-        const payload: Record<string, any> = {
+        const payload: Record<string, unknown> = {
             room: newRoom
         };
         

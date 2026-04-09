@@ -7,13 +7,12 @@ import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
 import ConfirmModal from "@/app/components/ConfirmModal";
 import { RoomTransferButton } from "@/app/components/RoomTransferButton";
-import { subscribeToConsultsByStatus, Consult, ConsultDepartment } from "@/lib/db";
+import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
 import { getMilestones, formatTime } from "@/lib/utils";
 import { ElapsedTime as PatientTableElapsedTime } from "@/app/components/ElapsedTime";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
-import { useToast } from "./contexts/ToastContext";
 import { buildDepartmentCasesMap, type RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
 
 
