@@ -27,8 +27,10 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: Elapse
 
   useEffect(() => {
     const update = () => {
-      const diff = Date.now() - new Date(createdAt).getTime();
-      const mins = Math.floor(diff / 60000);
+      const createdMs = new Date(createdAt).getTime();
+      const mins = Number.isFinite(createdMs)
+        ? Math.max(0, Math.floor((Date.now() - createdMs) / 60000))
+        : 0;
       const hrs = Math.floor(mins / 60);
       const remainMins = mins % 60;
 

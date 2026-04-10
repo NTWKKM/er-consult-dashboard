@@ -489,13 +489,13 @@ export default function Dashboard() {
                         </div>
                         {cases.length === 0 ? (
                           <div
-                            className={`text-center py-1.5 px-3 rounded-md border ${
+                            className={`text-center py-2 px-3 rounded-lg border ${
                               darkMode
-                                ? "bg-gray-800/50 border-gray-700/50"
-                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
+                                ? "bg-emerald-500/10 border-emerald-500/20"
+                                : "bg-[#699D5D]/10 border-[#699D5D]/30"
                             }`}
                           >
-                            <p className={`font-medium text-xs ${darkMode ? "text-gray-500" : "text-[#699D5D]"}`}>
+                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400" : "text-[#4d7845]"}`}>
                               ✓ ไม่มีเคสค้าง
                             </p>
                           </div>
@@ -565,13 +565,13 @@ export default function Dashboard() {
                         </div>
                         {cases.length === 0 ? (
                           <div
-                            className={`text-center py-1.5 px-3 rounded-md border ${
+                            className={`text-center py-2 px-3 rounded-lg border ${
                               darkMode
-                                ? "bg-gray-800/50 border-gray-700/50"
-                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
+                                ? "bg-emerald-500/10 border-emerald-500/20"
+                                : "bg-[#699D5D]/10 border-[#699D5D]/30"
                             }`}
                           >
-                            <p className={`font-medium text-xs ${darkMode ? "text-gray-500" : "text-[#699D5D]"}`}>
+                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400" : "text-[#4d7845]"}`}>
                               ✓ ไม่มีเคสค้าง
                             </p>
                           </div>

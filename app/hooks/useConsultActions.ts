@@ -73,9 +73,10 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       setIsUpdating(false);
 
       if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
+          void result.backgroundPromise.then(
+              () => endSync(),
+              () => endSync()
+          );
       } else {
           endSync();
       }
@@ -145,9 +146,10 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       setIsUpdating(false);
 
       if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
+          void result.backgroundPromise.then(
+              () => endSync(),
+              () => endSync()
+          );
       } else {
           endSync();
       }
@@ -205,9 +207,10 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       setIsUpdating(false);
 
       if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
+          void result.backgroundPromise.then(
+              () => endSync(),
+              () => endSync()
+          );
       } else {
           endSync();
       }
@@ -266,9 +269,10 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       setIsUpdating(false);
 
       if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
+          void result.backgroundPromise.then(
+              () => endSync(),
+              () => endSync()
+          );
       } else {
           endSync();
       }

@@ -359,9 +359,10 @@ describe("RoomTransferButton", () => {
         fireEvent.keyDown(document, { key: "Enter" });
       });
 
-      // Give any potential async handlers time to settle
-      await waitFor(() => {});
-      expect(mockTransferConsultRoom).not.toHaveBeenCalled();
+      // Assert no transfer was triggered after handlers settle
+      await waitFor(() => {
+        expect(mockTransferConsultRoom).not.toHaveBeenCalled();
+      });
     });
 
     it("Keyboard events are not active when dropdown is closed", () => {
