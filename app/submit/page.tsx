@@ -365,7 +365,7 @@ export default function SubmitPage() {
                 {selectedDepts.length > 0 && (
                   <div
                     className={`mt-2 p-2 rounded-lg border ${darkMode
-                        ? "bg-[#699D5D]/10 border-[#699D5D]/30"
+                        ? "bg-emerald-500/10 border-emerald-500/30"
                         : "bg-[#699D5D]/10 border-[#699D5D]/30"
                       }`}
                   >

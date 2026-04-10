@@ -2,8 +2,10 @@
 
 import { useState, useCallback, useRef } from "react";
 import { updateConsult, ConsultDepartment } from "@/lib/db";
-import { SURGERY_DEPTS, ORTHO_DEPTS, ACCEPT_STATUS } from "@/lib/constants";
+import { SURGERY_DEPTS, ORTHO_DEPTS, ACCEPT_STATUS, POST_ACCEPT_STATUSES } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
+
+type PostAcceptStatus = (typeof POST_ACCEPT_STATUSES)[number];
 
 /**
  * Custom hook to manage consult actions (accept, status change, complete, cancel).
@@ -93,7 +95,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     }
   }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync, isUpdating]);
 
-  const handleStatusChange = useCallback(async (newStatus: string) => {
+  const handleStatusChange = useCallback(async (newStatus: PostAcceptStatus) => {
     if (isUpdating) return;
     setIsUpdating(true);
     beginSync();

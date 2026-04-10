@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 
@@ -429,8 +429,7 @@ export async function transferConsultRoom(
         Object.keys(current.departments).forEach(deptKey => {
             const dept = current.departments[deptKey];
             if (dept.status === "pending") {
-                const transfers = dept.transfers || [];
-                payload[`departments.${deptKey}.transfers`] = [...transfers, { to: newRoom, at: now }];
+                payload[`departments.${deptKey}.transfers`] = arrayUnion({ to: newRoom, at: now });
             }
         });
 

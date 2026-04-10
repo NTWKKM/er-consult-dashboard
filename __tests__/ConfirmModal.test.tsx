@@ -170,24 +170,23 @@ describe("ConfirmModal", () => {
   // -------------------------------------------------------------------------
   describe("variant prop", () => {
     it("renders danger variant by default", () => {
-      const { container } = render(<ConfirmModal {...defaultProps()} />);
-      // The danger confirm button should have the red background class
-      const confirmBtn = screen.getByText("ยืนยัน");
-      expect(confirmBtn.className).toContain("bg-[#E55143]");
+      render(<ConfirmModal {...defaultProps()} />);
+      const confirmBtn = screen.getByRole("button", { name: /ยืนยัน/ });
+      expect(confirmBtn).toHaveAttribute("data-variant", "danger");
     });
 
     it("renders warning variant", () => {
-      const { container } = render(
+      render(
         <ConfirmModal {...defaultProps({ variant: "warning" })} />
       );
-      const confirmBtn = screen.getByText("ยืนยัน");
-      expect(confirmBtn.className).toContain("bg-amber-500");
+      const confirmBtn = screen.getByRole("button", { name: /ยืนยัน/ });
+      expect(confirmBtn).toHaveAttribute("data-variant", "warning");
     });
 
     it("renders info variant", () => {
       render(<ConfirmModal {...defaultProps({ variant: "info" })} />);
-      const confirmBtn = screen.getByText("ยืนยัน");
-      expect(confirmBtn.className).toContain("bg-[#014167]");
+      const confirmBtn = screen.getByRole("button", { name: /ยืนยัน/ });
+      expect(confirmBtn).toHaveAttribute("data-variant", "info");
     });
   });
 

@@ -193,9 +193,9 @@ describe("ElapsedTime", () => {
   });
 
   // -------------------------------------------------------------------------
-  // darkMode prop (structural check only — CSS loaded separately)
+  // basic render (structural check only — CSS loaded separately)
   // -------------------------------------------------------------------------
-  describe("darkMode prop", () => {
+  describe("basic render", () => {
     it("renders without error in dark mode", () => {
       expect(() =>
         render(<ElapsedTime createdAt={createdAt(30)} />)

@@ -96,6 +96,7 @@ export default function ConfirmModal({
         </div>
         <div className="flex gap-3 justify-end mt-6">
           <button
+            type="button"
             ref={cancelRef}
             onClick={onCancel}
             className="px-4 py-2 rounded-xl font-semibold text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
@@ -103,6 +104,8 @@ export default function ConfirmModal({
             {cancelText}
           </button>
           <button
+            type="button"
+            data-variant={variant}
             onClick={onConfirm}
             className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-md hover:shadow-lg ${style.confirmBtn}`}
           >

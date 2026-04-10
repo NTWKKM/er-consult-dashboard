@@ -382,7 +382,7 @@ describe("RoomTransferButton", () => {
   describe("transferring state", () => {
     it("shows spinner while transfer is in progress", async () => {
       // Make the transfer hang
-      let resolveTransfer: (value: { transferred: boolean; backgroundPromise: null }) => void;
+      let resolveTransfer!: (value: { transferred: boolean; backgroundPromise: null }) => void;
       mockTransferConsultRoom.mockReturnValueOnce(
         new Promise((resolve) => {
           resolveTransfer = resolve;
@@ -405,7 +405,7 @@ describe("RoomTransferButton", () => {
     });
 
     it("disables the button while transferring", async () => {
-      let resolveTransfer: (value: { transferred: boolean; backgroundPromise: null }) => void;
+      let resolveTransfer!: (value: { transferred: boolean; backgroundPromise: null }) => void;
       mockTransferConsultRoom.mockReturnValueOnce(
         new Promise((resolve) => {
           resolveTransfer = resolve;
