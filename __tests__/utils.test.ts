@@ -13,8 +13,15 @@ function makeIdentityFormatter(iso: string): string {
 function makeDept(overrides: Partial<ConsultDepartment> = {}): ConsultDepartment {
   return {
     status: "pending",
+    completedAt: null,
+    acceptedAt: null,
+    actionStatus: "",
+    admittedAt: null,
+    returnedAt: null,
+    dischargedAt: null,
+    transfers: [],
     ...overrides,
-  } as ConsultDepartment;
+  };
 }
 
 // ---------------------------------------------------------------------------

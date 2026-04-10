@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 
@@ -286,7 +286,8 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
     return newConsult;
 }
 
-export type ConsultUpdater = (current: Consult) => Partial<Omit<Consult, "id">> | null;
+type ConsultUpdate = UpdateData<Omit<Consult, "id">>;
+export type ConsultUpdater = (current: Consult) => ConsultUpdate | null;
 
 export interface UpdateConsultOptions {
     awaitRemote?: boolean;
@@ -302,7 +303,7 @@ export interface UpdateResults {
 
 export async function updateConsult(
     id: string,
-    updater: ConsultUpdater | Partial<Omit<Consult, "id">>,
+    updater: ConsultUpdater | ConsultUpdate,
     options: UpdateConsultOptions = {}
 ): Promise<UpdateResults> {
     const docRef = doc(db, COLLECTION_NAME, id);
@@ -440,7 +441,7 @@ export async function transferConsultRoom(
             }
         });
 
-        return payload as Partial<Omit<Consult, "id">>;
+        return payload;
     }, {
         awaitRemote: false,
         onBackgroundError,

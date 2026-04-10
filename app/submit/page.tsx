@@ -321,13 +321,21 @@ export default function SubmitPage() {
 
               {/* Departments */}
               <div>
-                <label className={labelClasses}>
+                <label id="departments-label" className={labelClasses}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                   </svg>
                   แผนกที่ปรึกษา <span className="text-[#E55143]">*</span>
                 </label>
-                <div id="departments" tabIndex={-1} className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div
+                  id="departments"
+                  tabIndex={-1}
+                  role="group"
+                  aria-labelledby="departments-label"
+                  aria-invalid={Boolean(errors.departments)}
+                  aria-describedby={errors.departments ? "departments-error" : undefined}
+                  className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+                >
                   {ALL_DEPARTMENTS.map((dept) => (
                     <div
                       key={dept}
@@ -361,7 +369,11 @@ export default function SubmitPage() {
                     </div>
                   ))}
                 </div>
-                {errors.departments && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.departments}</p>}
+                {errors.departments && (
+                  <p id="departments-error" className="text-[#E55143] text-xs mt-1 font-medium">
+                    {errors.departments}
+                  </p>
+                )}
                 {selectedDepts.length > 0 && (
                   <div
                     className={`mt-2 p-2 rounded-lg border ${darkMode

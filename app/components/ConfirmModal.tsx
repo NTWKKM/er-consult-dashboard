@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useId } from "react";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -24,6 +24,8 @@ export default function ConfirmModal({
   onCancel,
 }: ConfirmModalProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
 
   useEffect(() => {
     if (isOpen) {
@@ -86,16 +88,16 @@ export default function ConfirmModal({
         data-testid="modal-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="confirm-modal-title"
-        aria-describedby="confirm-modal-message"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-4 mb-4">
           <div className={`p-2 rounded-xl ${style.iconBg} shrink-0`}>{style.icon}</div>
           <div>
-            <h3 id="confirm-modal-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h3>
-            <p id="confirm-modal-message" className="text-sm text-gray-600 dark:text-gray-400 mt-1">{message}</p>
+            <h3 id={titleId} className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h3>
+            <p id={descriptionId} className="text-sm text-gray-600 dark:text-gray-400 mt-1">{message}</p>
           </div>
         </div>
         <div className="flex gap-3 justify-end mt-6">

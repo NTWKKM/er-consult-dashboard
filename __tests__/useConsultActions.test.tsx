@@ -154,7 +154,7 @@ describe("useConsultActions", () => {
     });
 
     it("sets isUpdating=true while updating, then false after", async () => {
-      let resolveUpdate: (v: ReturnType<typeof makeSuccessResult>) => void;
+      let resolveUpdate!: (v: ReturnType<typeof makeSuccessResult>) => void;
       mockUpdateConsult.mockReturnValueOnce(
         new Promise((resolve) => {
           resolveUpdate = resolve;
@@ -166,7 +166,7 @@ describe("useConsultActions", () => {
         { wrapper }
       );
 
-      let promise: Promise<boolean>;
+      let promise!: Promise<boolean>;
       act(() => {
         promise = result.current.handleAccept();
       });
@@ -275,7 +275,7 @@ describe("useConsultActions", () => {
     });
 
     it("returns early and does not call updateConsult when already updating", async () => {
-      let resolveFirst: (v: ReturnType<typeof makeSuccessResult>) => void;
+      let resolveFirst!: (v: ReturnType<typeof makeSuccessResult>) => void;
       mockUpdateConsult.mockReturnValueOnce(
         new Promise((resolve) => {
           resolveFirst = resolve;
@@ -744,7 +744,7 @@ describe("useConsultActions", () => {
   // -------------------------------------------------------------------------
   describe("background promise handling", () => {
     it("resolves isSyncing=false after backgroundPromise resolves", async () => {
-      let resolveBackground: () => void;
+      let resolveBackground!: () => void;
       const backgroundPromise = new Promise<void>((resolve) => {
         resolveBackground = resolve;
       });

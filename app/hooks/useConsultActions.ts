@@ -14,6 +14,7 @@ export type PostAcceptStatus = (typeof POST_ACCEPT_STATUSES)[number];
 export function useConsultActions(caseId: string, departmentName: string, hn: string, onUpdate?: () => void) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const inFlightRef = useRef(false);
   const { addToast } = useToast();
 
   const pendingSyncCountRef = useRef(0);
@@ -29,7 +30,8 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
   }, []);
 
   const handleAccept = useCallback(async (): Promise<boolean> => {
-    if (isUpdating) return false;
+    if (inFlightRef.current) return false;
+    inFlightRef.current = true;
     setIsUpdating(true);
     beginSync();
     try {
@@ -74,6 +76,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       if (!result.applied) {
            endSync();
            setIsUpdating(false);
+           inFlightRef.current = false;
            return false;
       }
 
@@ -90,18 +93,21 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
 
       addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
       onUpdate?.();
+      inFlightRef.current = false;
       return true;
     } catch (error) {
       console.error("Error accepting case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
       setIsUpdating(false);
       endSync();
+      inFlightRef.current = false;
       return false;
     }
-  }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync, isUpdating]);
+  }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
 
   const handleStatusChange = useCallback(async (newStatus: PostAcceptStatus) => {
-    if (isUpdating) return;
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setIsUpdating(true);
     beginSync();
     try {
@@ -147,6 +153,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       if (!result.applied) {
            endSync();
            setIsUpdating(false);
+           inFlightRef.current = false;
            return;
       }
 
@@ -163,16 +170,19 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       
       addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
       onUpdate?.();
+      inFlightRef.current = false;
     } catch (error) {
       console.error("Error updating status:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
       setIsUpdating(false);
       endSync();
+      inFlightRef.current = false;
     }
-  }, [caseId, departmentName, addToast, onUpdate, beginSync, endSync, isUpdating]);
+  }, [caseId, departmentName, addToast, onUpdate, beginSync, endSync]);
 
   const handleComplete = useCallback(async () => {
-    if (isUpdating) return;
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setIsUpdating(true);
     beginSync();
     try {
@@ -208,6 +218,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       if (!result.applied) {
            endSync();
            setIsUpdating(false);
+           inFlightRef.current = false;
            return;
       }
 
@@ -224,16 +235,19 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
 
       addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
       onUpdate?.();
+      inFlightRef.current = false;
     } catch (error) {
       console.error("Error updating case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
       setIsUpdating(false);
       endSync();
+      inFlightRef.current = false;
     }
-  }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync, isUpdating]);
+  }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
 
   const handleCancel = useCallback(async () => {
-    if (isUpdating) return;
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setIsUpdating(true);
     beginSync();
     try {
@@ -270,6 +284,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       if (!result.applied) {
            endSync();
            setIsUpdating(false);
+           inFlightRef.current = false;
            return;
       }
 
@@ -286,13 +301,15 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
 
       addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
       onUpdate?.();
+      inFlightRef.current = false;
     } catch (error) {
       console.error("Error cancelling consult:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
       setIsUpdating(false);
       endSync();
+      inFlightRef.current = false;
     }
-  }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync, isUpdating]);
+  }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
 
   return { isUpdating, isSyncing, handleAccept, handleStatusChange, handleComplete, handleCancel };
 }

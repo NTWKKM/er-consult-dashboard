@@ -16,36 +16,39 @@ function getElapsedClass(totalMinutes: number): string {
   return totalMinutes > 240 ? "elapsed-critical" : "elapsed-danger";
 }
 
+function getElapsedState(createdAt: string) {
+  const createdMs = new Date(createdAt).getTime();
+  const mins = Number.isFinite(createdMs)
+    ? Math.max(0, Math.floor((Date.now() - createdMs) / 60000))
+    : 0;
+  const hrs = Math.floor(mins / 60);
+  const remainMins = mins % 60;
+
+  return {
+    mins,
+    text: hrs > 0 ? `${hrs} ชม. ${remainMins} นาที` : `${remainMins} นาที`,
+  };
+}
+
 /**
  * Component to display the elapsed time since a consult was created.
  * Updates every minute and uses Thai locale for time units.
  * Color escalates based on wait duration for urgency awareness.
  */
 export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: ElapsedTimeProps) {
-  const [elapsed, setElapsed] = useState("");
-  const [totalMins, setTotalMins] = useState(0);
+  const initial = getElapsedState(createdAt);
+  const [elapsed, setElapsed] = useState(initial.text);
+  const [totalMins, setTotalMins] = useState(initial.mins);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
     const update = () => {
-      const createdMs = new Date(createdAt).getTime();
-      const mins = Number.isFinite(createdMs)
-        ? Math.max(0, Math.floor((Date.now() - createdMs) / 60000))
-        : 0;
-      const hrs = Math.floor(mins / 60);
-      const remainMins = mins % 60;
-
-      setTotalMins(mins);
-      if (hrs > 0) {
-        setElapsed(`${hrs} ชม. ${remainMins} นาที`);
-      } else {
-        setElapsed(`${remainMins} นาที`);
-      }
+      const next = getElapsedState(createdAt);
+      setTotalMins(next.mins);
+      setElapsed(next.text);
     };
 
-    update();
-    
     // Calculate ms until the next minute boundary
     const createdMs = new Date(createdAt).getTime();
     const elapsedMs = Number.isFinite(createdMs) ? Math.max(0, Date.now() - createdMs) : 0;

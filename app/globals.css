@@ -36,9 +36,12 @@ body {
 }
 
 /* Task 13: Active tap feedback for touch devices */
+.tap-feedback {
+  transition: transform 0.1s ease;
+}
+
 .tap-feedback:active {
   transform: scale(0.95);
-  transition: transform 0.1s ease;
 }
 
 .dark body {
@@ -221,4 +224,14 @@ body {
 }
 .animate-slide-out {
   animation: slide-out-right 0.4s ease-in forwards;
+}
+
+/* Accessibility: Honor prefers-reduced-motion for status animations */
+@media (prefers-reduced-motion: reduce) {
+  .elapsed-critical,
+  .animate-success-flash,
+  .animate-slide-out {
+    animation: none !important;
+    transition: none !important;
+  }
 }

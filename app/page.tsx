@@ -27,6 +27,8 @@ export default function Dashboard() {
   const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
   const [displayMode, setDisplayMode] = useState<"card" | "table">("card");
 
+  const settingsLoadedRef = useRef(false);
+
   // Load from localStorage on mount
   useEffect(() => {
     try {
@@ -34,25 +36,25 @@ export default function Dashboard() {
       const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
       const savedDisplayMode = localStorage.getItem("dashboard_displayMode");
       
-      // Use setTimeout to avoid synchronous setState in effect warning during hydration
-      setTimeout(() => {
-        if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
-          setView(savedView);
-        }
-        if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
-          setRoomFilter(savedRoomFilter as RoomFilter);
-        }
-        if (savedDisplayMode === "card" || savedDisplayMode === "table") {
-          setDisplayMode(savedDisplayMode);
-        }
-      }, 0);
+      if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
+        setView(savedView);
+      }
+      if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
+        setRoomFilter(savedRoomFilter as RoomFilter);
+      }
+      if (savedDisplayMode === "card" || savedDisplayMode === "table") {
+        setDisplayMode(savedDisplayMode);
+      }
     } catch (e) {
       console.warn("Failed to load settings from localStorage:", e);
+    } finally {
+      settingsLoadedRef.current = true;
     }
   }, []);
 
   // Save to localStorage when changed
   useEffect(() => {
+    if (!settingsLoadedRef.current) return;
     try {
       localStorage.setItem("dashboard_view", view);
       localStorage.setItem("dashboard_roomFilter", roomFilter);
