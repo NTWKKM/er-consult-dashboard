@@ -1,0 +1,656 @@
+
+> er-consult-dashboard@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.2 /Users/ntwkkm/er-consult-dashboard-1
+
+stderr | __tests__/db.test.ts > updateConsult > with function updater (awaitRemote: false — optimistic path) > calls onBackgroundError when background updateDoc rejects
+Background sync failed for updateConsult: Error: network failure
+    at /Users/ntwkkm/er-consult-dashboard-1/__tests__/db.test.ts:328:23
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:1893:26
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2316:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2313:10)
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2295:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2262:10)
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2945:64
+
+stderr | __tests__/db.test.ts > updateConsult > with plain object updates (awaitRemote: false) > calls onBackgroundError when fire-and-forget updateDoc rejects
+Delayed updateDoc error: Error: offline
+    at /Users/ntwkkm/er-consult-dashboard-1/__tests__/db.test.ts:411:23
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:1893:26
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2316:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2313:10)
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2295:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2262:10)
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2945:64
+
+ ✓ __tests__/utils.test.ts (21 tests) 140ms
+stderr | __tests__/db.test.ts > fetchAllCompletedConsultsForExport > truncates results at MAX_RESULTS (50000)
+Export truncated at 50000 results
+
+ ✓ __tests__/db.test.ts (42 tests) 79ms
+stderr | __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > sets isUpdating=true while updating, then false after
+You called act(async () => ...) without await. This could lead to unexpected testing behaviour, interleaving multiple act calls and mixing their scopes. You should - await act(async () => ...);
+
+ ❯ __tests__/useConsultActions.test.tsx (33 tests | 29 failed) 109ms
+       ✓ returns isUpdating=false initially 21ms
+       ✓ returns isSyncing=false initially 3ms
+       ✓ exposes handleAccept, handleStatusChange, handleComplete, handleCancel 2ms
+       ✓ calls updateConsult with the correct caseId 15ms
+       × sets isUpdating=true while updating, then false after 10ms
+       × updater returns null when dept status is not pending 2ms
+       × updater sets ACCEPT_STATUS on the surgery department 1ms
+       × preserves existing acceptedAt if already set 4ms
+       × returns early and does not call updateConsult when already updating 7ms
+       × calls onUpdate callback after successful accept 12ms
+       × handles error gracefully and resets isUpdating 2ms
+       × returns early without calling onUpdate when updater returns null and not queued 1ms
+       × calls updateConsult with the correct caseId 2ms
+       × updater sets admittedAt when status is Admit 2ms
+       × updater sets returnedAt when status is คืน ER 1ms
+       × updater sets dischargedAt when status is D/C 1ms
+       × clears previous action timestamps when changing status 1ms
+       × updater returns null when dept is not pending 1ms
+       × calls onUpdate after successful status change 1ms
+       × calls updateConsult 1ms
+       × updater sets department status to completed 1ms
+       × updater promotes overall consult status when all depts are done 1ms
+       × updater does NOT set overall status when some depts are still pending 1ms
+       × updater returns null when dept is not pending 1ms
+       × handles error and resets isUpdating 1ms
+       × calls updateConsult 2ms
+       × updater sets department status to cancelled 2ms
+       × updater promotes overall status to completed when all depts are finished (completed or cancelled) 1ms
+       × updater does NOT set overall status when some depts are still pending 1ms
+       × updater returns null when dept is not pending 1ms
+       × calls onUpdate after successful cancel 2ms
+       × handles error and resets isUpdating 1ms
+       × resolves isSyncing=false after backgroundPromise resolves 1ms
+ ❯ __tests__/ElapsedTime.test.tsx (20 tests | 1 failed) 135ms
+       ✓ shows elapsed minutes when under an hour 39ms
+       ✓ shows 0 นาที for a brand-new consult 6ms
+       ✓ shows hours and minutes when over an hour 2ms
+       ✓ shows hours and zero remaining minutes 4ms
+       ✓ shows multiple hours correctly 16ms
+       ✓ applies elapsed-safe class for < 90 minutes 10ms
+       ✓ applies elapsed-safe class at exactly 0 minutes 2ms
+       ✓ applies elapsed-safe class at 89 minutes 3ms
+       ✓ applies elapsed-warning class at exactly 90 minutes 2ms
+       ✓ applies elapsed-warning class at 120 minutes 5ms
+       ✓ applies elapsed-warning class at exactly 150 minutes 3ms
+       ✓ applies elapsed-danger class at 151 minutes 2ms
+       ✓ applies elapsed-danger class at 240 minutes 4ms
+       ✓ applies elapsed-critical class at 241 minutes 2ms
+       ✓ applies elapsed-critical class for very long waits (300 minutes) 3ms
+       × updates elapsed time after one minute interval 14ms
+       ✓ clears the interval on unmount (no errors after unmount) 2ms
+       ✓ escalation class updates after time advances past 90 minutes 4ms
+       ✓ renders an SVG icon 3ms
+       ✓ renders without error in dark mode 1ms
+ ✓ __tests__/ConfirmModal.test.tsx (21 tests) 157ms
+ ✓ __tests__/SettingsContext.test.tsx (14 tests) 125ms
+stderr | __tests__/RoomTransferButton.test.tsx > RoomTransferButton > transfer logic > shows error toast when transfer throws
+Transfer error: Error: Network error
+    at /Users/ntwkkm/er-consult-dashboard-1/__tests__/RoomTransferButton.test.tsx:238:53
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:1893:26
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2316:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2313:10)
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2295:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2262:10)
+    at file:///Users/ntwkkm/er-consult-dashboard-1/node_modules/@vitest/runner/dist/chunk-artifact.js:2945:64
+
+stderr | __tests__/RoomTransferButton.test.tsx > RoomTransferButton > transferring state > shows spinner while transfer is in progress
+An update to RoomTransferButton inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | __tests__/RoomTransferButton.test.tsx > RoomTransferButton > transferring state > disables the button while transferring
+An update to RoomTransferButton inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ __tests__/RoomTransferButton.test.tsx (31 tests) 651ms
+ ✓ __tests__/departmentCasesMap.test.ts (17 tests) 5ms
+ ✓ __tests__/constants.test.ts (18 tests) 4ms
+ ✓ __tests__/ConnectionStatus.test.tsx (15 tests) 33ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 30 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  __tests__/ElapsedTime.test.tsx > ElapsedTime > interval-based updates > updates elapsed time after one minute interval
+TestingLibraryElementError: Unable to find an element with the text: /60 นาที/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<span[39m
+      [33mclass[39m=[32m"inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold tracking-tight elapsed-safe"[39m
+    [36m>[39m
+      [36m<svg[39m
+        [33mclass[39m=[32m"w-3 h-3"[39m
+        [33mfill[39m=[32m"none"[39m
+        [33mstroke[39m=[32m"currentColor"[39m
+        [33mviewBox[39m=[32m"0 0 24 24"[39m
+      [36m>[39m
+        [36m<path[39m
+          [33md[39m=[32m"M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"[39m
+          [33mstroke-linecap[39m=[32m"round"[39m
+          [33mstroke-linejoin[39m=[32m"round"[39m
+          [33mstroke-width[39m=[32m"2"[39m
+        [36m/>[39m
+      [36m</svg>[39m
+      [0mรอ [0m
+      [0m1 ชม. 0 นาที[0m
+    [36m</span>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ __tests__/ElapsedTime.test.tsx:156:21
+    154|       });
+    155|
+    156|       expect(screen.getByText(/60 นาที/)).toBeInTheDocument();
+       |                     ^
+    157|     });
+    158|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > sets isUpdating=true while updating, then false after
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ __tests__/useConsultActions.test.tsx:173:41
+    171|
+    172|       // isUpdating should be true while the promise is pending
+    173|       expect(result.current.isUpdating).toBe(true);
+       |                                         ^
+    174|
+    175|       await act(async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > updater returns null when dept status is not pending
+TypeError: Cannot read properties of null (reading 'handleAccept')
+ ❯ __tests__/useConsultActions.test.tsx:191:30
+    189|
+    190|       await act(async () => {
+    191|         await result.current.handleAccept();
+       |                              ^
+    192|       });
+    193|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:190:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > updater sets ACCEPT_STATUS on the surgery department
+TypeError: Cannot read properties of null (reading 'handleAccept')
+ ❯ __tests__/useConsultActions.test.tsx:213:30
+    211|
+    212|       await act(async () => {
+    213|         await result.current.handleAccept();
+       |                              ^
+    214|       });
+    215|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:212:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > preserves existing acceptedAt if already set
+TypeError: Cannot read properties of null (reading 'handleAccept')
+ ❯ __tests__/useConsultActions.test.tsx:235:30
+    233|
+    234|       await act(async () => {
+    235|         await result.current.handleAccept();
+       |                              ^
+    236|       });
+    237|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:234:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > returns early and does not call updateConsult when already updating
+TypeError: Cannot read properties of null (reading 'handleAccept')
+ ❯ __tests__/useConsultActions.test.tsx:267:24
+    265|       // Start first call (will hang)
+    266|       act(() => {
+    267|         result.current.handleAccept();
+       |                        ^
+    268|       });
+    269|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:266:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > calls onUpdate callback after successful accept
+TypeError: Cannot read properties of null (reading 'handleAccept')
+ ❯ __tests__/useConsultActions.test.tsx:293:30
+    291|
+    292|       await act(async () => {
+    293|         await result.current.handleAccept();
+       |                              ^
+    294|       });
+    295|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:292:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > handles error gracefully and resets isUpdating
+TypeError: Cannot read properties of null (reading 'handleAccept')
+ ❯ __tests__/useConsultActions.test.tsx:307:30
+    305|
+    306|       await act(async () => {
+    307|         await result.current.handleAccept();
+       |                              ^
+    308|       });
+    309|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:306:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleAccept > returns early without calling onUpdate when updater returns null and not queued
+TypeError: Cannot read properties of null (reading 'handleAccept')
+ ❯ __tests__/useConsultActions.test.tsx:326:30
+    324|
+    325|       await act(async () => {
+    326|         await result.current.handleAccept();
+       |                              ^
+    327|       });
+    328|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:325:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleStatusChange > calls updateConsult with the correct caseId
+TypeError: Cannot read properties of null (reading 'handleStatusChange')
+ ❯ __tests__/useConsultActions.test.tsx:345:30
+    343|
+    344|       await act(async () => {
+    345|         await result.current.handleStatusChange("Admit");
+       |                              ^
+    346|       });
+    347|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:344:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleStatusChange > updater sets admittedAt when status is Admit
+TypeError: Cannot read properties of null (reading 'handleStatusChange')
+ ❯ __tests__/useConsultActions.test.tsx:363:30
+    361|
+    362|       await act(async () => {
+    363|         await result.current.handleStatusChange("Admit");
+       |                              ^
+    364|       });
+    365|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:362:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleStatusChange > updater sets returnedAt when status is คืน ER
+TypeError: Cannot read properties of null (reading 'handleStatusChange')
+ ❯ __tests__/useConsultActions.test.tsx:382:30
+    380|
+    381|       await act(async () => {
+    382|         await result.current.handleStatusChange("คืน ER");
+       |                              ^
+    383|       });
+    384|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:381:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleStatusChange > updater sets dischargedAt when status is D/C
+TypeError: Cannot read properties of null (reading 'handleStatusChange')
+ ❯ __tests__/useConsultActions.test.tsx:400:30
+    398|
+    399|       await act(async () => {
+    400|         await result.current.handleStatusChange("D/C");
+       |                              ^
+    401|       });
+    402|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:399:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleStatusChange > clears previous action timestamps when changing status
+TypeError: Cannot read properties of null (reading 'handleStatusChange')
+ ❯ __tests__/useConsultActions.test.tsx:418:30
+    416|
+    417|       await act(async () => {
+    418|         await result.current.handleStatusChange("คืน ER");
+       |                              ^
+    419|       });
+    420|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:417:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleStatusChange > updater returns null when dept is not pending
+TypeError: Cannot read properties of null (reading 'handleStatusChange')
+ ❯ __tests__/useConsultActions.test.tsx:445:30
+    443|
+    444|       await act(async () => {
+    445|         await result.current.handleStatusChange("Admit");
+       |                              ^
+    446|       });
+    447|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:444:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleStatusChange > calls onUpdate after successful status change
+TypeError: Cannot read properties of null (reading 'handleStatusChange')
+ ❯ __tests__/useConsultActions.test.tsx:467:30
+    465|
+    466|       await act(async () => {
+    467|         await result.current.handleStatusChange("Admit");
+       |                              ^
+    468|       });
+    469|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:466:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleComplete > calls updateConsult
+TypeError: Cannot read properties of null (reading 'handleComplete')
+ ❯ __tests__/useConsultActions.test.tsx:486:30
+    484|
+    485|       await act(async () => {
+    486|         await result.current.handleComplete();
+       |                              ^
+    487|       });
+    488|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:485:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleComplete > updater sets department status to completed
+TypeError: Cannot read properties of null (reading 'handleComplete')
+ ❯ __tests__/useConsultActions.test.tsx:500:30
+    498|
+    499|       await act(async () => {
+    500|         await result.current.handleComplete();
+       |                              ^
+    501|       });
+    502|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:499:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleComplete > updater promotes overall consult status when all depts are done
+TypeError: Cannot read properties of null (reading 'handleComplete')
+ ❯ __tests__/useConsultActions.test.tsx:517:30
+    515|
+    516|       await act(async () => {
+    517|         await result.current.handleComplete();
+       |                              ^
+    518|       });
+    519|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:516:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleComplete > updater does NOT set overall status when some depts are still pending
+TypeError: Cannot read properties of null (reading 'handleComplete')
+ ❯ __tests__/useConsultActions.test.tsx:539:30
+    537|
+    538|       await act(async () => {
+    539|         await result.current.handleComplete();
+       |                              ^
+    540|       });
+    541|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:538:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleComplete > updater returns null when dept is not pending
+TypeError: Cannot read properties of null (reading 'handleComplete')
+ ❯ __tests__/useConsultActions.test.tsx:561:30
+    559|
+    560|       await act(async () => {
+    561|         await result.current.handleComplete();
+       |                              ^
+    562|       });
+    563|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:560:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleComplete > handles error and resets isUpdating
+TypeError: Cannot read properties of null (reading 'handleComplete')
+ ❯ __tests__/useConsultActions.test.tsx:581:30
+    579|
+    580|       await act(async () => {
+    581|         await result.current.handleComplete();
+       |                              ^
+    582|       });
+    583|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:580:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleCancel > calls updateConsult
+TypeError: Cannot read properties of null (reading 'handleCancel')
+ ❯ __tests__/useConsultActions.test.tsx:600:30
+    598|
+    599|       await act(async () => {
+    600|         await result.current.handleCancel();
+       |                              ^
+    601|       });
+    602|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:599:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleCancel > updater sets department status to cancelled
+TypeError: Cannot read properties of null (reading 'handleCancel')
+ ❯ __tests__/useConsultActions.test.tsx:614:30
+    612|
+    613|       await act(async () => {
+    614|         await result.current.handleCancel();
+       |                              ^
+    615|       });
+    616|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:613:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleCancel > updater promotes overall status to completed when all depts are finished (completed or cancelled)
+TypeError: Cannot read properties of null (reading 'handleCancel')
+ ❯ __tests__/useConsultActions.test.tsx:631:30
+    629|
+    630|       await act(async () => {
+    631|         await result.current.handleCancel();
+       |                              ^
+    632|       });
+    633|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:630:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleCancel > updater does NOT set overall status when some depts are still pending
+TypeError: Cannot read properties of null (reading 'handleCancel')
+ ❯ __tests__/useConsultActions.test.tsx:653:30
+    651|
+    652|       await act(async () => {
+    653|         await result.current.handleCancel();
+       |                              ^
+    654|       });
+    655|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:652:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleCancel > updater returns null when dept is not pending
+TypeError: Cannot read properties of null (reading 'handleCancel')
+ ❯ __tests__/useConsultActions.test.tsx:674:30
+    672|
+    673|       await act(async () => {
+    674|         await result.current.handleCancel();
+       |                              ^
+    675|       });
+    676|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:673:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleCancel > calls onUpdate after successful cancel
+TypeError: Cannot read properties of null (reading 'handleCancel')
+ ❯ __tests__/useConsultActions.test.tsx:695:30
+    693|
+    694|       await act(async () => {
+    695|         await result.current.handleCancel();
+       |                              ^
+    696|       });
+    697|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:694:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > handleCancel > handles error and resets isUpdating
+TypeError: Cannot read properties of null (reading 'handleCancel')
+ ❯ __tests__/useConsultActions.test.tsx:709:30
+    707|
+    708|       await act(async () => {
+    709|         await result.current.handleCancel();
+       |                              ^
+    710|       });
+    711|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:708:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/30]⎯
+
+ FAIL  __tests__/useConsultActions.test.tsx > useConsultActions > background promise handling > resolves isSyncing=false after backgroundPromise resolves
+TypeError: Cannot read properties of null (reading 'handleAccept')
+ ❯ __tests__/useConsultActions.test.tsx:738:30
+    736|
+    737|       await act(async () => {
+    738|         await result.current.handleAccept();
+       |                              ^
+    739|       });
+    740|
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ __tests__/useConsultActions.test.tsx:737:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/30]⎯
+
+
+ Test Files  2 failed | 8 passed (10)
+      Tests  30 failed | 202 passed (232)
+   Start at  12:46:29
+   Duration  4.23s (transform 1.65s, setup 1.61s, import 2.90s, tests 1.44s, environment 18.02s)
+

@@ -153,7 +153,7 @@ describe("ElapsedTime", () => {
         vi.advanceTimersByTime(60_000);
       });
 
-      expect(screen.getByText(/60 นาที/)).toBeInTheDocument();
+      expect(screen.getByText(/1 ชม. 0 นาที/)).toBeInTheDocument();
     });
 
     it("clears the interval on unmount (no errors after unmount)", () => {

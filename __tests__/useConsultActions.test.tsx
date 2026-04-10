@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import React from "react";
 import { ToastProvider } from "@/app/contexts/ToastContext";
-import { ACCEPT_STATUS } from "@/lib/constants";
+import { ACCEPT_STATUS, SURGERY_DEPTS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Mock firebase and lib/db BEFORE importing the hook
@@ -165,8 +165,9 @@ describe("useConsultActions", () => {
         { wrapper }
       );
 
-      const promise = act(async () => {
-        result.current.handleAccept();
+      let promise: Promise<void>;
+      act(() => {
+        promise = result.current.handleAccept();
       });
 
       // isUpdating should be true while the promise is pending
