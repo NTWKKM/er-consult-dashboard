@@ -30,13 +30,22 @@ export default function Dashboard() {
   // Load from localStorage on mount
   useEffect(() => {
     try {
-      const savedView = localStorage.getItem("dashboard_view") as any;
-      const savedRoomFilter = localStorage.getItem("dashboard_roomFilter") as any;
-      const savedDisplayMode = localStorage.getItem("dashboard_displayMode") as any;
+      const savedView = localStorage.getItem("dashboard_view");
+      const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
+      const savedDisplayMode = localStorage.getItem("dashboard_displayMode");
       
-      if (savedView) setView(savedView);
-      if (savedRoomFilter) setRoomFilter(savedRoomFilter);
-      if (savedDisplayMode) setDisplayMode(savedDisplayMode);
+      // Use setTimeout to avoid synchronous setState in effect warning
+      setTimeout(() => {
+        if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
+          setView(savedView);
+        }
+        if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
+          setRoomFilter(savedRoomFilter as RoomFilter);
+        }
+        if (savedDisplayMode === "card" || savedDisplayMode === "table") {
+          setDisplayMode(savedDisplayMode);
+        }
+      }, 0);
     } catch (e) {
       console.warn("Failed to load settings from localStorage:", e);
     }
