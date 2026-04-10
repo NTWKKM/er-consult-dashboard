@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
-import { useConsultActions } from "../hooks/useConsultActions";
+import { useConsultActions, PostAcceptStatus } from "../hooks/useConsultActions";
 import { Consult } from "@/lib/db";
 import { POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
@@ -55,7 +55,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     handleCancel,
   } = useConsultActions(caseId, departmentName, hn, onUpdate);
 
-  const handleActionStatusChange = useCallback(async (newStatus: string) => {
+  const handleActionStatusChange = useCallback(async (newStatus: PostAcceptStatus) => {
     await handleStatusChange(newStatus);
   }, [handleStatusChange]);
 
@@ -295,7 +295,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     <select
                       aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                      onChange={(e) => handleActionStatusChange(e.target.value)}
+                      onChange={(e) => handleActionStatusChange(e.target.value as PostAcceptStatus)}
                       className={`w-full h-full px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${
                         actionStatus && actionStatus !== ACCEPT_STATUS
                           ? darkMode

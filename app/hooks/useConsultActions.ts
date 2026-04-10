@@ -5,7 +5,7 @@ import { updateConsult, ConsultDepartment } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS, ACCEPT_STATUS, POST_ACCEPT_STATUSES } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 
-type PostAcceptStatus = (typeof POST_ACCEPT_STATUSES)[number];
+export type PostAcceptStatus = (typeof POST_ACCEPT_STATUSES)[number];
 
 /**
  * Custom hook to manage consult actions (accept, status change, complete, cancel).

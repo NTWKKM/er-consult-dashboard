@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useConsultActions } from "./hooks/useConsultActions";
+import { useConsultActions, PostAcceptStatus } from "./hooks/useConsultActions";
 import ConsultCard from "@/app/components/ConsultCard";
 import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
@@ -768,7 +768,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
     await handleAccept();
   };
 
-  const onStatusChange = async (newStatus: string) => {
+  const onStatusChange = async (newStatus: PostAcceptStatus) => {
     await handleStatusChange(newStatus);
   };
 
@@ -808,7 +808,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
               <>
                 <select
                   value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                  onChange={(e) => onStatusChange(e.target.value)}
+                  onChange={(e) => onStatusChange(e.target.value as PostAcceptStatus)}
                   disabled={isUpdating}
                   className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold border text-center appearance-none cursor-pointer ${
                     actionStatus && actionStatus !== ACCEPT_STATUS
