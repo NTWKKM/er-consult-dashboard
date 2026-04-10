@@ -297,6 +297,7 @@ export interface UpdateResults {
     consult: Consult | null;
     isQueued: boolean;
     backgroundPromise: Promise<void> | null;
+    applied: boolean;
 }
 
 export async function updateConsult(
@@ -330,6 +331,7 @@ export async function updateConsult(
                     consult: null,
                     isQueued: false,
                     backgroundPromise: null,
+                    applied: false,
                 };
             }
             
@@ -350,7 +352,8 @@ export async function updateConsult(
                     ...updates,
                 } as Consult,
                 isQueued: true,
-                backgroundPromise: rawPromise
+                backgroundPromise: rawPromise,
+                applied: true,
             };
         }
 
@@ -374,6 +377,7 @@ export async function updateConsult(
                 consult: null,
                 isQueued: false,
                 backgroundPromise: null,
+                applied: false,
             };
         }
         const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
@@ -385,7 +389,8 @@ export async function updateConsult(
                 ...updates,
             } as Consult,
             isQueued: false,
-            backgroundPromise: null
+            backgroundPromise: null,
+            applied: true,
         };
     } else {
         // Direct object update
@@ -401,14 +406,16 @@ export async function updateConsult(
             return {
                 consult: null,
                 isQueued: true,
-                backgroundPromise: rawPromise
+                backgroundPromise: rawPromise,
+                applied: true,
             };
         }
         await updateDoc(docRef, updater);
         return {
             consult: null,
             isQueued: false,
-            backgroundPromise: null
+            backgroundPromise: null,
+            applied: true,
         };
     }
 }
@@ -440,7 +447,7 @@ export async function transferConsultRoom(
     });
 
     return {
-        transferred: result.consult !== null || result.isQueued,
+        transferred: result.applied,
         backgroundPromise: result.backgroundPromise,
     };
 }

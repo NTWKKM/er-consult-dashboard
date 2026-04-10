@@ -34,18 +34,15 @@ export default function Dashboard() {
       const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
       const savedDisplayMode = localStorage.getItem("dashboard_displayMode");
       
-      // Use setTimeout to avoid synchronous setState in effect warning
-      setTimeout(() => {
-        if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
-          setView(savedView);
-        }
-        if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
-          setRoomFilter(savedRoomFilter as RoomFilter);
-        }
-        if (savedDisplayMode === "card" || savedDisplayMode === "table") {
-          setDisplayMode(savedDisplayMode);
-        }
-      }, 0);
+      if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
+        setView(savedView);
+      }
+      if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
+        setRoomFilter(savedRoomFilter as RoomFilter);
+      }
+      if (savedDisplayMode === "card" || savedDisplayMode === "table") {
+        setDisplayMode(savedDisplayMode);
+      }
     } catch (e) {
       console.warn("Failed to load settings from localStorage:", e);
     }

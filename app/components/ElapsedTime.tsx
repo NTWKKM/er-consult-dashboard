@@ -26,6 +26,8 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: Elapse
   const [totalMins, setTotalMins] = useState(0);
 
   useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
     const update = () => {
       const createdMs = new Date(createdAt).getTime();
       const mins = Number.isFinite(createdMs)
@@ -43,8 +45,21 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: Elapse
     };
 
     update();
-    const interval = setInterval(update, 60000);
-    return () => clearInterval(interval);
+    
+    // Calculate ms until the next minute boundary
+    const createdMs = new Date(createdAt).getTime();
+    const elapsedMs = Number.isFinite(createdMs) ? Math.max(0, Date.now() - createdMs) : 0;
+    const msUntilNextMinute = 60000 - (elapsedMs % 60000 || 60000);
+
+    const timeout = setTimeout(() => {
+      update();
+      interval = setInterval(update, 60000);
+    }, msUntilNextMinute);
+
+    return () => {
+      clearTimeout(timeout);
+      if (interval) clearInterval(interval);
+    };
   }, [createdAt]);
 
   const escalationClass = getElapsedClass(totalMins);

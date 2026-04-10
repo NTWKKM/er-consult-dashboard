@@ -41,7 +41,12 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
 
         const updatedDepartments = { ...current.departments };
         const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
-        const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
+        const isOrthoDept = (ORTHO_DEPTS as readonly string[]).includes(departmentName);
+        const targetDepts = isSurgeryDept 
+          ? SURGERY_DEPTS 
+          : isOrthoDept 
+            ? ORTHO_DEPTS 
+            : [departmentName];
         const now = new Date().toISOString();
 
         // Multi-department accept logic for specific specialties
