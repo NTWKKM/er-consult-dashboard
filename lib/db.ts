@@ -333,6 +333,8 @@ export async function updateConsult(
                 };
             }
             
+            const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
+            
             // Perform the "real" update in background (Allows Offline persistence)
             const rawPromise = updateDoc(docRef, updates);
             rawPromise.catch(err => {
@@ -343,7 +345,7 @@ export async function updateConsult(
             });
 
             return {
-                consult: {
+                consult: hasDottedKeys ? null : {
                     ...currentData,
                     ...updates,
                 } as Consult,
@@ -374,10 +376,11 @@ export async function updateConsult(
                 backgroundPromise: null,
             };
         }
+        const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
         await updateDoc(docRef, updates);
 
         return {
-            consult: {
+            consult: hasDottedKeys ? null : {
                 ...currentData,
                 ...updates,
             } as Consult,

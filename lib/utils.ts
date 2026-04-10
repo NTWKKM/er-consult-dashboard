@@ -4,12 +4,16 @@ import type { Consult, ConsultDepartment, ConsultTransfer } from "./db";
 /**
  * Helper for formatting status times in Thai locale
  */
-export const formatTime = (iso: string) =>
-  new Date(iso).toLocaleString("th-TH", {
+export const formatTime = (iso: string) => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("th-TH", {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: "Asia/Bangkok",
   });
+};
 
 /**
  * Sort consults by urgency first (urgent cases on top), then by creation date (newest first).

@@ -121,20 +121,19 @@ describe("ConfirmModal", () => {
 
     it("calls onCancel when clicking the backdrop", () => {
       const onCancel = vi.fn();
-      const { container } = render(<ConfirmModal {...defaultProps({ onCancel })} />);
-      // The backdrop is the first fixed div
-      const backdrop = container.querySelector(".fixed.inset-0");
+      render(<ConfirmModal {...defaultProps({ onCancel })} />);
+      const backdrop = screen.getByTestId("modal-backdrop");
       expect(backdrop).toBeInTheDocument();
-      fireEvent.click(backdrop!);
+      fireEvent.click(backdrop);
       expect(onCancel).toHaveBeenCalledOnce();
     });
 
     it("does NOT call onCancel when clicking inside the modal dialog", () => {
       const onCancel = vi.fn();
-      const { container } = render(<ConfirmModal {...defaultProps({ onCancel })} />);
-      const dialog = container.querySelector(".rounded-2xl");
+      render(<ConfirmModal {...defaultProps({ onCancel })} />);
+      const dialog = screen.getByTestId("modal-dialog");
       expect(dialog).toBeInTheDocument();
-      fireEvent.click(dialog!);
+      fireEvent.click(dialog);
       expect(onCancel).not.toHaveBeenCalled();
     });
   });

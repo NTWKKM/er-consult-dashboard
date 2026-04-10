@@ -78,10 +78,12 @@ export default function ConfirmModal({
 
   return (
     <div
+      data-testid="modal-backdrop"
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 animate-fade-in"
       onClick={onCancel}
     >
       <div
+        data-testid="modal-dialog"
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
