@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import React from "react";
 import { ToastProvider } from "@/app/contexts/ToastContext";
-import { ACCEPT_STATUS, SURGERY_DEPTS } from "@/lib/constants";
+import { ACCEPT_STATUS, SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Mock firebase and lib/db BEFORE importing the hook
@@ -206,6 +206,29 @@ describe("useConsultActions", () => {
     it("updater sets ACCEPT_STATUS on the surgery department", async () => {
       mockUpdateConsult.mockResolvedValue(makeSuccessResult());
       const deptName = "Gen Sx" as (typeof SURGERY_DEPTS)[number];
+      const { result } = renderHook(
+        () => useConsultActions("consult-1", deptName, "123456"),
+        { wrapper }
+      );
+
+      await act(async () => {
+        await result.current.handleAccept();
+      });
+
+      const snapshot = makePendingConsult({
+        departments: {
+          [deptName]: { status: "pending", acceptedAt: undefined } as never,
+        },
+      });
+
+      const updated = captureAndRunUpdater(snapshot);
+      expect(updated).not.toBeNull();
+      expect(updated!.departments![deptName].actionStatus).toBe(ACCEPT_STATUS);
+    });
+
+    it("updater sets ACCEPT_STATUS on the ortho department", async () => {
+      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      const deptName = "Ortho" as (typeof ORTHO_DEPTS)[number];
       const { result } = renderHook(
         () => useConsultActions("consult-1", deptName, "123456"),
         { wrapper }

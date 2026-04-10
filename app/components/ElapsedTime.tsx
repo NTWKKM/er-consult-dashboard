@@ -8,7 +8,7 @@ interface ElapsedTimeProps {
 
 /**
  * Returns the CSS class for elapsed time color escalation.
- * < 90 min = green (safe), 90-150 min = yellow (warning), > 150 min = red (danger/critical)
+ * < 90 => elapsed-safe, 90–150 => elapsed-warning, 151–240 => elapsed-danger, >240 => elapsed-critical
  */
 function getElapsedClass(totalMinutes: number): string {
   if (totalMinutes < 90) return "elapsed-safe";

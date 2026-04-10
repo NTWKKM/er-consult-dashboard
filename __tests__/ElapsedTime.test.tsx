@@ -212,7 +212,7 @@ describe("ElapsedTime", () => {
   // basic render (structural check only — CSS loaded separately)
   // -------------------------------------------------------------------------
   describe("basic render", () => {
-    it("renders without error in dark mode", () => {
+    it("renders without error", () => {
       expect(() =>
         render(<ElapsedTime createdAt={createdAt(30)} />)
       ).not.toThrow();

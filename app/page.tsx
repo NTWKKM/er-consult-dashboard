@@ -190,7 +190,7 @@ export default function Dashboard() {
     return departmentCasesMap[deptName] || [];
   };
 
-  const totalPendingCases = filteredAllCases.length;
+  const totalPendingCases = visibleTableCases.length;
 
   if (loading) {
     return <SkeletonLoading darkMode={darkMode} />;

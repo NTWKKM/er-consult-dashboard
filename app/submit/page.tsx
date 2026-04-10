@@ -340,11 +340,11 @@ export default function SubmitPage() {
                         value={dept}
                         checked={selectedDepts.includes(dept)}
                         onChange={() => handleCheckboxChange(dept)}
-                        className="peer hidden"
+                        className="peer sr-only"
                       />
                       <label
                         htmlFor={dept}
-                        className={`flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer transition-all duration-200 font-semibold text-xs ${selectedDepts.includes(dept)
+                        className={`flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer transition-all duration-200 font-semibold text-xs peer-focus:outline peer-focus:outline-2 peer-focus:outline-offset-2 peer-focus:outline-[#699D5D] ${selectedDepts.includes(dept)
                             ? "bg-[#699D5D] text-white border-[#699D5D] shadow-sm"
                             : darkMode
                               ? "bg-gray-700 text-gray-200 border-gray-600 hover:border-[#699D5D]/50 hover:bg-gray-600"
