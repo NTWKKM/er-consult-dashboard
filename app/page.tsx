@@ -356,78 +356,29 @@ export default function Dashboard() {
         </div>
 
         {displayMode === "card" && (
-          <div className="mb-4">
-            {/* Desktop Navigation Map (Grid) */}
-            <details
-              open
-              className={`hidden md:block rounded-xl shadow-md border overflow-hidden transition-colors ${
-                darkMode ? "bg-gray-800 border-gray-700" : "bg-white/90 border-[#014167]/20"
+          <details
+            open
+            className={`mb-4 rounded-xl shadow-md border overflow-hidden transition-colors ${
+              darkMode ? "bg-gray-800 border-gray-700" : "bg-white/90 border-[#014167]/20"
+            }`}
+          >
+            <summary
+              className={`cursor-pointer px-4 py-3 font-bold transition-all flex items-center justify-between ${
+                darkMode ? "text-gray-200 hover:bg-gray-700" : "text-[#014167] hover:bg-[#014167]/10"
               }`}
             >
-              <summary
-                className={`cursor-pointer px-4 py-3 font-bold transition-all flex items-center justify-between ${
-                  darkMode ? "text-gray-200 hover:bg-gray-700" : "text-[#014167] hover:bg-[#014167]/10"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Quick Navigation
-                </span>
+              <span className="flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-              </summary>
-              <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-1 xl:gap-2">
-                  {[...SURGERY_DEPTS, ...ORTHO_DEPTS].map((dept) => {
-                    const cases = getCasesForDepartment(dept);
-                    const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
-                    return (
-                      <button
-                        key={dept}
-                        onClick={() => scrollToDepartment(dept)}
-                        className={`rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-200 shadow-sm hover:shadow-md group relative ${
-                          darkMode
-                            ? `bg-gray-700 hover:text-white text-gray-200 ${
-                                isSurgery
-                                  ? "border border-[#E55143]/30 hover:bg-[#E55143]"
-                                  : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
-                              }`
-                            : `bg-white hover:text-white text-[#014167] ${
-                                isSurgery
-                                  ? "border border-[#E55143]/30 hover:bg-[#E55143]"
-                                  : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
-                              }`
-                        }`}
-                      >
-                        <div className="text-xs font-bold mb-1">{dept}</div>
-                        <div
-                          className={`text-lg font-bold ${
-                            cases.length > 0
-                              ? "text-[#E55143] group-hover:text-white"
-                              : "text-[#699D5D] group-hover:text-white"
-                          }`}
-                        >
-                          {cases.length}
-                        </div>
-                        {cases.length > 0 && (
-                          <span className="absolute top-1 right-1 flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#E55143] opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E55143]"></span>
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </details>
-
-            {/* Mobile Navigation Strip (Horizontal Scroll) */}
-            <div className="md:hidden flex flex-col gap-2">
-              <div className="flex items-center gap-1 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
+                Quick Navigation
+              </span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </summary>
+            <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-1 xl:gap-2">
                 {[...SURGERY_DEPTS, ...ORTHO_DEPTS].map((dept) => {
                   const cases = getCasesForDepartment(dept);
                   const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
@@ -435,29 +386,36 @@ export default function Dashboard() {
                     <button
                       key={dept}
                       onClick={() => scrollToDepartment(dept)}
-                      className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all relative ${
+                      className={`rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
                         darkMode
-                          ? `bg-gray-800 border-gray-700 text-gray-200 ${
-                              isSurgery ? "hover:border-[#E55143]/50" : "hover:border-[#699D5D]/50"
+                          ? `bg-gray-700 hover:text-white text-gray-200 ${
+                              isSurgery
+                                ? "border border-[#E55143]/30 hover:bg-[#E55143]"
+                                : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
                             }`
-                          : `bg-white border-[#C7CFDA] text-[#014167] shadow-sm`
+                          : `bg-white hover:text-white text-[#014167] ${
+                              isSurgery
+                                ? "border border-[#E55143]/30 hover:bg-[#E55143]"
+                                : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
+                            }`
                       }`}
                     >
-                      <span className="text-[10px] font-bold">{dept}</span>
-                      <span className={`text-xs font-black ${
-                         cases.length > 0 ? "text-[#E55143]" : "text-[#699D5D]"
-                      }`}>
+                      <div className="text-xs font-bold mb-1">{dept}</div>
+                      <div
+                        className={`text-lg font-bold ${
+                          cases.length > 0
+                            ? "text-[#E55143] group-hover:text-white"
+                            : "text-[#699D5D] group-hover:text-white"
+                        }`}
+                      >
                         {cases.length}
-                      </span>
-                      {cases.length > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#E55143] border border-white"></span>
-                      )}
+                      </div>
                     </button>
                   );
                 })}
               </div>
             </div>
-          </div>
+          </details>
         )}
 
         {/* ------------------------------------------------------------------------ */}
