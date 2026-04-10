@@ -21,7 +21,6 @@ export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   
   // Persistence logic for filters and view modes
   const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
@@ -150,7 +149,6 @@ export default function Dashboard() {
       "pending",
       (data) => {
         setAllCases(data);
-        setLastUpdated(new Date().toISOString());
         setLoading(false);
         setError(null);
       },
@@ -227,11 +225,6 @@ export default function Dashboard() {
                   {totalPendingCases}
                 </span>
               </div>
-              {lastUpdated && (
-                <span className={`text-[10px] tabular-nums font-medium ${darkMode ? "text-gray-500" : "text-[#014167]/50"}`}>
-                  อัปเดต {formatTime(lastUpdated)}
-                </span>
-              )}
             </div>
 
             {/* Layout Toggle: Card vs Table */}
