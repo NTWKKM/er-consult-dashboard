@@ -849,7 +849,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           </div>
 
             {milestones.length > 0 && (
-              <div className={`hidden md:flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
+              <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
                 {milestones.map((m, idx, arr) => (
                   <React.Fragment key={`${m.label}-${m.raw}`}>
                     <div className="flex items-center gap-1 text-[10px]">

@@ -26,8 +26,8 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     setIsSyncing(pendingSyncCountRef.current > 0);
   }, []);
 
-  const handleAccept = useCallback(async () => {
-    if (isUpdating) return;
+  const handleAccept = useCallback(async (): Promise<boolean> => {
+    if (isUpdating) return false;
     setIsUpdating(true);
     beginSync();
     try {
@@ -67,7 +67,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       if (result.consult === null && !result.isQueued) {
            endSync();
            setIsUpdating(false);
-           return;
+           return false;
       }
 
       setIsUpdating(false);
@@ -82,11 +82,13 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
 
       addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
       onUpdate?.();
+      return true;
     } catch (error) {
       console.error("Error accepting case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
       setIsUpdating(false);
       endSync();
+      return false;
     }
   }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync, isUpdating]);
 

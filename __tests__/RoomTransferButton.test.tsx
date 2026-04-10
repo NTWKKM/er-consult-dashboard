@@ -359,7 +359,8 @@ describe("RoomTransferButton", () => {
         fireEvent.keyDown(document, { key: "Enter" });
       });
 
-      await new Promise((r) => setTimeout(r, 50));
+      // Give any potential async handlers time to settle
+      await waitFor(() => {});
       expect(mockTransferConsultRoom).not.toHaveBeenCalled();
     });
 

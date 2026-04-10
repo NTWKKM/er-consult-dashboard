@@ -23,7 +23,6 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
-  const confirmRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -102,7 +101,6 @@ export default function ConfirmModal({
             {cancelText}
           </button>
           <button
-            ref={confirmRef}
             onClick={onConfirm}
             className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-md hover:shadow-lg ${style.confirmBtn}`}
           >

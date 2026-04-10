@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 
 interface ElapsedTimeProps {
   createdAt: string;
-  darkMode: boolean;
 }
 
 /**
@@ -22,7 +21,7 @@ function getElapsedClass(totalMinutes: number): string {
  * Updates every minute and uses Thai locale for time units.
  * Color escalates based on wait duration for urgency awareness.
  */
-export const ElapsedTime = React.memo(function ElapsedTime({ createdAt, darkMode }: ElapsedTimeProps) {
+export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: ElapsedTimeProps) {
   const [elapsed, setElapsed] = useState("");
   const [totalMins, setTotalMins] = useState(0);
 

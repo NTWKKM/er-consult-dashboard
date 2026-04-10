@@ -60,9 +60,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   }, [handleStatusChange]);
 
   const handleAcceptCase = useCallback(async () => {
-    await handleAccept();
-    setFlashSuccess(true);
-    setTimeout(() => setFlashSuccess(false), 700);
+    if (await handleAccept()) {
+      setFlashSuccess(true);
+      setTimeout(() => setFlashSuccess(false), 700);
+    }
   }, [handleAccept]);
 
   const handleCancelConsult = useCallback(async () => {
@@ -183,7 +184,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               </span>
             )}
             {!isTerminal && caseData.createdAt && (
-              <ElapsedTime createdAt={caseData.createdAt} darkMode={darkMode} />
+              <ElapsedTime createdAt={caseData.createdAt} />
             )}
           </div>
         </div>
