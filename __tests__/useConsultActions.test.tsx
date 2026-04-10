@@ -86,6 +86,7 @@ function makeSuccessResult(consult: Consult | null = makePendingConsult()) {
     consult,
     isQueued: false,
     backgroundPromise: null,
+    applied: true,
   };
 }
 
@@ -165,7 +166,7 @@ describe("useConsultActions", () => {
         { wrapper }
       );
 
-      let promise: Promise<void>;
+      let promise: Promise<boolean>;
       act(() => {
         promise = result.current.handleAccept();
       });
@@ -316,6 +317,7 @@ describe("useConsultActions", () => {
         consult: null,
         isQueued: false,
         backgroundPromise: null,
+        applied: false,
       });
       const onUpdate = vi.fn();
       const { result } = renderHook(
@@ -726,8 +728,9 @@ describe("useConsultActions", () => {
 
       mockUpdateConsult.mockResolvedValue({
         consult: makePendingConsult(),
-        isQueued: false,
+        isQueued: true,
         backgroundPromise,
+        applied: true,
       });
 
       const { result } = renderHook(

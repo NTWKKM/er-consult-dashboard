@@ -71,7 +71,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         }
       });
 
-      if (result.consult === null && !result.isQueued) {
+      if (!result.applied) {
            endSync();
            setIsUpdating(false);
            return false;
@@ -144,7 +144,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         }
       });
 
-      if (result.consult === null && !result.isQueued) {
+      if (!result.applied) {
            endSync();
            setIsUpdating(false);
            return;
@@ -205,7 +205,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         }
       });
 
-      if (result.consult === null && !result.isQueued) {
+      if (!result.applied) {
            endSync();
            setIsUpdating(false);
            return;
@@ -267,7 +267,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         }
       });
 
-      if (result.consult === null && !result.isQueued) {
+      if (!result.applied) {
            endSync();
            setIsUpdating(false);
            return;

@@ -38,9 +38,9 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setFocusedIndex(-1); // Reset focus when opening
+      setFocusedIndex(Math.max(0, sortedRooms.indexOf(currentRoom as any)));
     }
-  }, [isOpen]);
+  }, [isOpen, currentRoom, sortedRooms]);
 
   const handleTransfer = useCallback(async (newRoom: string) => {
     if (newRoom === currentRoom) {
@@ -84,6 +84,9 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Return early if focus is not within the dropdown
+      if (!dropdownRef.current?.contains(document.activeElement)) return;
+
       if (event.key === "Escape") {
         setIsOpen(false);
       } else if (event.key === "ArrowDown") {

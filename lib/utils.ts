@@ -57,7 +57,7 @@ export interface Milestone {
  * Generate a list of chronological milestones for a department, including transfers.
  * Returns up to 3 most recent milestones for space-sensitive UIs.
  */
-export function getMilestones(dept: ConsultDepartment, formatTime: (iso: string) => string|null) {
+export function getMilestones(dept: ConsultDepartment | undefined, formatTime: (iso: string) => string|null) {
   const milestones: Milestone[] = [
     { 
       label: "รับ", 

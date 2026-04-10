@@ -34,15 +34,18 @@ export default function Dashboard() {
       const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
       const savedDisplayMode = localStorage.getItem("dashboard_displayMode");
       
-      if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
-        setView(savedView);
-      }
-      if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
-        setRoomFilter(savedRoomFilter as RoomFilter);
-      }
-      if (savedDisplayMode === "card" || savedDisplayMode === "table") {
-        setDisplayMode(savedDisplayMode);
-      }
+      // Use setTimeout to avoid synchronous setState in effect warning during hydration
+      setTimeout(() => {
+        if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
+          setView(savedView);
+        }
+        if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
+          setRoomFilter(savedRoomFilter as RoomFilter);
+        }
+        if (savedDisplayMode === "card" || savedDisplayMode === "table") {
+          setDisplayMode(savedDisplayMode);
+        }
+      }, 0);
     } catch (e) {
       console.warn("Failed to load settings from localStorage:", e);
     }
@@ -385,7 +388,13 @@ export default function Dashboard() {
             </summary>
             <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-1 xl:gap-2">
-                {[...SURGERY_DEPTS, ...ORTHO_DEPTS].map((dept) => {
+                {(
+                  view === "surgery"
+                    ? SURGERY_DEPTS
+                    : view === "ortho"
+                      ? ORTHO_DEPTS
+                      : [...SURGERY_DEPTS, ...ORTHO_DEPTS]
+                ).map((dept) => {
                   const cases = getCasesForDepartment(dept);
                   const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
                   return (
@@ -396,8 +405,8 @@ export default function Dashboard() {
                         darkMode
                           ? `bg-gray-700 hover:text-white text-gray-200 ${
                               isSurgery
-                                ? "border border-[#E55143]/30 hover:bg-[#E55143]"
-                                : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
+                                ? "border border-[#ff7063]/50 hover:bg-[#E55143]"
+                                : "border border-[#8bc34a]/50 hover:bg-[#699D5D]"
                             }`
                           : `bg-white hover:text-white text-[#014167] ${
                               isSurgery
@@ -495,6 +504,7 @@ export default function Dashboard() {
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {SURGERY_DEPTS.map((dept) => {
                     const cases = getCasesForDepartment(dept);
+                    const isSurgery = true; // Inside surgery map block
                     return (
                       <div
                         key={dept}
@@ -506,7 +516,7 @@ export default function Dashboard() {
                         <div
                           className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                             darkMode
-                              ? "bg-[#E55143]/10 border-[#E55143]/20"
+                              ? isSurgery ? "bg-[#E55143]/10 border-[#ff7063]/50" : "bg-[#699D5D]/10 border-[#8bc34a]/50"
                               : "bg-[#012a47] border-[#E55143]/20"
                           }`}
                         >
@@ -571,6 +581,7 @@ export default function Dashboard() {
                 <div className="p-4">
                   {ORTHO_DEPTS.map((dept) => {
                     const cases = getCasesForDepartment(dept);
+                    const isSurgery = false; // Inside ortho map block
                     return (
                       <div
                         key={dept}
@@ -582,7 +593,7 @@ export default function Dashboard() {
                         <div
                           className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
                             darkMode
-                              ? "bg-[#699D5D]/10 border-[#699D5D]/20"
+                              ? isSurgery ? "bg-[#E55143]/10 border-[#ff7063]/50" : "bg-[#699D5D]/10 border-[#8bc34a]/50"
                               : "bg-[#014a3d] border-[#699D5D]/20"
                           }`}
                         >

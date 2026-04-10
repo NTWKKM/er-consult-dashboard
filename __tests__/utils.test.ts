@@ -22,6 +22,10 @@ function makeDept(overrides: Partial<ConsultDepartment> = {}): ConsultDepartment
 // ---------------------------------------------------------------------------
 
 describe("formatTime", () => {
+  it("returns an empty string for malformed input", () => {
+    expect(formatTime("not-a-date")).toBe("");
+  });
+
   it("returns a non-empty string for a valid ISO date", () => {
     const result = formatTime("2024-01-15T08:30:00.000Z");
     expect(typeof result).toBe("string");
@@ -206,8 +210,13 @@ describe("getMilestones", () => {
   });
 
   describe("edge cases", () => {
+    it("drops malformed timestamps when using the real formatter", () => {
+      const dept = makeDept({ acceptedAt: "not-a-date" });
+      expect(getMilestones(dept, formatTime)).toHaveLength(0);
+    });
+
     it("returns empty array for undefined dept", () => {
-      const result = getMilestones(undefined as unknown as ConsultDepartment, makeIdentityFormatter);
+      const result = getMilestones(undefined, makeIdentityFormatter);
       expect(result).toHaveLength(0);
     });
 

@@ -145,6 +145,22 @@ describe("ElapsedTime", () => {
   // Interval updates
   // -------------------------------------------------------------------------
   describe("interval-based updates", () => {
+    it("updates on the next minute boundary when mounted mid-minute", () => {
+      // 89 minutes and 59 seconds ago
+      const createdAtMidMinute = new Date(
+        BASE_TIME - (89 * 60_000 + 59_000)
+      ).toISOString();
+
+      render(<ElapsedTime createdAt={createdAtMidMinute} />);
+      expect(screen.getByText(/89 นาที/)).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1_000); // 1 second more = crosses the minute boundary
+      });
+
+      expect(screen.getByText(/1 ชม. 30 นาที/)).toBeInTheDocument();
+    });
+
     it("updates elapsed time after one minute interval", () => {
       render(<ElapsedTime createdAt={createdAt(59)} />);
       expect(screen.getByText(/59 นาที/)).toBeInTheDocument();
