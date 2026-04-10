@@ -668,7 +668,7 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
            </svg>
            {sentTimeFull}
         </div>
-        <PatientTableElapsedTime createdAt={caseData.createdAt || ""} darkMode={darkMode} />
+        <PatientTableElapsedTime createdAt={caseData.createdAt || ""} />
       </div>
 
       {/* Management Actions */}
@@ -715,7 +715,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
              </svg>
              {sentTimeFull}
           </div>
-          <PatientTableElapsedTime createdAt={caseData.createdAt || ""} darkMode={darkMode} />
+          <PatientTableElapsedTime createdAt={caseData.createdAt || ""} />
         </div>
       </td>
       <td className="p-3">
