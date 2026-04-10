@@ -21,11 +21,38 @@ export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  
+  // Persistence logic for filters and view modes
   const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
   const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
-  
-  // NEW: State สำหรับจัดการรูปแบบการแสดงผล (Card หรือ Table)
   const [displayMode, setDisplayMode] = useState<"card" | "table">("card");
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedView = localStorage.getItem("dashboard_view") as any;
+      const savedRoomFilter = localStorage.getItem("dashboard_roomFilter") as any;
+      const savedDisplayMode = localStorage.getItem("dashboard_displayMode") as any;
+      
+      if (savedView) setView(savedView);
+      if (savedRoomFilter) setRoomFilter(savedRoomFilter);
+      if (savedDisplayMode) setDisplayMode(savedDisplayMode);
+    } catch (e) {
+      console.warn("Failed to load settings from localStorage:", e);
+    }
+  }, []);
+
+  // Save to localStorage when changed
+  useEffect(() => {
+    try {
+      localStorage.setItem("dashboard_view", view);
+      localStorage.setItem("dashboard_roomFilter", roomFilter);
+      localStorage.setItem("dashboard_displayMode", displayMode);
+    } catch (e) {
+      console.warn("Failed to save settings to localStorage:", e);
+    }
+  }, [view, roomFilter, displayMode]);
 
   const { darkMode, soundEnabled } = useSettings();
 
@@ -123,6 +150,7 @@ export default function Dashboard() {
       "pending",
       (data) => {
         setAllCases(data);
+        setLastUpdated(new Date().toISOString());
         setLoading(false);
         setError(null);
       },
@@ -151,6 +179,14 @@ export default function Dashboard() {
     return buildDepartmentCasesMap(filteredAllCases, "all");
   }, [filteredAllCases]);
 
+  const surgeryTotalPending = useMemo(() => {
+    return SURGERY_DEPTS.reduce((sum, dept) => sum + (departmentCasesMap[dept]?.length || 0), 0);
+  }, [departmentCasesMap]);
+
+  const orthoTotalPending = useMemo(() => {
+    return ORTHO_DEPTS.reduce((sum, dept) => sum + (departmentCasesMap[dept]?.length || 0), 0);
+  }, [departmentCasesMap]);
+
   const getCasesForDepartment = (deptName: string) => {
     return departmentCasesMap[deptName] || [];
   };
@@ -170,25 +206,32 @@ export default function Dashboard() {
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         <div className="mb-4 text-center slide-in">
           <div className="flex flex-row flex-wrap items-center justify-center gap-2">
-            <div
-              className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg border transition-colors ${
-                darkMode ? "bg-gray-700 border-gray-600" : "bg-[#C7CFDA] border-[#014167]/30"
-              }`}
-            >
-              <span className={`font-bold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
-                เคสรอปรึกษา:
-              </span>
-              <span
-                className={`text-2xl font-bold ${
-                  totalPendingCases > 0
-                    ? "text-[#E55143]"
-                    : darkMode
-                    ? "text-gray-300"
-                    : "text-[#014167]"
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg border transition-colors ${
+                  darkMode ? "bg-gray-700 border-gray-600" : "bg-[#C7CFDA] border-[#014167]/30"
                 }`}
               >
-                {totalPendingCases}
-              </span>
+                <span className={`font-bold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
+                  เคสรอปรึกษา:
+                </span>
+                <span
+                  className={`text-2xl font-bold ${
+                    totalPendingCases > 0
+                      ? "text-[#E55143]"
+                      : darkMode
+                      ? "text-gray-300"
+                      : "text-[#014167]"
+                  }`}
+                >
+                  {totalPendingCases}
+                </span>
+              </div>
+              {lastUpdated && (
+                <span className={`text-[10px] tabular-nums font-medium ${darkMode ? "text-gray-500" : "text-[#014167]/50"}`}>
+                  อัปเดต {formatTime(lastUpdated)}
+                </span>
+              )}
             </div>
 
             {/* Layout Toggle: Card vs Table */}
@@ -328,29 +371,78 @@ export default function Dashboard() {
         </div>
 
         {displayMode === "card" && (
-          <details
-            open
-            className={`mb-4 rounded-xl shadow-md border overflow-hidden transition-colors ${
-              darkMode ? "bg-gray-800 border-gray-700" : "bg-white/90 border-[#014167]/20"
-            }`}
-          >
-            <summary
-              className={`cursor-pointer px-4 py-3 font-bold transition-all flex items-center justify-between ${
-                darkMode ? "text-gray-200 hover:bg-gray-700" : "text-[#014167] hover:bg-[#014167]/10"
+          <div className="mb-4">
+            {/* Desktop Navigation Map (Grid) */}
+            <details
+              open
+              className={`hidden md:block rounded-xl shadow-md border overflow-hidden transition-colors ${
+                darkMode ? "bg-gray-800 border-gray-700" : "bg-white/90 border-[#014167]/20"
               }`}
             >
-              <span className="flex items-center gap-2">
+              <summary
+                className={`cursor-pointer px-4 py-3 font-bold transition-all flex items-center justify-between ${
+                  darkMode ? "text-gray-200 hover:bg-gray-700" : "text-[#014167] hover:bg-[#014167]/10"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Quick Navigation
+                </span>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
-                Quick Navigation
-              </span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </summary>
-            <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-1 xl:gap-2">
+              </summary>
+              <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-1 xl:gap-2">
+                  {[...SURGERY_DEPTS, ...ORTHO_DEPTS].map((dept) => {
+                    const cases = getCasesForDepartment(dept);
+                    const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
+                    return (
+                      <button
+                        key={dept}
+                        onClick={() => scrollToDepartment(dept)}
+                        className={`rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-200 shadow-sm hover:shadow-md group relative ${
+                          darkMode
+                            ? `bg-gray-700 hover:text-white text-gray-200 ${
+                                isSurgery
+                                  ? "border border-[#E55143]/30 hover:bg-[#E55143]"
+                                  : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
+                              }`
+                            : `bg-white hover:text-white text-[#014167] ${
+                                isSurgery
+                                  ? "border border-[#E55143]/30 hover:bg-[#E55143]"
+                                  : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
+                              }`
+                        }`}
+                      >
+                        <div className="text-xs font-bold mb-1">{dept}</div>
+                        <div
+                          className={`text-lg font-bold ${
+                            cases.length > 0
+                              ? "text-[#E55143] group-hover:text-white"
+                              : "text-[#699D5D] group-hover:text-white"
+                          }`}
+                        >
+                          {cases.length}
+                        </div>
+                        {cases.length > 0 && (
+                          <span className="absolute top-1 right-1 flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#E55143] opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E55143]"></span>
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </details>
+
+            {/* Mobile Navigation Strip (Horizontal Scroll) */}
+            <div className="md:hidden flex flex-col gap-2">
+              <div className="flex items-center gap-1 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
                 {[...SURGERY_DEPTS, ...ORTHO_DEPTS].map((dept) => {
                   const cases = getCasesForDepartment(dept);
                   const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
@@ -358,36 +450,29 @@ export default function Dashboard() {
                     <button
                       key={dept}
                       onClick={() => scrollToDepartment(dept)}
-                      className={`rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
+                      className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all relative ${
                         darkMode
-                          ? `bg-gray-700 hover:text-white text-gray-200 ${
-                              isSurgery
-                                ? "border border-[#E55143]/30 hover:bg-[#E55143]"
-                                : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
+                          ? `bg-gray-800 border-gray-700 text-gray-200 ${
+                              isSurgery ? "hover:border-[#E55143]/50" : "hover:border-[#699D5D]/50"
                             }`
-                          : `bg-white hover:text-white text-[#014167] ${
-                              isSurgery
-                                ? "border border-[#E55143]/30 hover:bg-[#E55143]"
-                                : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
-                            }`
+                          : `bg-white border-[#C7CFDA] text-[#014167] shadow-sm`
                       }`}
                     >
-                      <div className="text-xs font-bold mb-1">{dept}</div>
-                      <div
-                        className={`text-lg font-bold ${
-                          cases.length > 0
-                            ? "text-[#E55143] group-hover:text-white"
-                            : "text-[#699D5D] group-hover:text-white"
-                        }`}
-                      >
+                      <span className="text-[10px] font-bold">{dept}</span>
+                      <span className={`text-xs font-black ${
+                         cases.length > 0 ? "text-[#E55143]" : "text-[#699D5D]"
+                      }`}>
                         {cases.length}
-                      </div>
+                      </span>
+                      {cases.length > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#E55143] border border-white"></span>
+                      )}
                     </button>
                   );
                 })}
               </div>
             </div>
-          </details>
+          </div>
         )}
 
         {/* ------------------------------------------------------------------------ */}
@@ -449,14 +534,19 @@ export default function Dashboard() {
                   darkMode ? "bg-gray-900" : "bg-[#b0bac7]"
                 }`}
               >
-                <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
+                <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20 flex items-center justify-between">
                   <h2 className="text-xl font-bold flex items-center gap-2">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                     </svg>
                     Surgery
-                    <span className="text-white/80 text-sm font-normal ml-1">แผนกศัลยกรรม</span>
+                    <span className="text-white/80 text-sm font-normal ml-1 hidden sm:inline">แผนกศัลยกรรม</span>
                   </h2>
+                  <span className={`px-2.5 py-1 rounded-full text-sm font-bold shadow-inner ${
+                    surgeryTotalPending > 0 ? "bg-white/20 text-white" : "bg-black/20 text-white/70"
+                  }`}>
+                    {surgeryTotalPending}
+                  </span>
                 </div>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {SURGERY_DEPTS.map((dept) => {
@@ -525,14 +615,19 @@ export default function Dashboard() {
                   darkMode ? "bg-gray-900" : "bg-[#b0bac7]"
                 }`}
               >
-                <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
+                <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20 flex items-center justify-between">
                   <h2 className="text-xl font-bold flex items-center gap-2">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5c-3.5 0-6 2.5-6 6v3c0 1.5-1 2.5-2 3.5-.5.5-.5 1 0 1.5.5.5 1 .5 1.5 0 1.5-1.5 2.5-3 2.5-5v-3c0-2 1.5-3.5 4-3.5s4 1.5 4 3.5v3c0 2 1 3.5 2.5 5 .5.5 1 .5 1.5 0s.5-1 0-1.5c-1-1-2-2-2-3.5v-3c0-3.5-2.5-6-6-6z" />
                     </svg>
                     Ortho
-                    <span className="text-[#C7CFDA] text-sm font-normal ml-1">ศัลยกรรมกระดูก</span>
+                    <span className="text-[#C7CFDA] text-sm font-normal ml-1 hidden sm:inline">ศัลยกรรมกระดูก</span>
                   </h2>
+                  <span className={`px-2.5 py-1 rounded-full text-sm font-bold shadow-inner ${
+                    orthoTotalPending > 0 ? "bg-white/20 text-[#FDFCDF]" : "bg-black/20 text-white/50"
+                  }`}>
+                    {orthoTotalPending}
+                  </span>
                 </div>
                 <div className="p-4">
                   {ORTHO_DEPTS.map((dept) => {
