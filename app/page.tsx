@@ -177,14 +177,6 @@ export default function Dashboard() {
     return buildDepartmentCasesMap(filteredAllCases, "all");
   }, [filteredAllCases]);
 
-  const surgeryTotalPending = useMemo(() => {
-    return SURGERY_DEPTS.reduce((sum, dept) => sum + (departmentCasesMap[dept]?.length || 0), 0);
-  }, [departmentCasesMap]);
-
-  const orthoTotalPending = useMemo(() => {
-    return ORTHO_DEPTS.reduce((sum, dept) => sum + (departmentCasesMap[dept]?.length || 0), 0);
-  }, [departmentCasesMap]);
-
   const getCasesForDepartment = (deptName: string) => {
     return departmentCasesMap[deptName] || [];
   };
@@ -527,7 +519,7 @@ export default function Dashboard() {
                   darkMode ? "bg-gray-900" : "bg-[#b0bac7]"
                 }`}
               >
-                <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20 flex items-center justify-between">
+                <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
                   <h2 className="text-xl font-bold flex items-center gap-2">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
@@ -535,11 +527,6 @@ export default function Dashboard() {
                     Surgery
                     <span className="text-white/80 text-sm font-normal ml-1 hidden sm:inline">แผนกศัลยกรรม</span>
                   </h2>
-                  <span className={`px-2.5 py-1 rounded-full text-sm font-bold shadow-inner ${
-                    surgeryTotalPending > 0 ? "bg-white/20 text-white" : "bg-black/20 text-white/70"
-                  }`}>
-                    {surgeryTotalPending}
-                  </span>
                 </div>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {SURGERY_DEPTS.map((dept) => {
@@ -608,7 +595,7 @@ export default function Dashboard() {
                   darkMode ? "bg-gray-900" : "bg-[#b0bac7]"
                 }`}
               >
-                <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20 flex items-center justify-between">
+                <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
                   <h2 className="text-xl font-bold flex items-center gap-2">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5c-3.5 0-6 2.5-6 6v3c0 1.5-1 2.5-2 3.5-.5.5-.5 1 0 1.5.5.5 1 .5 1.5 0 1.5-1.5 2.5-3 2.5-5v-3c0-2 1.5-3.5 4-3.5s4 1.5 4 3.5v3c0 2 1 3.5 2.5 5 .5.5 1 .5 1.5 0s.5-1 0-1.5c-1-1-2-2-2-3.5v-3c0-3.5-2.5-6-6-6z" />
@@ -616,11 +603,6 @@ export default function Dashboard() {
                     Ortho
                     <span className="text-[#C7CFDA] text-sm font-normal ml-1 hidden sm:inline">ศัลยกรรมกระดูก</span>
                   </h2>
-                  <span className={`px-2.5 py-1 rounded-full text-sm font-bold shadow-inner ${
-                    orthoTotalPending > 0 ? "bg-white/20 text-[#FDFCDF]" : "bg-black/20 text-white/50"
-                  }`}>
-                    {orthoTotalPending}
-                  </span>
                 </div>
                 <div className="p-4">
                   {ORTHO_DEPTS.map((dept) => {
