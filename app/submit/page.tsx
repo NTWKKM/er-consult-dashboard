@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { addConsult } from "@/lib/db";
-import { ALL_DEPARTMENTS, ROOMS } from "@/lib/constants";
+import { ALL_DEPARTMENTS, ROOMS, RoomName } from "@/lib/constants";
 import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
 
@@ -17,7 +17,7 @@ export default function SubmitPage() {
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [room, setRoom] = useState("");
+  const [room, setRoom] = useState<RoomName | "">("");
   const [problem, setProblem] = useState("");
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -114,7 +114,7 @@ export default function SubmitPage() {
         hn: hn.trim(),
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        room,
+        room: room as RoomName,
         problem: problem.trim(),
         isUrgent,
         departments: departmentsMap,
@@ -280,7 +280,7 @@ export default function SubmitPage() {
                   id="room"
                   value={room}
                   onChange={(e) => {
-                    setRoom(e.target.value);
+                    setRoom(e.target.value as RoomName | "");
                     if (errors.room) setErrors((prev) => { const n = { ...prev }; delete n.room; return n; });
                   }}
                   className={inputClasses("room")}
@@ -332,7 +332,6 @@ export default function SubmitPage() {
                   tabIndex={-1}
                   role="group"
                   aria-labelledby="departments-label"
-                  aria-invalid={Boolean(errors.departments)}
                   aria-describedby={errors.departments ? "departments-error" : undefined}
                   className="grid grid-cols-2 sm:grid-cols-4 gap-2"
                 >

@@ -4,7 +4,6 @@ import React, { useState, useCallback } from "react";
 import { useConsultActions, PostAcceptStatus } from "../hooks/useConsultActions";
 import { Consult } from "@/lib/db";
 import { POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
-import { useToast } from "../contexts/ToastContext";
 import ConfirmModal from "./ConfirmModal";
 import { RoomTransferButton } from "./RoomTransferButton";
 import { getMilestones, formatTime } from "@/lib/utils";
@@ -30,7 +29,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const firstName = caseData.firstName || "";
   const lastName = caseData.lastName || "";
   const fullName = [firstName, lastName].filter(Boolean).join(" ");
-  const room = caseData.room || "-";
+  const room = caseData.room;
   const problem = caseData.problem || "-";
   const isUrgent = caseData.isUrgent || false;
   const dept = caseData.departments[departmentName];

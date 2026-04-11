@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { ROOMS } from "../../lib/constants";
+import { ROOMS, RoomName } from "../../lib/constants";
 import { transferConsultRoom } from "../../lib/db";
 import { useToast } from "../contexts/ToastContext";
 
 interface RoomTransferButtonProps {
   consultId: string;
-  currentRoom: string;
+  currentRoom: RoomName;
   darkMode: boolean;
   onTransferStart?: () => void;
   onTransferEnd?: () => void;
@@ -42,7 +42,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     }
   }, [isOpen, currentRoom, sortedRooms]);
 
-  const handleTransfer = useCallback(async (newRoom: string) => {
+  const handleTransfer = useCallback(async (newRoom: RoomName) => {
     if (newRoom === currentRoom) {
       setIsOpen(false);
       return;

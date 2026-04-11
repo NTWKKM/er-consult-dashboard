@@ -2,6 +2,7 @@ import { db } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
+import { RoomName } from "./constants";
 
 export interface ConsultTransfer {
     to: string;
@@ -24,7 +25,7 @@ export interface Consult {
     hn: string;
     firstName: string;
     lastName: string;
-    room: string;
+    room: RoomName;
     problem: string;
     createdAt: string; // ISO string
     status: "pending" | "completed";
@@ -422,7 +423,7 @@ export async function updateConsult(
 }
 export async function transferConsultRoom(
     id: string,
-    newRoom: string,
+    newRoom: RoomName,
     onBackgroundError?: (error: unknown) => void
 ): Promise<{ transferred: boolean; backgroundPromise: Promise<void> | null }> {
     const now = new Date().toISOString();
@@ -437,7 +438,8 @@ export async function transferConsultRoom(
         Object.keys(current.departments).forEach(deptKey => {
             const dept = current.departments[deptKey];
             if (dept.status === "pending") {
-                (payload as any)[`departments.${deptKey}.transfers`] = arrayUnion({ to: newRoom, at: now });
+                const key = `departments.${deptKey}.transfers`;
+                (payload as Record<string, unknown>)[key] = arrayUnion({ to: newRoom, at: now });
             }
         });
 
