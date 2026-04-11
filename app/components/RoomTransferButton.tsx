@@ -45,6 +45,12 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     }
   }, [isOpen, currentRoom, sortedRooms]);
 
+  useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
+
   const handleTransfer = useCallback(async (newRoom: RoomName) => {
     if (transferInFlightRef.current || disabled) return;
 
@@ -177,12 +183,12 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
                 key={room}
                 ref={(el) => { itemRefs.current[index] = el; }}
                 onClick={() => handleTransfer(room)}
-                disabled={isTransferring}
+                disabled={isTransferring || disabled}
                 tabIndex={focusedIndex === index ? 0 : -1}
                 role="option"
                 aria-selected={room === currentRoom}
                 className={`w-full text-left px-3 py-2 text-xs font-semibold transition-colors flex items-center justify-between outline-none group ${
-                  isTransferring ? "opacity-50 cursor-not-allowed" :
+                  isTransferring || disabled ? "opacity-50 cursor-not-allowed" :
                   room === currentRoom
                     ? darkMode
                       ? "bg-blue-900/40 text-blue-400"

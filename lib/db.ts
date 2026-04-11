@@ -6,7 +6,7 @@ import { ROOMS, RoomName } from "./constants";
 
 export interface ConsultTransfer {
     to: RoomName;
-    at: string; // ISO string
+    at?: string; // ISO string
 }
 
 export interface ConsultDepartment {
@@ -62,19 +62,26 @@ function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     if (data.departments) {
         Object.keys(data.departments).forEach(deptKey => {
             const dept = data.departments[deptKey];
-            const validatedDept: ConsultDepartment = { ...dept };
+            const { transfers, ...rest } = dept;
+            const validatedDept: ConsultDepartment = { ...rest };
             
-            if (dept.transfers && Array.isArray(dept.transfers)) {
-                validatedDept.transfers = dept.transfers.map((t: unknown, index: number) => {
-                    const transfer = t as Record<string, unknown>;
-                    const isValidTo = isValidRoomName(transfer.to);
-                    if (!isValidTo && transfer.to !== undefined) {
-                        console.warn(`[mapRawToConsult] Invalid transfer destination "${transfer.to}" at index ${index} for dept ${deptKey} in consult ${id}`);
+            if (Array.isArray(transfers)) {
+                validatedDept.transfers = transfers.map((t: unknown, index: number) => {
+                    const tObj = (t && typeof t === "object") ? t as Record<string, unknown> : {};
+                    const isValidTo = isValidRoomName(tObj.to);
+                    if (!isValidTo && tObj.to !== undefined) {
+                        console.warn(`[mapRawToConsult] Invalid transfer destination "${tObj.to}" at index ${index} for dept ${deptKey} in consult ${id}`);
                     }
-                    return {
-                        at: typeof transfer.at === "string" ? transfer.at : new Date().toISOString(),
-                        to: isValidTo ? transfer.to : room // Use main room as fallback for invalid transfer
+                    
+                    const result: ConsultTransfer = {
+                        to: isValidTo ? (tObj.to as RoomName) : room
                     };
+                    
+                    if (typeof tObj.at === "string") {
+                        result.at = tObj.at;
+                    }
+                    
+                    return result;
                 });
             }
             
@@ -362,13 +369,10 @@ export async function updateConsult(
                 throw new Error(`Consult not found: ${id}`);
             }
 
-            const data = docSnap.data();
-            const currentData = {
-                ...data,
-                id: docSnap.id,
-                firstName: data?.firstName ?? "",
-                lastName: data?.lastName ?? "",
-            } as Consult;
+            const currentData = mapRawToConsult(docSnap.id, docSnap.data());
+            if (!currentData) {
+                throw new Error(`Consult not found: ${id}`);
+            }
 
             const updates = updater(currentData);
             if (updates === null) {
@@ -408,13 +412,10 @@ export async function updateConsult(
             throw new Error(`Consult not found: ${id}`);
         }
 
-        const data = docSnap.data();
-        const currentData = {
-            ...data,
-            id: docSnap.id,
-            firstName: data?.firstName ?? "",
-            lastName: data?.lastName ?? "",
-        } as Consult;
+        const currentData = mapRawToConsult(docSnap.id, docSnap.data());
+        if (!currentData) {
+            throw new Error(`Consult not found: ${id}`);
+        }
 
         const updates = updater(currentData);
         if (updates === null) {
