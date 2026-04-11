@@ -5,7 +5,7 @@ import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
 
 export interface ConsultTransfer {
-    to: string;
+    to: RoomName;
     at: string; // ISO string
 }
 

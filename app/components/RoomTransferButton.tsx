@@ -26,6 +26,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   const { addToast } = useToast();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const transferInFlightRef = useRef(false);
 
   // Reorder rooms to put SSW first
   const sortedRooms = useMemo(() => {
@@ -43,12 +44,15 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   }, [isOpen, currentRoom, sortedRooms]);
 
   const handleTransfer = useCallback(async (newRoom: RoomName) => {
+    if (transferInFlightRef.current) return;
+
     if (newRoom === currentRoom) {
       setIsOpen(false);
       return;
     }
 
     try {
+      transferInFlightRef.current = true;
       setIsTransferring(true);
       onTransferStart?.();
       setIsOpen(false);
@@ -72,6 +76,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       console.error("Transfer error:", error);
       addToast({ message: "ไม่สามารถย้ายห้องได้ กรุณาลองใหม่", type: "error" });
     } finally {
+      transferInFlightRef.current = false;
       setIsTransferring(false);
     }
   }, [consultId, currentRoom, addToast, onTransferStart, onTransferEnd]);

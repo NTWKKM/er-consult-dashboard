@@ -245,6 +245,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
           {!isTerminal && (
             <div className="flex flex-col gap-1">
+              {isAccepted && !isStatusSelected && !isUpdating && (
+                <div className={`text-[10px] font-bold text-center animate-pulse ${darkMode ? "text-amber-300" : "text-amber-600"}`}>
+                  กรุณาเลือกสถานะก่อนปิดเคส
+                </div>
+              )}
               <div className="flex gap-2">
                 {!isAccepted ? (
                   <>
@@ -327,7 +332,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   <button
                     onClick={() => setShowConfirm(true)}
                     disabled={isUpdating || !isStatusSelected}
-                    title={!isStatusSelected ? "กรุณาเลือกสถานะก่อนปิดเคส" : undefined}
                     className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 tap-feedback ${
                       isUpdating || !isStatusSelected
                         ? darkMode
