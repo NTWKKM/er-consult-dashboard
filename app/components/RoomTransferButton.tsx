@@ -87,7 +87,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       transferInFlightRef.current = false;
       setIsTransferring(false);
     }
-  }, [consultId, currentRoom, addToast, onTransferStart, onTransferEnd]);
+  }, [consultId, currentRoom, addToast, onTransferStart, onTransferEnd, disabled]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
