@@ -667,7 +667,7 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
 
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
   const sentTimeFull = caseData.createdAt
-    ? new Date(caseData.createdAt).toLocaleString("th-TH")
+    ? formatTime(caseData.createdAt)
     : "";
 
   return (
@@ -738,7 +738,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
 
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
   const sentTimeFull = caseData.createdAt
-    ? new Date(caseData.createdAt).toLocaleString("th-TH")
+    ? formatTime(caseData.createdAt)
     : "";
 
   return (

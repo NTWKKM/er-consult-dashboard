@@ -41,7 +41,6 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           return null;
         }
 
-        const updatedDepartments = { ...current.departments };
         const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
         const isOrthoDept = (ORTHO_DEPTS as readonly string[]).includes(departmentName);
         const targetDepts = isSurgeryDept 
@@ -51,18 +50,17 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
             : [departmentName];
         const now = new Date().toISOString();
 
-        // Multi-department accept logic for specific specialties
-        Object.keys(updatedDepartments).forEach((dept) => {
-          if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
-            updatedDepartments[dept] = {
-              ...updatedDepartments[dept],
-              acceptedAt: updatedDepartments[dept].acceptedAt || now,
-              actionStatus: ACCEPT_STATUS,
-            };
+        const updates: any = {};
+        Object.keys(current.departments).forEach((dept) => {
+          if ((targetDepts as readonly string[]).includes(dept) && current.departments[dept].status === "pending") {
+            if (!current.departments[dept].acceptedAt) {
+              updates[`departments.${dept}.acceptedAt`] = now;
+            }
+            updates[`departments.${dept}.actionStatus`] = ACCEPT_STATUS;
           }
         });
 
-        return { departments: updatedDepartments };
+        return Object.keys(updates).length > 0 ? updates : null;
       }, { 
         awaitRemote: false,
         onBackgroundError: () => {
@@ -116,30 +114,19 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           return null;
         }
 
-        const updatedDepartments = { ...current.departments };
         const now = new Date().toISOString();
-
-        const nextDept = {
-          ...updatedDepartments[departmentName],
-          acceptedAt: updatedDepartments[departmentName].acceptedAt || now,
-          actionStatus: newStatus,
+        const updates: any = {
+          [`departments.${departmentName}.actionStatus`]: newStatus,
+          [`departments.${departmentName}.admittedAt`]: newStatus === "Admit" ? now : null,
+          [`departments.${departmentName}.returnedAt`]: newStatus === "คืน ER" ? now : null,
+          [`departments.${departmentName}.dischargedAt`]: newStatus === "D/C" ? now : null,
         };
 
-        delete nextDept.admittedAt;
-        delete nextDept.returnedAt;
-        delete nextDept.dischargedAt;
-
-        if (newStatus === "Admit") {
-          nextDept.admittedAt = now;
-        } else if (newStatus === "คืน ER") {
-          nextDept.returnedAt = now;
-        } else if (newStatus === "D/C") {
-          nextDept.dischargedAt = now;
+        if (!current.departments[departmentName].acceptedAt) {
+          updates[`departments.${departmentName}.acceptedAt`] = now;
         }
 
-        updatedDepartments[departmentName] = nextDept;
-
-        return { departments: updatedDepartments };
+        return updates;
       }, { 
         awaitRemote: false,
         onBackgroundError: () => {
@@ -191,19 +178,21 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           return null;
         }
 
-        const updatedDepartments = { ...current.departments };
-        updatedDepartments[departmentName] = {
-          ...updatedDepartments[departmentName],
-          status: "completed",
-          completedAt: new Date().toISOString(),
+        const now = new Date().toISOString();
+        const updates: any = {
+          [`departments.${departmentName}.status`]: "completed",
+          [`departments.${departmentName}.completedAt`]: now,
         };
-        const allCompleted = Object.values(updatedDepartments).every(
-          (dept: ConsultDepartment) =>
-            dept.status === "completed" || dept.status === "cancelled"
-        );
+
+        const allCompleted = Object.keys(current.departments).every((deptKey) => {
+          if (deptKey === departmentName) return true;
+          const d = current.departments[deptKey];
+          return d.status === "completed" || d.status === "cancelled";
+        });
+
         return {
-          departments: updatedDepartments,
-          ...(allCompleted && { status: "completed" }),
+          ...updates,
+          ...(allCompleted && { status: "completed" as const }),
         };
       }, { 
         awaitRemote: false,
@@ -256,20 +245,21 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           return null;
         }
 
-        const updatedDepartments = { ...current.departments };
-        updatedDepartments[departmentName] = {
-          ...updatedDepartments[departmentName],
-          status: "cancelled",
-          completedAt: new Date().toISOString(),
+        const now = new Date().toISOString();
+        const updates: any = {
+          [`departments.${departmentName}.status`]: "cancelled",
+          [`departments.${departmentName}.completedAt`]: now,
         };
 
-        const allFinished = Object.values(updatedDepartments).every(
-          (dept: ConsultDepartment) => dept.status === "completed" || dept.status === "cancelled"
-        );
+        const allFinished = Object.keys(current.departments).every((deptKey) => {
+          if (deptKey === departmentName) return true;
+          const d = current.departments[deptKey];
+          return d.status === "completed" || d.status === "cancelled";
+        });
 
         return {
-          departments: updatedDepartments,
-          ...(allFinished && { status: "completed" }),
+          ...updates,
+          ...(allFinished && { status: "completed" as const }),
         };
       }, { 
         awaitRemote: false,

@@ -125,6 +125,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         disabled={isTransferring}
         title="เปลี่ยนห้อง"
+        aria-label="เปลี่ยนห้อง"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         className={`p-1 rounded-full transition-all duration-200 ${

@@ -429,7 +429,7 @@ export async function transferConsultRoom(
     const result = await updateConsult(id, (current) => {
         if (current.room === newRoom) return null;
 
-        const payload: Record<string, unknown> = {
+        const payload: ConsultUpdate = {
             room: newRoom
         };
         
@@ -437,7 +437,7 @@ export async function transferConsultRoom(
         Object.keys(current.departments).forEach(deptKey => {
             const dept = current.departments[deptKey];
             if (dept.status === "pending") {
-                payload[`departments.${deptKey}.transfers`] = arrayUnion({ to: newRoom, at: now });
+                (payload as any)[`departments.${deptKey}.transfers`] = arrayUnion({ to: newRoom, at: now });
             }
         });
 
