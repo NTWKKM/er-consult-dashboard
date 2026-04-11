@@ -93,7 +93,7 @@ export function getMilestones(dept: ConsultDepartment | undefined, formatTime: (
   // Add transfer milestones
   const transferMilestones: Milestone[] = (dept?.transfers || []).map((t: ConsultTransfer) => ({
     label: `ย้าย ${t.to}`,
-    time: formatTime(t.at),
+    time: t.at ? formatTime(t.at) : null,
     raw: t.at,
     colorLight: "text-blue-500",
     colorDark: "text-blue-400",
