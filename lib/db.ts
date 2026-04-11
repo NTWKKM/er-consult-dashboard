@@ -430,17 +430,20 @@ export async function transferConsultRoom(
     const result = await updateConsult(id, (current) => {
         if (current.room === newRoom) return null;
 
+        const pendingDeptKeys = Object.keys(current.departments).filter(
+            (deptKey) => current.departments[deptKey].status === "pending"
+        );
+        
+        if (pendingDeptKeys.length === 0) return null;
+
         const payload: ConsultUpdate = {
             room: newRoom
         };
         
-        // Add transfer milestone to all departments that aren't cancelled or completed
-        Object.keys(current.departments).forEach(deptKey => {
-            const dept = current.departments[deptKey];
-            if (dept.status === "pending") {
-                const key = `departments.${deptKey}.transfers`;
-                (payload as Record<string, unknown>)[key] = arrayUnion({ to: newRoom, at: now });
-            }
+        // Add transfer milestone to all departments that are still pending
+        pendingDeptKeys.forEach((deptKey) => {
+            const key = `departments.${deptKey}.transfers`;
+            (payload as Record<string, unknown>)[key] = arrayUnion({ to: newRoom, at: now });
         });
 
         return payload;
