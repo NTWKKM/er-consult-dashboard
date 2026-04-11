@@ -53,6 +53,8 @@ function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     let room: RoomName = ROOMS[0]; // Default to first valid room
     if (isValidRoomName(data.room)) {
         room = data.room;
+    } else if (data.room !== undefined) {
+        console.warn(`[mapRawToConsult] Invalid room "${data.room}" for consult ${id}, defaulting to ${ROOMS[0]}`);
     }
 
     // Deeply validate and sanitize transfers in all departments
@@ -63,11 +65,15 @@ function mapRawToConsult(id: string, data: DocumentData): Consult | null {
             const validatedDept: ConsultDepartment = { ...dept };
             
             if (dept.transfers && Array.isArray(dept.transfers)) {
-                validatedDept.transfers = dept.transfers.map((t: unknown) => {
+                validatedDept.transfers = dept.transfers.map((t: unknown, index: number) => {
                     const transfer = t as Record<string, unknown>;
+                    const isValidTo = isValidRoomName(transfer.to);
+                    if (!isValidTo && transfer.to !== undefined) {
+                        console.warn(`[mapRawToConsult] Invalid transfer destination "${transfer.to}" at index ${index} for dept ${deptKey} in consult ${id}`);
+                    }
                     return {
                         at: typeof transfer.at === "string" ? transfer.at : new Date().toISOString(),
-                        to: isValidRoomName(transfer.to) ? transfer.to : room // Use main room as fallback for invalid transfer
+                        to: isValidTo ? transfer.to : room // Use main room as fallback for invalid transfer
                     };
                 });
             }
