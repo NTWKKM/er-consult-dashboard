@@ -54,9 +54,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     handleCancel,
   } = useConsultActions(caseId, departmentName, hn, onUpdate);
 
-  const handleActionStatusChange = useCallback(async (newStatus: PostAcceptStatus) => {
-    await handleStatusChange(newStatus);
-  }, [handleStatusChange]);
+
 
   const handleAcceptCase = useCallback(async () => {
     if (await handleAccept()) {
@@ -299,7 +297,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     <select
                       aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                      onChange={(e) => handleActionStatusChange(e.target.value as PostAcceptStatus)}
+                      onChange={(e) => handleStatusChange(e.target.value as PostAcceptStatus)}
                       className={`w-full h-full px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${
                         actionStatus && actionStatus !== ACCEPT_STATUS
                           ? darkMode
