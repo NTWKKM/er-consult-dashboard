@@ -38,7 +38,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setFocusedIndex(Math.max(0, sortedRooms.indexOf(currentRoom as any)));
+      setFocusedIndex(Math.max(0, sortedRooms.indexOf(currentRoom)));
     }
   }, [isOpen, currentRoom, sortedRooms]);
 
