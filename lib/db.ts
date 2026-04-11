@@ -1,7 +1,13 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
+import { ROOMS, RoomName } from "./constants";
+
+export interface ConsultTransfer {
+    to: RoomName;
+    at?: string; // ISO string
+}
 
 export interface ConsultDepartment {
     status: "pending" | "completed" | "cancelled";
@@ -11,6 +17,7 @@ export interface ConsultDepartment {
     admittedAt?: string | null;
     returnedAt?: string | null;
     dischargedAt?: string | null;
+    transfers?: ConsultTransfer[];
 }
 
 export interface Consult {
@@ -18,7 +25,7 @@ export interface Consult {
     hn: string;
     firstName: string;
     lastName: string;
-    room: string;
+    room: RoomName;
     problem: string;
     createdAt: string; // ISO string
     status: "pending" | "completed";
@@ -29,18 +36,74 @@ export interface Consult {
 const COLLECTION_NAME = "consults";
 
 /**
- * Helper to map a Firestore document snapshot to a Consult object.
- * Performs defensive checks and provides default values.
+ * Runtime validator to ensure room names from schemaless Firestore data 
+ * match the defined RoomName type.
  */
-function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult | null {
-    const data = document.data();
+function isValidRoomName(room: unknown): room is RoomName {
+    return typeof room === "string" && (ROOMS as readonly string[]).includes(room);
+}
+
+/**
+ * Sanitizes and validates raw Firestore data into a Consult object.
+ */
+function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     if (!data) return null;
+
+    // Validate and fallback for the main room field
+    let room: RoomName = ROOMS[0]; // Default to first valid room
+    if (isValidRoomName(data.room)) {
+        room = data.room;
+    } else if (data.room !== undefined) {
+        console.warn(`[mapRawToConsult] Invalid room "${data.room}" for consult ${id}, defaulting to ${ROOMS[0]}`);
+    }
+
+    // Deeply validate and sanitize transfers in all departments
+    const validatedDepts: { [key: string]: ConsultDepartment } = {};
+    if (data.departments) {
+        Object.keys(data.departments).forEach(deptKey => {
+            const dept = data.departments[deptKey];
+            const { transfers, ...rest } = dept;
+            const validatedDept: ConsultDepartment = { ...rest };
+            
+            if (Array.isArray(transfers)) {
+                validatedDept.transfers = transfers.map((t: unknown, index: number) => {
+                    const tObj = (t && typeof t === "object") ? t as Record<string, unknown> : {};
+                    const isValidTo = isValidRoomName(tObj.to);
+                    if (!isValidTo && tObj.to !== undefined) {
+                        console.warn(`[mapRawToConsult] Invalid transfer destination "${tObj.to}" at index ${index} for dept ${deptKey} in consult ${id}`);
+                    }
+                    
+                    const result: ConsultTransfer = {
+                        to: isValidTo ? (tObj.to as RoomName) : room
+                    };
+                    
+                    if (typeof tObj.at === "string") {
+                        result.at = tObj.at;
+                    }
+                    
+                    return result;
+                });
+            }
+            
+            validatedDepts[deptKey] = validatedDept;
+        });
+    }
+
     return {
         ...data,
-        id: document.id,
+        id,
         firstName: data.firstName ?? "",
         lastName: data.lastName ?? "",
+        room,
+        departments: validatedDepts,
     } as Consult;
+}
+
+/**
+ * Helper to map a Firestore document snapshot to a Consult object.
+ */
+function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult | null {
+    return mapRawToConsult(document.id, document.data());
 }
 
 
@@ -256,13 +319,7 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
     const docRef = doc(db, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-        const data = docSnap.data();
-        return {
-            ...data,
-            id: docSnap.id,
-            firstName: data.firstName ?? "",
-            lastName: data.lastName ?? "",
-        } as Consult;
+        return mapRawToConsult(docSnap.id, docSnap.data()) ?? undefined;
     }
     return undefined;
 }
@@ -280,7 +337,8 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
     return newConsult;
 }
 
-export type ConsultUpdater = (current: Consult) => Partial<Omit<Consult, "id">> | null;
+type ConsultUpdate = UpdateData<Omit<Consult, "id">>;
+export type ConsultUpdater = (current: Consult) => ConsultUpdate | null;
 
 export interface UpdateConsultOptions {
     awaitRemote?: boolean;
@@ -291,11 +349,12 @@ export interface UpdateResults {
     consult: Consult | null;
     isQueued: boolean;
     backgroundPromise: Promise<void> | null;
+    applied: boolean;
 }
 
 export async function updateConsult(
     id: string,
-    updater: ConsultUpdater | Partial<Omit<Consult, "id">>,
+    updater: ConsultUpdater | ConsultUpdate,
     options: UpdateConsultOptions = {}
 ): Promise<UpdateResults> {
     const docRef = doc(db, COLLECTION_NAME, id);
@@ -310,13 +369,10 @@ export async function updateConsult(
                 throw new Error(`Consult not found: ${id}`);
             }
 
-            const data = docSnap.data();
-            const currentData = {
-                ...data,
-                id: docSnap.id,
-                firstName: data?.firstName ?? "",
-                lastName: data?.lastName ?? "",
-            } as Consult;
+            const currentData = mapRawToConsult(docSnap.id, docSnap.data());
+            if (!currentData) {
+                throw new Error(`Consult not found: ${id}`);
+            }
 
             const updates = updater(currentData);
             if (updates === null) {
@@ -324,8 +380,11 @@ export async function updateConsult(
                     consult: null,
                     isQueued: false,
                     backgroundPromise: null,
+                    applied: false,
                 };
             }
+            
+            const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
             
             // Perform the "real" update in background (Allows Offline persistence)
             const rawPromise = updateDoc(docRef, updates);
@@ -337,12 +396,13 @@ export async function updateConsult(
             });
 
             return {
-                consult: {
+                consult: hasDottedKeys ? null : {
                     ...currentData,
                     ...updates,
                 } as Consult,
                 isQueued: true,
-                backgroundPromise: rawPromise
+                backgroundPromise: rawPromise,
+                applied: true,
             };
         }
 
@@ -352,13 +412,10 @@ export async function updateConsult(
             throw new Error(`Consult not found: ${id}`);
         }
 
-        const data = docSnap.data();
-        const currentData = {
-            ...data,
-            id: docSnap.id,
-            firstName: data?.firstName ?? "",
-            lastName: data?.lastName ?? "",
-        } as Consult;
+        const currentData = mapRawToConsult(docSnap.id, docSnap.data());
+        if (!currentData) {
+            throw new Error(`Consult not found: ${id}`);
+        }
 
         const updates = updater(currentData);
         if (updates === null) {
@@ -366,17 +423,20 @@ export async function updateConsult(
                 consult: null,
                 isQueued: false,
                 backgroundPromise: null,
+                applied: false,
             };
         }
+        const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
         await updateDoc(docRef, updates);
 
         return {
-            consult: {
+            consult: hasDottedKeys ? null : {
                 ...currentData,
                 ...updates,
             } as Consult,
             isQueued: false,
-            backgroundPromise: null
+            backgroundPromise: null,
+            applied: true,
         };
     } else {
         // Direct object update
@@ -392,14 +452,52 @@ export async function updateConsult(
             return {
                 consult: null,
                 isQueued: true,
-                backgroundPromise: rawPromise
+                backgroundPromise: rawPromise,
+                applied: true,
             };
         }
         await updateDoc(docRef, updater);
         return {
             consult: null,
             isQueued: false,
-            backgroundPromise: null
+            backgroundPromise: null,
+            applied: true,
         };
     }
+}
+export async function transferConsultRoom(
+    id: string,
+    newRoom: RoomName,
+    onBackgroundError?: (error: unknown) => void
+): Promise<{ transferred: boolean; backgroundPromise: Promise<void> | null }> {
+    const now = new Date().toISOString();
+    const result = await updateConsult(id, (current) => {
+        if (current.room === newRoom) return null;
+
+        const pendingDeptKeys = Object.keys(current.departments).filter(
+            (deptKey) => current.departments[deptKey].status === "pending"
+        );
+        
+        if (pendingDeptKeys.length === 0) return null;
+
+        const payload: ConsultUpdate = {
+            room: newRoom
+        };
+        
+        // Add transfer milestone to all departments that are still pending
+        pendingDeptKeys.forEach((deptKey) => {
+            const key = `departments.${deptKey}.transfers`;
+            (payload as Record<string, unknown>)[key] = arrayUnion({ to: newRoom, at: now });
+        });
+
+        return payload;
+    }, {
+        awaitRemote: false,
+        onBackgroundError,
+    });
+
+    return {
+        transferred: result.applied,
+        backgroundPromise: result.backgroundPromise,
+    };
 }

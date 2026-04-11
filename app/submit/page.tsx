@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { addConsult } from "@/lib/db";
-import { ALL_DEPARTMENTS, ROOMS } from "@/lib/constants";
+import { ALL_DEPARTMENTS, ROOMS, RoomName } from "@/lib/constants";
 import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
 
@@ -17,7 +17,7 @@ export default function SubmitPage() {
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [room, setRoom] = useState("");
+  const [room, setRoom] = useState<RoomName | "">("");
   const [problem, setProblem] = useState("");
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -65,7 +65,7 @@ export default function SubmitPage() {
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return newErrors;
   }, [hn, firstName, lastName, room, problem, selectedDepts]);
 
   const handleCheckboxChange = (dept: string) => {
@@ -85,8 +85,19 @@ export default function SubmitPage() {
   const handleSubmit = useCallback(async (isUrgent: boolean = false) => {
     if (submitInFlightRef.current) return;
 
-    if (!validateForm()) {
+    const currentErrors = validateForm();
+    if (Object.keys(currentErrors).length > 0) {
       addToast({ type: "error", message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+      
+      // UX Improvement: Auto-focus and scroll to the first error field
+      const firstErrorKey = Object.keys(currentErrors)[0];
+      setTimeout(() => {
+        const errorElement = document.getElementById(firstErrorKey);
+        if (errorElement) {
+          errorElement.focus();
+          errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 50);
       return;
     }
 
@@ -103,7 +114,7 @@ export default function SubmitPage() {
         hn: hn.trim(),
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        room,
+        room: room as RoomName,
         problem: problem.trim(),
         isUrgent,
         departments: departmentsMap,
@@ -146,11 +157,9 @@ export default function SubmitPage() {
         if (isLoading) return; // Prevent double submission
         if (e.metaKey || e.ctrlKey) {
           e.preventDefault();
-          handleSubmit(false);
-        } else if (e.shiftKey) {
-          e.preventDefault();
-          handleSubmit(true);
+          handleSubmit(true); // Cmd/Ctrl + Enter triggers Fast Track
         }
+        // Enter and Shift + Enter are now free to create newlines in textarea
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -174,36 +183,13 @@ export default function SubmitPage() {
         }`}
     >
       <div className="relative max-w-4xl w-full">
-        <div
-          className={`p-2.5 rounded-xl shadow-md mb-3 z-10 relative border transition-colors ${darkMode
-              ? "bg-gray-700 text-gray-100 border-gray-600"
-              : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
-            }`}
-        >
-          <div className="flex items-center justify-center gap-2">
-            <div
-              className={`w-8 h-8 backdrop-blur-sm rounded-lg flex items-center justify-center ${darkMode ? "bg-gray-600" : "bg-[#014167]/20"
-                }`}
-            >
-              <svg
-                className={`w-4 h-4 ${darkMode ? "text-gray-200" : "text-[#014167]"}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-lg font-bold drop-shadow-sm">ส่งเคสปรึกษา</h1>
-              <p className={`text-xs font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>ER MNRH</p>
-            </div>
+        <div className="flex items-center gap-2 mb-3 px-2">
+          <div className={`w-6 h-6 rounded-md flex items-center justify-center ${darkMode ? "bg-gray-700 text-gray-300" : "bg-[#014167]/10 text-[#014167]"}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </div>
+          <h1 className={`text-base font-bold ${darkMode ? "text-gray-200" : "text-white"}`}>ส่งเคสปรึกษาแบบฟอร์ม</h1>
         </div>
 
         <div
@@ -294,7 +280,7 @@ export default function SubmitPage() {
                   id="room"
                   value={room}
                   onChange={(e) => {
-                    setRoom(e.target.value);
+                    setRoom(e.target.value as RoomName | "");
                     if (errors.room) setErrors((prev) => { const n = { ...prev }; delete n.room; return n; });
                   }}
                   className={inputClasses("room")}
@@ -335,13 +321,20 @@ export default function SubmitPage() {
 
               {/* Departments */}
               <div>
-                <label className={labelClasses}>
+                <label id="departments-label" className={labelClasses}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                   </svg>
                   แผนกที่ปรึกษา <span className="text-[#E55143]">*</span>
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div
+                  id="departments"
+                  tabIndex={-1}
+                  role="group"
+                  aria-labelledby="departments-label"
+                  aria-describedby={errors.departments ? "departments-error" : undefined}
+                  className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+                >
                   {ALL_DEPARTMENTS.map((dept) => (
                     <div
                       key={dept}
@@ -354,11 +347,11 @@ export default function SubmitPage() {
                         value={dept}
                         checked={selectedDepts.includes(dept)}
                         onChange={() => handleCheckboxChange(dept)}
-                        className="peer hidden"
+                        className="peer sr-only"
                       />
                       <label
                         htmlFor={dept}
-                        className={`flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer transition-all duration-200 font-semibold text-xs ${selectedDepts.includes(dept)
+                        className={`flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer transition-all duration-200 font-semibold text-xs peer-focus:outline peer-focus:outline-2 peer-focus:outline-offset-2 peer-focus:outline-[#699D5D] ${selectedDepts.includes(dept)
                             ? "bg-[#699D5D] text-white border-[#699D5D] shadow-sm"
                             : darkMode
                               ? "bg-gray-700 text-gray-200 border-gray-600 hover:border-[#699D5D]/50 hover:bg-gray-600"
@@ -375,11 +368,15 @@ export default function SubmitPage() {
                     </div>
                   ))}
                 </div>
-                {errors.departments && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.departments}</p>}
+                {errors.departments && (
+                  <p id="departments-error" className="text-[#E55143] text-xs mt-1 font-medium">
+                    {errors.departments}
+                  </p>
+                )}
                 {selectedDepts.length > 0 && (
                   <div
                     className={`mt-2 p-2 rounded-lg border ${darkMode
-                        ? "bg-[#699D5D]/10 border-[#699D5D]/30"
+                        ? "bg-emerald-500/10 border-emerald-500/30"
                         : "bg-[#699D5D]/10 border-[#699D5D]/30"
                       }`}
                   >
@@ -393,57 +390,63 @@ export default function SubmitPage() {
 
               {/* Submit buttons */}
               <div className={`pt-3 border-t ${darkMode ? "border-gray-700" : "border-[#C7CFDA]/30"}`}>
-                <div className={`text-[10px] mb-2 text-center flex flex-col gap-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                  <p>💡 {isMac ? "⌘+Enter" : "Ctrl+Enter"}: ส่งเคสปกติ</p>
-                  <p>⚡ Shift+Enter: ส่ง Fast Track</p>
-                </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSubmit(false)}
-                    disabled={isLoading}
-                    className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
-                        ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                        : "bg-[#699D5D] text-white hover:shadow-md transform hover:-translate-y-0.5"
-                      }`}
-                  >
-                    {isLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span className="hidden sm:inline">กำลังส่ง...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                        </svg>
-                        Consult
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSubmit(true)}
-                    disabled={isLoading}
-                    className={`font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
-                        ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                        : "bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5 pulse-urgent"
-                      }`}
-                  >
-                    {isLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span className="hidden sm:inline">กำลังส่ง...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        Consult FastTrack
-                      </>
-                    )}
-                  </button>
+                  <div className="flex flex-col gap-1.5">
+                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+                      💡 คลิกเพื่อส่งเคสปกติ
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleSubmit(false)}
+                      disabled={isLoading}
+                      className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
+                          ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
+                          : "bg-[#699D5D] text-white hover:shadow-md transform hover:-translate-y-0.5"
+                        }`}
+                    >
+                      {isLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span className="hidden sm:inline">กำลังส่ง...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                          </svg>
+                          Consult
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+                      ⚡ {isMac ? "⌘+Enter" : "Ctrl+Enter"}: ส่ง Fast Track
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleSubmit(true)}
+                      disabled={isLoading}
+                      className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
+                          ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
+                          : "bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5"
+                        }`}
+                    >
+                      {isLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span className="hidden sm:inline">กำลังส่ง...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          Consult FastTrack
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </fieldset>

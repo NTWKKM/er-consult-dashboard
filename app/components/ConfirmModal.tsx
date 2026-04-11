@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useId } from "react";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -23,12 +23,14 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
-  const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
 
   useEffect(() => {
     if (isOpen) {
-      // Focus the cancel button by default (safer UX)
-      setTimeout(() => confirmRef.current?.focus(), 100);
+      // Focus the cancel button by default (safer UX for destructive actions)
+      setTimeout(() => cancelRef.current?.focus(), 100);
     }
   }, [isOpen]);
 
@@ -78,29 +80,38 @@ export default function ConfirmModal({
 
   return (
     <div
+      data-testid="modal-backdrop"
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 animate-fade-in"
       onClick={onCancel}
     >
       <div
+        data-testid="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-4 mb-4">
           <div className={`p-2 rounded-xl ${style.iconBg} shrink-0`}>{style.icon}</div>
           <div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{message}</p>
+            <h3 id={titleId} className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h3>
+            <p id={descriptionId} className="text-sm text-gray-600 dark:text-gray-400 mt-1">{message}</p>
           </div>
         </div>
         <div className="flex gap-3 justify-end mt-6">
           <button
+            type="button"
+            ref={cancelRef}
             onClick={onCancel}
             className="px-4 py-2 rounded-xl font-semibold text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
           >
             {cancelText}
           </button>
           <button
-            ref={confirmRef}
+            type="button"
+            data-variant={variant}
             onClick={onConfirm}
             className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-md hover:shadow-lg ${style.confirmBtn}`}
           >

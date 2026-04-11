@@ -21,10 +21,27 @@
 }
 
 body {
+  font-family: var(--font-inter), var(--font-thai), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: #014167;
   color: #FDFCDF;
+}
+
+/* Task 9: Global visible focus indicator for keyboard navigation */
+:focus-visible {
+  outline: 2px solid #699D5D;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Task 13: Active tap feedback for touch devices */
+.tap-feedback {
+  transition: transform 0.1s ease;
+}
+
+.tap-feedback:active {
+  transform: scale(0.95);
 }
 
 .dark body {
@@ -41,22 +58,6 @@ body {
   box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.4), 
               0 4px 8px -4px rgba(1, 65, 103, 0.3),
               0 0 20px rgba(253, 252, 223, 0.1);
-}
-
-/* Urgent pulse */
-.pulse-urgent {
-  animation: pulse-urgent 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@keyframes pulse-urgent {
-  0%, 100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 rgba(229, 81, 67, 0.7);
-  }
-  50% {
-    opacity: 0.9;
-    box-shadow: 0 0 0 10px rgba(229, 81, 67, 0);
-  }
 }
 
 /* Slide in */
@@ -165,4 +166,72 @@ body {
 
 .elapsed-tick {
   animation: tick 1s ease-in-out infinite alternate;
+}
+
+/* Task 4: Elapsed time color escalation */
+.elapsed-safe {
+  background-color: rgba(105, 157, 93, 0.15);
+  color: #4a7c3f;
+}
+.elapsed-warning {
+  background-color: rgba(217, 119, 6, 0.15);
+  color: #b45309;
+}
+.elapsed-danger {
+  background-color: rgba(229, 81, 67, 0.2);
+  color: #dc2626;
+}
+.elapsed-critical {
+  background-color: rgba(229, 81, 67, 0.25);
+  color: #dc2626;
+  animation: tick 0.6s ease-in-out infinite alternate;
+}
+
+/* Dark mode elapsed variants */
+.dark .elapsed-safe {
+  background-color: rgba(105, 157, 93, 0.2);
+  color: #86efac;
+}
+.dark .elapsed-warning {
+  background-color: rgba(217, 119, 6, 0.2);
+  color: #fbbf24;
+}
+.dark .elapsed-danger {
+  background-color: rgba(229, 81, 67, 0.2);
+  color: #f87171;
+}
+.dark .elapsed-critical {
+  background-color: rgba(229, 81, 67, 0.25);
+  color: #f87171;
+}
+
+/* Task 10: Success flash for card accept */
+@keyframes success-flash {
+  0% { box-shadow: 0 0 0 0 rgba(105, 157, 93, 0.6); }
+  50% { box-shadow: 0 0 0 8px rgba(105, 157, 93, 0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(105, 157, 93, 0); }
+}
+.animate-success-flash {
+  animation: success-flash 0.6s ease-out;
+}
+
+/* Task 10: Slide out for card completion */
+@keyframes slide-out-right {
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+.animate-slide-out {
+  animation: slide-out-right 0.4s ease-in forwards;
+}
+
+/* Accessibility: Honor prefers-reduced-motion for status animations */
+@media (prefers-reduced-motion: reduce) {
+  .elapsed-critical,
+  .animate-success-flash,
+  .animate-slide-out {
+    animation: none !important;
+    transition: none !important;
+  }
 }

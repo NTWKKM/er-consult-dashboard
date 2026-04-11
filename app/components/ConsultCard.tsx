@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { updateConsult, Consult, ConsultDepartment } from "@/lib/db";
-import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
-import { useToast } from "../contexts/ToastContext";
+import React, { useState, useCallback } from "react";
+import { useConsultActions, PostAcceptStatus } from "../hooks/useConsultActions";
+import { Consult } from "@/lib/db";
+import { POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import ConfirmModal from "./ConfirmModal";
+import { RoomTransferButton } from "./RoomTransferButton";
+import { getMilestones, formatTime } from "@/lib/utils";
+import { ElapsedTime } from "./ElapsedTime";
 
 interface ConsultCardProps {
   caseData: Consult;
@@ -15,69 +18,18 @@ interface ConsultCardProps {
   animationDelay?: number;
 }
 
-const formatTime = (iso: string) =>
-  new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
-const ElapsedTime = React.memo(function ElapsedTime({ createdAt, darkMode }: { createdAt: string; darkMode: boolean }) {
-  const [elapsed, setElapsed] = useState("");
-
-  useEffect(() => {
-    const update = () => {
-      const diff = Date.now() - new Date(createdAt).getTime();
-      const mins = Math.floor(diff / 60000);
-      const hrs = Math.floor(mins / 60);
-      const remainMins = mins % 60;
-
-      if (hrs > 0) {
-        setElapsed(`${hrs} ชม. ${remainMins} นาที`);
-      } else {
-        setElapsed(`${remainMins} นาที`);
-      }
-    };
-
-    update();
-    const interval = setInterval(update, 60000);
-    return () => clearInterval(interval);
-  }, [createdAt]);
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold elapsed-tick ${
-        darkMode ? "bg-amber-500/20 text-amber-400" : "bg-amber-500/15 text-amber-700"
-      }`}
-    >
-      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      รอ {elapsed}
-    </span>
-  );
-});
 
 function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate, animationDelay = 0 }: ConsultCardProps) {
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const { addToast } = useToast();
-
-  const pendingSyncCountRef = useRef(0);
-
-  const beginSync = useCallback(() => {
-    pendingSyncCountRef.current += 1;
-    setIsSyncing(true);
-  }, []);
-
-  const endSync = useCallback(() => {
-    pendingSyncCountRef.current = Math.max(0, pendingSyncCountRef.current - 1);
-    setIsSyncing(pendingSyncCountRef.current > 0);
-  }, []);
+  const [flashSuccess, setFlashSuccess] = useState(false);
 
   const hn = caseData.hn || "-";
   const firstName = caseData.firstName || "";
   const lastName = caseData.lastName || "";
   const fullName = [firstName, lastName].filter(Boolean).join(" ");
-  const room = caseData.room || "-";
+  const room = caseData.room;
   const problem = caseData.problem || "-";
   const isUrgent = caseData.isUrgent || false;
   const dept = caseData.departments[departmentName];
@@ -86,285 +38,57 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const completedTime = dept?.completedAt
     ? new Date(dept.completedAt).toLocaleString("th-TH")
     : null;
-  const acceptedTime = isAccepted ? formatTime(isAccepted) : null;
-  const admittedTime = dept?.admittedAt ? formatTime(dept.admittedAt) : null;
-  const returnedTime = dept?.returnedAt ? formatTime(dept.returnedAt) : null;
-  const dischargedTime = dept?.dischargedAt ? formatTime(dept.dischargedAt) : null;
   const timeAgo = caseData.createdAt
     ? new Date(caseData.createdAt).toLocaleString("th-TH")
     : "-";
 
   const actionStatus = caseData.departments[departmentName]?.actionStatus || "";
+  const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
 
-  const handleActionStatusChange = useCallback(async (newStatus: string) => {
-    if (isUpdating) return;
-    setIsUpdating(true); // Immediate local "busy" state
-    beginSync();         // Track remote sync
-    try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
-          return null;
-        }
+  const {
+    isUpdating,
+    isSyncing,
+    handleAccept,
+    handleStatusChange,
+    handleComplete,
+    handleCancel,
+  } = useConsultActions(caseId, departmentName, hn, onUpdate);
 
-        const updatedDepartments = { ...current.departments };
-        const now = new Date().toISOString();
 
-        updatedDepartments[departmentName] = {
-          ...updatedDepartments[departmentName],
-          acceptedAt: updatedDepartments[departmentName].acceptedAt || now,
-          actionStatus: newStatus,
-        };
-
-        if (newStatus === "Admit") {
-          updatedDepartments[departmentName].admittedAt = now;
-        } else if (newStatus === "คืน ER") {
-          updatedDepartments[departmentName].returnedAt = now;
-        } else if (newStatus === "D/C") {
-          updatedDepartments[departmentName].dischargedAt = now;
-        }
-
-        return { departments: updatedDepartments };
-      }, { 
-        awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
-        }
-      });
-
-      if (result.consult === null && !result.isQueued) {
-           endSync();
-           setIsUpdating(false);
-           return;
-      }
-
-      setIsUpdating(false); // Immediate UI release after local enqueue
-
-      if (result.backgroundPromise) {
-          result.backgroundPromise.then(() => {
-              endSync();
-          }).catch(() => {
-              endSync();
-          });
-      } else {
-          endSync();
-      }
-      
-      addToast({ type: "success", message: `อัปเดตสถานะเป็น "${newStatus}" สำเร็จ` });
-      onUpdate?.();
-    } catch (error) {
-      console.error("Error updating status:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
-      setIsUpdating(false);
-      endSync();
-    }
-  }, [isUpdating, caseId, departmentName, addToast, onUpdate, beginSync, endSync]);
 
   const handleAcceptCase = useCallback(async () => {
-    if (isUpdating) return;
-    setIsUpdating(true);
-    beginSync();
-    try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
-          return null;
-        }
-
-        const updatedDepartments = { ...current.departments };
-        const isSurgeryDept = (SURGERY_DEPTS as readonly string[]).includes(departmentName);
-        const targetDepts = isSurgeryDept ? SURGERY_DEPTS : ORTHO_DEPTS;
-        const now = new Date().toISOString();
-
-        Object.keys(updatedDepartments).forEach((dept) => {
-          if ((targetDepts as readonly string[]).includes(dept) && updatedDepartments[dept].status === "pending") {
-            updatedDepartments[dept] = {
-              ...updatedDepartments[dept],
-              // ใช้ acceptedAt เดิมถ้ามีอยู่แล้ว ถ้าไม่มีถึงจะใช้เวลา now ป้องกันการเขียนทับ
-              acceptedAt: updatedDepartments[dept].acceptedAt || now,
-              actionStatus: ACCEPT_STATUS,
-            };
-          }
-        });
-
-        return { departments: updatedDepartments };
-      }, { 
-        awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
-        }
-      });
-
-      if (result.consult === null && !result.isQueued) {
-           endSync();
-           setIsUpdating(false);
-           return;
-      }
-
-      setIsUpdating(false); // UI release
-
-      if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
-      } else {
-          endSync();
-      }
-
-      addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
-      onUpdate?.();
-    } catch (error) {
-      console.error("Error accepting case:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการรับเคส" });
-      setIsUpdating(false);
-      endSync();
+    if (await handleAccept()) {
+      setFlashSuccess(true);
+      setTimeout(() => setFlashSuccess(false), 700);
     }
-  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
+  }, [handleAccept]);
 
   const handleCancelConsult = useCallback(async () => {
-    if (isUpdating) return;
     setShowCancelConfirm(false);
-    setIsUpdating(true);
-    beginSync();
-    try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
-          return null;
-        }
-
-        const updatedDepartments = { ...current.departments };
-        updatedDepartments[departmentName] = {
-          ...updatedDepartments[departmentName],
-          status: "cancelled",
-          completedAt: new Date().toISOString(),
-        };
-
-        const allFinished = Object.values(updatedDepartments).every(
-          (dept: ConsultDepartment) => dept.status === "completed" || dept.status === "cancelled"
-        );
-
-        return {
-          departments: updatedDepartments,
-          ...(allFinished && { status: "completed" }),
-        };
-      }, { 
-        awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
-        }
-      });
-
-      if (result.consult === null && !result.isQueued) {
-           endSync();
-           setIsUpdating(false);
-           return;
-      }
-
-      setIsUpdating(false); // UI release
-
-      if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
-      } else {
-          endSync();
-      }
-
-      addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
-      onUpdate?.();
-    } catch (error) {
-      console.error("Error cancelling consult:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
-      setIsUpdating(false);
-      endSync();
-    }
-  }, [isUpdating, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
+    await handleCancel();
+  }, [handleCancel]);
 
   const handleCompleteCase = useCallback(async () => {
-    if (isUpdating || isTerminal) return;
+    if (isTerminal) return;
     setShowConfirm(false);
-    setIsUpdating(true);
-    beginSync();
-    try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against stale snapshots/missing departments
-        if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
-          return null;
-        }
-
-        const updatedDepartments = { ...current.departments };
-        updatedDepartments[departmentName] = {
-          ...updatedDepartments[departmentName],
-          status: "completed",
-          completedAt: new Date().toISOString(),
-        };
-        const allCompleted = Object.values(updatedDepartments).every(
-          (dept: ConsultDepartment) =>
-            dept.status === "completed" || dept.status === "cancelled"
-        );
-        return {
-          departments: updatedDepartments,
-          ...(allCompleted && { status: "completed" }),
-        };
-      }, { 
-        awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
-        }
-      });
-
-      if (result.consult === null && !result.isQueued) {
-           endSync();
-           setIsUpdating(false);
-           return;
-      }
-
-      setIsUpdating(false); // UI release
-
-      if (result.backgroundPromise) {
-          result.backgroundPromise.finally(() => {
-              endSync();
-          });
-      } else {
-          endSync();
-      }
-
-      addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
-      onUpdate?.();
-    } catch (error) {
-      console.error("Error updating case:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
-      setIsUpdating(false);
-      endSync();
-    }
-  }, [isUpdating, isTerminal, caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
+    await handleComplete();
+  }, [isTerminal, handleComplete]);
 
   return (
     <>
       <div
         className={`card-shadow hover:card-shadow-hover transition-all duration-200 rounded-lg p-3 hover:-translate-y-1 animate-stagger-in relative ${
+          flashSuccess ? "animate-success-flash" : ""
+        } ${
           darkMode
             ? `bg-gray-800 ${
                 isUrgent
-                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent"
+                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30"
                   : "border-l-4 border-gray-700"
               }`
-            : `bg-[#C7CFDA] ${
+            : `bg-white/95 ${
                 isUrgent
-                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30 pulse-urgent"
+                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30"
                   : "border-l-4 border-[#699D5D]/50"
               }`
         }`}
@@ -392,7 +116,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           <div className="flex items-center gap-2">
             <div
               className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${
-                isUrgent ? "bg-[#E55143] pulse-urgent" : "bg-[#699D5D]"
+                isUrgent ? "bg-[#E55143]" : "bg-[#699D5D]"
               }`}
             >
               {isUrgent ? (
@@ -407,7 +131,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className={`text-base font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
+                <h3 className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
                   HN: {hn}
                 </h3>
                 {isUrgent && (
@@ -425,6 +149,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{departmentName}</span>
                 <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>•</span>
                 <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{room}</span>
+                <RoomTransferButton 
+                  consultId={caseId}
+                  currentRoom={room}
+                  darkMode={darkMode}
+                  disabled={isUpdating}
+                />
               </div>
               {Object.keys(caseData.departments).filter(
                 (d) => d !== departmentName && caseData.departments[d].status === "pending"
@@ -452,14 +182,14 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               </span>
             )}
             {!isTerminal && caseData.createdAt && (
-              <ElapsedTime createdAt={caseData.createdAt} darkMode={darkMode} />
+              <ElapsedTime createdAt={caseData.createdAt} />
             )}
           </div>
         </div>
 
-        <div className="mb-2 bg-[#014167]/40 p-2 rounded-lg border border-[#FDFCDF]/10">
-          <p className="text-xs text-[#FDFCDF] font-semibold mb-0.5">Dx:</p>
-          <p className="text-sm text-[#FDFCDF] leading-snug">{problem}</p>
+        <div className={`mb-2 p-2 rounded-lg border ${darkMode ? "bg-gray-900/50 border-gray-700" : "bg-white/70 border-[#014167]/10 shadow-[inset_0_1px_3px_rgba(0,0,0,0.03)]"}`}>
+          <p className={`text-xs font-semibold mb-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>Dx:</p>
+          <p className={`text-sm leading-snug whitespace-pre-wrap ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>{problem}</p>
         </div>
 
         <div className="flex flex-col gap-2 text-xs">
@@ -478,38 +208,47 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 <span className="font-semibold">{dept?.status === "cancelled" ? "ยกเลิก" : "ปิด"}: {completedTime}</span>
               </div>
             )}
-            {isAccepted && (
-              <div className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                <div className="flex items-center gap-1">
-                  <svg className="w-3 h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="font-semibold">รับเคส {acceptedTime}</span>
+            {(() => {
+              const allMilestones = getMilestones(dept, formatTime);
+              const milestonesToRender = isAccepted 
+                ? allMilestones 
+                : allMilestones.filter(m => m.icon === "transfer");
+                
+              if (milestonesToRender.length === 0) return null;
+
+              return (
+                <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] sm:text-xs tracking-tight ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                  {milestonesToRender.map((m, idx, arr) => (
+                    <React.Fragment key={`${m.label}-${m.raw}`}>
+                      <div className="flex items-center gap-1">
+                        {m.icon === "check" ? (
+                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : m.icon === "transfer" ? (
+                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        ) : null}
+                        <span className={`font-semibold whitespace-nowrap ${darkMode ? m.colorDark : m.colorLight}`}>{m.label} {m.time}</span>
+                      </div>
+                      {idx < arr.length - 1 && (
+                        <span className={darkMode ? "text-gray-600" : "text-[#014167]/40"}>→</span>
+                      )}
+                    </React.Fragment>
+                  ))}
                 </div>
-                {admittedTime && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[#014167]/40 dark:text-gray-600">→</span>
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">Admit {admittedTime}</span>
-                  </div>
-                )}
-                {returnedTime && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[#014167]/40 dark:text-gray-600">→</span>
-                    <span className="font-semibold text-amber-600 dark:text-amber-400">คืน ER {returnedTime}</span>
-                  </div>
-                )}
-                {dischargedTime && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[#014167]/40 dark:text-gray-600">→</span>
-                    <span className="font-semibold text-purple-600 dark:text-purple-400">D/C {dischargedTime}</span>
-                  </div>
-                )}
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {!isTerminal && (
             <div className="flex flex-col gap-1">
+              {isAccepted && !isStatusSelected && !isUpdating && (
+                <div className={`text-[10px] font-bold text-center animate-pulse ${darkMode ? "text-amber-300" : "text-amber-600"}`}>
+                  กรุณาเลือกสถานะก่อนปิดเคส
+                </div>
+              )}
               <div className="flex gap-2">
                 {!isAccepted ? (
                   <>
@@ -542,13 +281,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     disabled
                     className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs cursor-not-allowed flex items-center justify-center gap-1 ${
                       darkMode
-                        ? "bg-gray-800 border border-gray-700 text-gray-500"
-                        : "bg-gray-200 border border-gray-300 text-gray-400 shadow-inner"
+                        ? "bg-gray-800 border border-dashed border-gray-600 text-gray-500"
+                        : "bg-gray-100 border border-dashed border-gray-300 text-gray-400"
                     }`}
-                    title="ต้องรับเคสก่อนจึงจะปิดเคสได้"
                   >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    <svg className="w-3 h-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                     <span>ปิดเคส</span>
                   </button>
@@ -559,7 +297,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     <select
                       aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                      onChange={(e) => handleActionStatusChange(e.target.value)}
+                      onChange={(e) => handleStatusChange(e.target.value as PostAcceptStatus)}
                       className={`w-full h-full px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${
                         actionStatus && actionStatus !== ACCEPT_STATUS
                           ? darkMode
@@ -591,12 +329,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   </div>
                   <button
                     onClick={() => setShowConfirm(true)}
-                    disabled={isUpdating}
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
-                      isUpdating
+                    disabled={isUpdating || !isStatusSelected}
+                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 tap-feedback ${
+                      isUpdating || !isStatusSelected
                         ? darkMode
-                          ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
+                          ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-dashed border-gray-600"
+                          : "bg-gray-100 text-gray-400 cursor-not-allowed border border-dashed border-gray-300"
                         : "bg-[#E55143] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5"
                     }`}
                   >
@@ -617,11 +355,6 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 </>
               )}
               </div>
-              {!isAccepted && (
-                <div className={`text-center text-[10px] w-full pt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                  * ต้องรับเคสก่อนจึงจะปิดเคสได้
-                </div>
-              )}
             </div>
           )}
         </div>

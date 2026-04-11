@@ -570,7 +570,7 @@ export default function CompletedPage() {
                       <td className={`px-4 py-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                         {caseData.room}
                       </td>
-                      <td className={`px-4 py-3 text-sm flex-wrap whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                       <td className={`px-4 py-3 text-sm flex-wrap whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                         {caseData.problem}
                       </td>
                       <td className="px-4 py-3 text-sm">
@@ -716,9 +716,12 @@ export default function CompletedPage() {
                       {caseData.room}
                     </span>
                   </div>
-                  <p className={`text-xs mb-2 whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
-                    {caseData.problem}
-                  </p>
+                   <div className="mb-2">
+                    <div className={`text-[10px] font-bold mb-0.5 opacity-70 ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>Dx:</div>
+                    <p className={`text-xs whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+                      {caseData.problem}
+                    </p>
+                  </div>
                   <div className="flex flex-col gap-1.5 mb-2">
                     {Object.entries(caseData.departments).map(([dept, data]) => (
                       <div key={dept} className={`p-1.5 rounded shadow-sm border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-white/60 border-[#014167]/10"}`}>
