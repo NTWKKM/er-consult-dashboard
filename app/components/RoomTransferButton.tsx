@@ -10,7 +10,8 @@ interface RoomTransferButtonProps {
   currentRoom: RoomName;
   darkMode: boolean;
   onTransferStart?: () => void;
-  onTransferEnd?: () => void;
+  onTransferEnd?: (success?: boolean) => void;
+  disabled?: boolean;
 }
 
 export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
@@ -19,6 +20,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   darkMode,
   onTransferStart,
   onTransferEnd,
+  disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
@@ -44,7 +46,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   }, [isOpen, currentRoom, sortedRooms]);
 
   const handleTransfer = useCallback(async (newRoom: RoomName) => {
-    if (transferInFlightRef.current) return;
+    if (transferInFlightRef.current || disabled) return;
 
     if (newRoom === currentRoom) {
       setIsOpen(false);
@@ -67,10 +69,16 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       );
       if (transferred) {
         addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
-        onTransferEnd?.(); // success callback
+        onTransferEnd?.(true); // success callback
         if (backgroundPromise) {
             backgroundPromise.catch(() => {});
         }
+      } else {
+        addToast({ 
+          message: "ไม่สามารถย้ายห้องได้: เคสนี้ถูกอัปเดตหรือปิดไปแล้ว", 
+          type: "error" 
+        });
+        onTransferEnd?.(false);
       }
     } catch (error) {
       console.error("Transfer error:", error);
@@ -128,8 +136,8 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     <div className="relative inline-block ml-1" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        disabled={isTransferring}
-        title="เปลี่ยนห้อง"
+        disabled={isTransferring || disabled}
+        title={disabled ? "กำลังดำเนินการงานอื่นอยู่..." : "เปลี่ยนห้อง"}
         aria-label="เปลี่ยนห้อง"
         aria-expanded={isOpen}
         aria-haspopup="listbox"

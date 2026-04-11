@@ -2,7 +2,7 @@ import { db } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
-import { RoomName } from "./constants";
+import { ROOMS, RoomName } from "./constants";
 
 export interface ConsultTransfer {
     to: RoomName;
@@ -36,18 +36,61 @@ export interface Consult {
 const COLLECTION_NAME = "consults";
 
 /**
- * Helper to map a Firestore document snapshot to a Consult object.
- * Performs defensive checks and provides default values.
+ * Runtime validator to ensure room names from schemaless Firestore data 
+ * match the defined RoomName type.
  */
-function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult | null {
-    const data = document.data();
+function isValidRoomName(room: unknown): room is RoomName {
+    return typeof room === "string" && (ROOMS as readonly string[]).includes(room);
+}
+
+/**
+ * Sanitizes and validates raw Firestore data into a Consult object.
+ */
+function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     if (!data) return null;
+
+    // Validate and fallback for the main room field
+    let room: RoomName = ROOMS[0]; // Default to first valid room
+    if (isValidRoomName(data.room)) {
+        room = data.room;
+    }
+
+    // Deeply validate and sanitize transfers in all departments
+    const validatedDepts: { [key: string]: ConsultDepartment } = {};
+    if (data.departments) {
+        Object.keys(data.departments).forEach(deptKey => {
+            const dept = data.departments[deptKey];
+            const validatedDept: ConsultDepartment = { ...dept };
+            
+            if (dept.transfers && Array.isArray(dept.transfers)) {
+                validatedDept.transfers = dept.transfers.map((t: unknown) => {
+                    const transfer = t as Record<string, unknown>;
+                    return {
+                        at: typeof transfer.at === "string" ? transfer.at : new Date().toISOString(),
+                        to: isValidRoomName(transfer.to) ? transfer.to : room // Use main room as fallback for invalid transfer
+                    };
+                });
+            }
+            
+            validatedDepts[deptKey] = validatedDept;
+        });
+    }
+
     return {
         ...data,
-        id: document.id,
+        id,
         firstName: data.firstName ?? "",
         lastName: data.lastName ?? "",
+        room,
+        departments: validatedDepts,
     } as Consult;
+}
+
+/**
+ * Helper to map a Firestore document snapshot to a Consult object.
+ */
+function mapDocToConsult(document: QueryDocumentSnapshot<DocumentData>): Consult | null {
+    return mapRawToConsult(document.id, document.data());
 }
 
 
@@ -263,13 +306,7 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
     const docRef = doc(db, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-        const data = docSnap.data();
-        return {
-            ...data,
-            id: docSnap.id,
-            firstName: data.firstName ?? "",
-            lastName: data.lastName ?? "",
-        } as Consult;
+        return mapRawToConsult(docSnap.id, docSnap.data()) ?? undefined;
     }
     return undefined;
 }

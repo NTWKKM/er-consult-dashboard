@@ -155,6 +155,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   consultId={caseId}
                   currentRoom={room}
                   darkMode={darkMode}
+                  disabled={isUpdating}
                 />
               </div>
               {Object.keys(caseData.departments).filter(
