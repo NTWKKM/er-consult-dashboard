@@ -25,7 +25,6 @@ export default function Dashboard() {
   // Persistence logic for filters and view modes
   const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
   const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
-  const [displayMode, setDisplayMode] = useState<"card" | "table">("card");
 
   const settingsLoadedRef = useRef(false);
 
@@ -34,16 +33,12 @@ export default function Dashboard() {
     try {
       const savedView = localStorage.getItem("dashboard_view");
       const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
-      const savedDisplayMode = localStorage.getItem("dashboard_displayMode");
       
       if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
         setView(savedView);
       }
       if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
         setRoomFilter(savedRoomFilter as RoomFilter);
-      }
-      if (savedDisplayMode === "card" || savedDisplayMode === "table") {
-        setDisplayMode(savedDisplayMode);
       }
     } catch (e) {
       console.warn("Failed to load settings from localStorage:", e);
@@ -58,13 +53,12 @@ export default function Dashboard() {
     try {
       localStorage.setItem("dashboard_view", view);
       localStorage.setItem("dashboard_roomFilter", roomFilter);
-      localStorage.setItem("dashboard_displayMode", displayMode);
     } catch (e) {
       console.warn("Failed to save settings to localStorage:", e);
     }
-  }, [view, roomFilter, displayMode]);
+  }, [view, roomFilter]);
 
-  const { darkMode, soundEnabled } = useSettings();
+  const { darkMode, soundEnabled, displayMode } = useSettings();
 
   const previousCaseIdsRef = useRef<Set<string>>(new Set());
   const isInitialLoadRef = useRef(true);
@@ -226,17 +220,7 @@ export default function Dashboard() {
 
           {/* Right: Controls */}
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
-             {/* Layout Toggle */}
-             <div className={`flex items-center p-1 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-               <button aria-pressed={displayMode === "card"} onClick={() => setDisplayMode("card")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1.5 ${displayMode === "card" ? "bg-white dark:bg-gray-700 text-[#014167] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>
-                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                 Card
-               </button>
-               <button aria-pressed={displayMode === "table"} onClick={() => setDisplayMode("table")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1.5 ${displayMode === "table" ? "bg-white dark:bg-gray-700 text-[#014167] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>
-                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                 Table
-               </button>
-             </div>
+
 
              {/* Room Filter */}
              <div className={`flex items-center p-1 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>

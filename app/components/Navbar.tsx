@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import NavbarControls from "./NavbarControls";
 import ConnectionStatus from "./ConnectionStatus";
 import { useSettings } from "../contexts/SettingsContext";
 
 export default function Navbar() {
-  const { darkMode } = useSettings();
+  const { darkMode, displayMode, setDisplayMode } = useSettings();
+  const pathname = usePathname();
 
   return (
     <nav
@@ -52,7 +54,34 @@ export default function Navbar() {
             </div>
           </Link>
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {pathname === "/" && (
+              <div className={`hidden sm:flex items-center p-1 rounded-lg border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
+               <button aria-pressed={displayMode === "card"} onClick={() => setDisplayMode("card")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1.5 ${displayMode === "card" ? "bg-white dark:bg-gray-700 text-[#014167] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>
+                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                 Card
+               </button>
+               <button aria-pressed={displayMode === "table"} onClick={() => setDisplayMode("table")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1.5 ${displayMode === "table" ? "bg-white dark:bg-gray-700 text-[#014167] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>
+                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                 Table
+               </button>
+             </div>
+            )}
             <NavbarControls />
+            <Link
+              href="/"
+              className={`font-semibold p-1.5 sm:py-2 sm:px-3 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-center gap-1.5 text-sm glow-hover ${
+                darkMode
+                  ? "bg-gray-700 hover:bg-gray-600 text-gray-200 border border-gray-600"
+                  : "bg-[#C7CFDA] hover:bg-[#C7CFDA]/80 text-[#014167] border border-[#014167]/30"
+              }`}
+            >
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span className="hidden lg:inline whitespace-nowrap">
+                หน้าแรก
+              </span>
+            </Link>
             <Link
               href="/completed"
               className={`font-semibold p-1.5 sm:py-2 sm:px-4 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-center gap-2 text-sm glow-hover ${
