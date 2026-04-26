@@ -200,30 +200,29 @@ export default function Dashboard() {
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : ""}`}>
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         {/* --- Toolbar --- */}
-        <div className="mb-4 flex flex-col xl:flex-row items-center justify-between gap-3 slide-in relative min-h-[52px]">
-          {/* Invisible Spacer for Left Side to balance Flexbox if we didn't use absolute, but we use absolute for perfect centering */}
-          <div className="hidden xl:block w-1/3"></div>
-
-          {/* Center: Pending Count */}
-          <div className={`flex items-center gap-3 w-full xl:w-auto justify-center px-6 py-2.5 rounded-xl shadow-sm border transition-colors xl:absolute xl:left-1/2 xl:-translate-x-1/2 z-10 ${
-            darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60"
-          }`}>
-            <div className={`flex items-center gap-2 font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-              <svg className="w-5 h-5 text-[#E55143]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span>รอปรึกษา:</span>
+        <div className="mb-4 flex justify-center slide-in w-full">
+          {/* Centered Group */}
+          <div className="flex flex-col lg:flex-row items-center gap-3 w-full sm:w-auto">
+            {/* Box 1: Pending Count */}
+            <div className={`flex items-center gap-3 w-full sm:w-auto justify-center px-6 py-2.5 rounded-xl shadow-sm border transition-colors ${
+              darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60"
+            }`}>
+              <div className={`flex items-center gap-2 font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                <svg className="w-5 h-5 text-[#E55143]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>รอปรึกษา:</span>
+              </div>
+              <span className={`text-xl font-bold px-3 py-0.5 rounded-full shadow-inner ${
+                  totalPendingCases > 0 
+                    ? "bg-[#E55143]/10 text-[#E55143] dark:bg-[#E55143]/20" 
+                    : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
+                }`}>
+                {totalPendingCases}
+              </span>
             </div>
-            <span className={`text-xl font-bold px-3 py-0.5 rounded-full shadow-inner ${
-                totalPendingCases > 0 
-                  ? "bg-[#E55143]/10 text-[#E55143] dark:bg-[#E55143]/20" 
-                  : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
-              }`}>
-              {totalPendingCases}
-            </span>
-          </div>
 
-          {/* Right: Controls */}
-          <div className={`flex flex-wrap items-center justify-center xl:justify-end gap-2 sm:gap-3 w-full xl:w-auto p-2 sm:px-3 sm:py-2 rounded-xl shadow-sm border transition-colors ${
-            darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60"
+            {/* Box 2: Controls */}
+            <div className={`flex flex-wrap items-center justify-center gap-2 sm:gap-3 w-full sm:w-auto p-2 sm:px-3 sm:py-2 rounded-xl shadow-sm border transition-colors ${
+              darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60"
           }`}>
              {/* Layout Toggle */}
              <div className={`flex items-center p-1 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
@@ -251,7 +250,8 @@ export default function Dashboard() {
                    <button aria-pressed={view === "ortho"} onClick={() => setView("ortho")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "ortho" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>Ortho</button>
                 </div>
              )}
-          </div>
+           </div>
+         </div>
         </div>
 
         {displayMode === "card" && (
