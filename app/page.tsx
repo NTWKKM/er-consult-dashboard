@@ -200,9 +200,12 @@ export default function Dashboard() {
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : ""}`}>
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         {/* --- Toolbar --- */}
-        <div className="mb-4 flex flex-col xl:flex-row items-center justify-between gap-3 slide-in">
-          {/* Left: Pending Count */}
-          <div className={`flex items-center gap-3 w-full xl:w-auto justify-center xl:justify-start px-4 py-3 rounded-xl shadow-sm border transition-colors ${
+        <div className="mb-4 flex flex-col xl:flex-row items-center justify-between gap-3 slide-in relative min-h-[52px]">
+          {/* Invisible Spacer for Left Side to balance Flexbox if we didn't use absolute, but we use absolute for perfect centering */}
+          <div className="hidden xl:block w-1/3"></div>
+
+          {/* Center: Pending Count */}
+          <div className={`flex items-center gap-3 w-full xl:w-auto justify-center px-6 py-2.5 rounded-xl shadow-sm border transition-colors xl:absolute xl:left-1/2 xl:-translate-x-1/2 z-10 ${
             darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60"
           }`}>
             <div className={`flex items-center gap-2 font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
