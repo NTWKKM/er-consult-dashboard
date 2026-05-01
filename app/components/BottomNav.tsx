@@ -86,7 +86,7 @@ export default function BottomNav() {
           href="/submit"
           className={`flex flex-col items-center gap-1 px-5 py-2 rounded-xl transition-all group relative ${
             isSubmit 
-              ? darkMode ? "bg-[#699D5D]/20" : "bg-[#699D5D]/20" 
+              ? "bg-[#699D5D]/20"
               : "hover:bg-white/10"
           }`}
           aria-current={isSubmit ? "page" : undefined}

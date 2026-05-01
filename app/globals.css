@@ -230,7 +230,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .elapsed-critical,
   .animate-success-flash,
-  .animate-slide-out {
+  .animate-slide-out,
+  main,
+  [role="main"] {
     animation: none !important;
     transition: none !important;
   }
