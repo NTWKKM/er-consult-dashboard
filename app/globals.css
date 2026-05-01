@@ -249,10 +249,10 @@ body {
 
 /* Smooth page transitions */
 main, [role="main"] {
-  animation: pageEnter 0.25s ease-out;
+  animation: page-enter 0.25s ease-out;
 }
 
-@keyframes pageEnter {
+@keyframes page-enter {
   from {
     opacity: 0;
     transform: translateY(4px);

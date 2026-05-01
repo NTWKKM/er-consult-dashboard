@@ -30,6 +30,8 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const lastName = caseData.lastName || "";
   const fullName = [firstName, lastName].filter(Boolean).join(" ");
   const room = caseData.room;
+  const normalizedRoom = room?.trim().toLowerCase() ?? "";
+  const isResusRoom = /\bresus\b/.test(normalizedRoom) && !/\bnon[-\s]?resus\b/.test(normalizedRoom);
   const problem = caseData.problem || "-";
   const isUrgent = caseData.isUrgent || false;
   const dept = caseData.departments[departmentName];
@@ -149,7 +151,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{departmentName}</span>
                 <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>→</span>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[11px] ${
-                  (room ?? "").startsWith("Resus")
+                  isResusRoom
                     ? darkMode ? "bg-[#E55143]/15 text-[#ff7063] border border-[#E55143]/20" : "bg-[#E55143]/10 text-[#c23a2e] border border-[#E55143]/15"
                     : darkMode ? "bg-[#699D5D]/15 text-[#86efac] border border-[#699D5D]/20" : "bg-[#699D5D]/10 text-[#4d7845] border border-[#699D5D]/15"
                 }`}>
