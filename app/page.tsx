@@ -200,8 +200,8 @@ export default function Dashboard() {
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : ""}`}>
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         {/* --- Toolbar --- */}
-        <div className="mb-4 slide-in w-full">
-          <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl shadow-sm border transition-colors ${
+        <div className="mb-4 slide-in w-full flex justify-center">
+          <div className={`inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl shadow-sm border transition-colors ${
             darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60 backdrop-blur-sm"
           }`}>
             {/* Pending Count */}
@@ -223,7 +223,7 @@ export default function Dashboard() {
             <div className={`hidden sm:block w-px h-7 ${darkMode ? "bg-gray-700" : "bg-[#C7CFDA]/40"}`} />
 
             {/* Control Groups */}
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-1">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
               {/* Layout Toggle */}
               <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
                 <button aria-pressed={displayMode === "card"} onClick={() => setDisplayMode("card")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "card" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
