@@ -21,27 +21,39 @@ export default function BottomNav() {
     return () => unsubscribe();
   }, []);
 
+  const isHome = pathname === "/";
+  const isSubmit = pathname === "/submit";
+  const isCompleted = pathname === "/completed";
+
   return (
     <nav
-      className={`lg:hidden fixed bottom-0 left-0 right-0 border-t shadow-2xl z-50 backdrop-blur-sm transition-colors duration-300 ${
+      className={`lg:hidden fixed bottom-0 left-0 right-0 border-t shadow-2xl z-50 backdrop-blur-md transition-colors duration-300 ${
         darkMode
-          ? "bg-gray-900 border-gray-700"
-          : "bg-[#014167] border-[#E55143]/30"
+          ? "bg-gray-900/95 border-gray-700"
+          : "bg-[#014167]/95 border-[#E55143]/30"
       }`}
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
       <div className="flex justify-around items-center h-16 px-2">
         <Link
           href="/"
-          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-all group relative ${
-            pathname === "/" ? "bg-[#E55143]/30" : "hover:bg-[#E55143]/20"
+          className={`flex flex-col items-center gap-1 px-5 py-2 rounded-xl transition-all group relative ${
+            isHome 
+              ? darkMode ? "bg-white/10" : "bg-white/15" 
+              : "hover:bg-white/10"
           }`}
+          aria-current={isHome ? "page" : undefined}
         >
+          {/* Active top accent */}
+          {isHome && (
+            <span className="absolute -top-[1px] left-3 right-3 h-[2px] bg-[#E55143] rounded-full" />
+          )}
           <div className="relative">
             <svg
-              className={`w-6 h-6 transition-colors ${
-                pathname === "/"
-                  ? "text-[#E55143]"
-                  : "text-[#FDFCDF] group-hover:text-[#E55143]"
+              className={`w-6 h-6 transition-all duration-200 ${
+                isHome
+                  ? "text-[#E55143] scale-110"
+                  : "text-[#FDFCDF]/60 group-hover:text-[#FDFCDF]"
               }`}
               fill="none"
               stroke="currentColor"
@@ -61,10 +73,10 @@ export default function BottomNav() {
             )}
           </div>
           <span
-            className={`text-xs font-medium transition-colors ${
-              pathname === "/"
+            className={`text-xs font-semibold transition-all duration-200 ${
+              isHome
                 ? "text-[#E55143]"
-                : "text-[#FDFCDF] group-hover:text-[#E55143]"
+                : "text-[#FDFCDF]/60 group-hover:text-[#FDFCDF]"
             }`}
           >
             หน้าแรก
@@ -72,18 +84,22 @@ export default function BottomNav() {
         </Link>
         <Link
           href="/submit"
-          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-all group ${
-            pathname === "/submit"
-              ? "bg-[#699D5D]/30"
-              : "hover:bg-[#699D5D]/20"
+          className={`flex flex-col items-center gap-1 px-5 py-2 rounded-xl transition-all group relative ${
+            isSubmit 
+              ? "bg-[#699D5D]/20"
+              : "hover:bg-white/10"
           }`}
+          aria-current={isSubmit ? "page" : undefined}
         >
+          {isSubmit && (
+            <span className="absolute -top-[1px] left-3 right-3 h-[2px] bg-[#699D5D] rounded-full" />
+          )}
           <div className="relative">
             <svg
-              className={`w-6 h-6 transition-transform ${
-                pathname === "/submit"
+              className={`w-6 h-6 transition-all duration-200 ${
+                isSubmit
                   ? "text-[#699D5D] scale-110"
-                  : "text-[#699D5D] group-hover:scale-110"
+                  : "text-[#699D5D]/60 group-hover:text-[#699D5D] group-hover:scale-110"
               }`}
               fill="none"
               stroke="currentColor"
@@ -98,10 +114,10 @@ export default function BottomNav() {
             </svg>
           </div>
           <span
-            className={`text-xs font-bold transition-transform ${
-              pathname === "/submit"
-                ? "text-[#699D5D] scale-105"
-                : "text-[#699D5D] group-hover:scale-105"
+            className={`text-xs font-bold transition-all duration-200 ${
+              isSubmit
+                ? "text-[#699D5D]"
+                : "text-[#699D5D]/60 group-hover:text-[#699D5D]"
             }`}
           >
             ส่งเคส
@@ -109,17 +125,21 @@ export default function BottomNav() {
         </Link>
         <Link
           href="/completed"
-          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-all group ${
-            pathname === "/completed"
-              ? "bg-[#C7CFDA]/30"
-              : "hover:bg-[#C7CFDA]/20"
+          className={`flex flex-col items-center gap-1 px-5 py-2 rounded-xl transition-all group relative ${
+            isCompleted 
+              ? darkMode ? "bg-white/10" : "bg-white/15" 
+              : "hover:bg-white/10"
           }`}
+          aria-current={isCompleted ? "page" : undefined}
         >
+          {isCompleted && (
+            <span className="absolute -top-[1px] left-3 right-3 h-[2px] bg-[#C7CFDA] rounded-full" />
+          )}
           <svg
-            className={`w-6 h-6 transition-colors ${
-              pathname === "/completed"
-                ? "text-[#C7CFDA]"
-                : "text-[#FDFCDF] group-hover:text-[#C7CFDA]"
+            className={`w-6 h-6 transition-all duration-200 ${
+              isCompleted
+                ? "text-[#FDFCDF] scale-110"
+                : "text-[#FDFCDF]/60 group-hover:text-[#FDFCDF]"
             }`}
             fill="none"
             stroke="currentColor"
@@ -133,10 +153,10 @@ export default function BottomNav() {
             />
           </svg>
           <span
-            className={`text-xs font-medium transition-colors ${
-              pathname === "/completed"
-                ? "text-[#C7CFDA]"
-                : "text-[#FDFCDF] group-hover:text-[#C7CFDA]"
+            className={`text-xs font-semibold transition-all duration-200 ${
+              isCompleted
+                ? "text-[#FDFCDF]"
+                : "text-[#FDFCDF]/60 group-hover:text-[#FDFCDF]"
             }`}
           >
             จัดการ

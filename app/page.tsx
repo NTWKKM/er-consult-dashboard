@@ -25,7 +25,6 @@ export default function Dashboard() {
   // Persistence logic for filters and view modes
   const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
   const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
-  const [displayMode, setDisplayMode] = useState<"card" | "table">("card");
 
   const settingsLoadedRef = useRef(false);
 
@@ -34,16 +33,12 @@ export default function Dashboard() {
     try {
       const savedView = localStorage.getItem("dashboard_view");
       const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
-      const savedDisplayMode = localStorage.getItem("dashboard_displayMode");
       
       if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
         setView(savedView);
       }
       if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
         setRoomFilter(savedRoomFilter as RoomFilter);
-      }
-      if (savedDisplayMode === "card" || savedDisplayMode === "table") {
-        setDisplayMode(savedDisplayMode);
       }
     } catch (e) {
       console.warn("Failed to load settings from localStorage:", e);
@@ -58,13 +53,12 @@ export default function Dashboard() {
     try {
       localStorage.setItem("dashboard_view", view);
       localStorage.setItem("dashboard_roomFilter", roomFilter);
-      localStorage.setItem("dashboard_displayMode", displayMode);
     } catch (e) {
       console.warn("Failed to save settings to localStorage:", e);
     }
-  }, [view, roomFilter, displayMode]);
+  }, [view, roomFilter]);
 
-  const { darkMode, soundEnabled } = useSettings();
+  const { darkMode, soundEnabled, displayMode, setDisplayMode } = useSettings();
 
   const previousCaseIdsRef = useRef<Set<string>>(new Set());
   const isInitialLoadRef = useRef(true);
@@ -205,234 +199,107 @@ export default function Dashboard() {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : ""}`}>
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
-        <div className="mb-4 text-center slide-in">
-          <div className="flex flex-row flex-wrap items-center justify-center gap-2">
-            <div className="flex flex-col items-center gap-1">
-              <div
-                className={`inline-flex items-center gap-3 px-6 py-2 rounded-full shadow-lg border transition-colors ${
-                  darkMode ? "bg-gray-700 border-gray-600" : "bg-[#C7CFDA] border-[#014167]/30"
-                }`}
-              >
-                <span className={`font-bold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
-                  เคสรอปรึกษา:
-                </span>
-                <span
-                  className={`text-2xl font-bold ${
-                    totalPendingCases > 0
-                      ? "text-[#E55143]"
-                      : darkMode
-                      ? "text-gray-300"
-                      : "text-[#014167]"
-                  }`}
-                >
-                  {totalPendingCases}
-                </span>
-              </div>
+        {/* --- Toolbar --- */}
+        <div className="mb-4 slide-in w-full flex justify-center">
+          <div className={`inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl shadow-sm border transition-colors ${
+            darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60 backdrop-blur-sm"
+          }`}>
+            {/* Pending Count */}
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
+              darkMode ? "bg-gray-900/60" : "bg-[#014167]/5"
+            }`}>
+              <svg className="w-4 h-4 text-[#E55143] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span className={`text-xs font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รอปรึกษา</span>
+              <span className={`text-base font-extrabold tabular-nums min-w-[28px] text-center px-2 py-0.5 rounded-full ${
+                totalPendingCases > 0 
+                  ? "bg-[#E55143] text-white shadow-sm" 
+                  : darkMode ? "bg-gray-700 text-gray-400" : "bg-gray-200 text-gray-400"
+              }`}>
+                {totalPendingCases}
+              </span>
             </div>
 
-            {/* Layout Toggle: Card vs Table */}
-            <div
-              className={`flex items-center p-1 rounded-lg shadow-md border ${
-                darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#014167]/30"
-              }`}
-            >
-              <button
-                aria-pressed={displayMode === "card"}
-                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 glow-hover ${
-                  displayMode === "card"
-                    ? "bg-[#014167] text-white shadow-sm"
-                    : darkMode
-                    ? "text-gray-300 hover:bg-gray-700"
-                    : "text-[#014167] hover:bg-white/50"
-                }`}
-                onClick={() => setDisplayMode("card")}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                </svg>
-                Card View
-              </button>
-              <button
-                aria-pressed={displayMode === "table"}
-                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 glow-hover ${
-                  displayMode === "table"
-                    ? "bg-[#699D5D] text-white shadow-sm"
-                    : darkMode
-                    ? "text-gray-300 hover:bg-gray-700"
-                    : "text-[#014167] hover:bg-white/50"
-                }`}
-                onClick={() => setDisplayMode("table")}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                </svg>
-                Table View
-              </button>
-            </div>
+            {/* Divider */}
+            <div className={`hidden sm:block w-px h-7 ${darkMode ? "bg-gray-700" : "bg-[#C7CFDA]/40"}`} />
 
-            <div
-              className={`flex items-center p-1 rounded-lg shadow-md border ${
-                darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#014167]/30"
-              }`}
-            >
-              <button
-                aria-pressed={roomFilter === "resus"}
-                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
-                  roomFilter === "resus"
-                    ? "bg-[#E55143] text-white"
-                    : darkMode
-                    ? "text-gray-300 hover:bg-gray-700"
-                    : "text-[#014167] hover:bg-white/50"
-                }`}
-                onClick={() => setRoomFilter("resus")}
-              >
-                Resus
-              </button>
-              <button
-                aria-pressed={roomFilter === "non-resus"}
-                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
-                  roomFilter === "non-resus"
-                    ? "bg-[#699D5D] text-white"
-                    : darkMode
-                    ? "text-gray-300 hover:bg-gray-700"
-                    : "text-[#014167] hover:bg-white/50"
-                }`}
-                onClick={() => setRoomFilter("non-resus")}
-              >
-                Non-Resus
-              </button>
-              <button
-                aria-pressed={roomFilter === "all"}
-                className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
-                  roomFilter === "all"
-                    ? "bg-[#014167] text-white"
-                    : darkMode
-                    ? "text-gray-300 hover:bg-gray-700"
-                    : "text-[#014167] hover:bg-white/50"
-                }`}
-                onClick={() => setRoomFilter("all")}
-              >
-                All
-              </button>
-            </div>
-
-            {displayMode === "card" && (
-              <div
-                className={`flex items-center p-1 rounded-lg shadow-md border ${
-                  darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#014167]/30"
-                }`}
-              >
-                <button
-                  aria-pressed={view === "surgery"}
-                  className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
-                    view === "surgery"
-                      ? "bg-[#E55143] text-white"
-                      : darkMode
-                      ? "text-gray-300 hover:bg-gray-700"
-                      : "text-[#E55143] hover:bg-white/50"
-                  }`}
-                  onClick={() => setView("surgery")}
-                >
-                  Surgery
+            {/* Control Groups */}
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+              {/* Layout Toggle */}
+              <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
+                <button aria-pressed={displayMode === "card"} onClick={() => setDisplayMode("card")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "card" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                  <span className="hidden sm:inline">Card</span>
                 </button>
-                <button
-                  aria-pressed={view === "ortho"}
-                  className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
-                    view === "ortho"
-                      ? "bg-[#699D5D] text-[#FDFCDF]"
-                      : darkMode
-                      ? "text-gray-300 hover:bg-gray-700"
-                      : "text-[#699D5D] hover:bg-white/50"
-                  }`}
-                  onClick={() => setView("ortho")}
-                >
-                  Ortho
-                </button>
-                <button
-                  aria-pressed={view === "both"}
-                  className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs glow-hover ${
-                    view === "both"
-                      ? "bg-[#F1AE9E] text-[#014167]"
-                      : darkMode
-                      ? "text-gray-300 hover:bg-gray-700"
-                      : "text-[#014167] hover:bg-white/50"
-                  }`}
-                  onClick={() => setView("both")}
-                >
-                  Both
+                <button aria-pressed={displayMode === "table"} onClick={() => setDisplayMode("table")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "table" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                  <span className="hidden sm:inline">Table</span>
                 </button>
               </div>
-            )}
+
+              {/* Room Filter */}
+              <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
+                <button aria-pressed={roomFilter === "all"} onClick={() => setRoomFilter("all")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "all" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>All</button>
+                <button aria-pressed={roomFilter === "resus"} onClick={() => setRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "resus" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Resus</button>
+                <button aria-pressed={roomFilter === "non-resus"} onClick={() => setRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "non-resus" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Non-Resus</button>
+              </div>
+
+              {/* View Filter (Card View Only) */}
+              {displayMode === "card" && (
+                <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
+                  <button aria-pressed={view === "both"} onClick={() => setView("both")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "both" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Both</button>
+                  <button aria-pressed={view === "surgery"} onClick={() => setView("surgery")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "surgery" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Surgery</button>
+                  <button aria-pressed={view === "ortho"} onClick={() => setView("ortho")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "ortho" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Ortho</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
+        {/* Quick Navigation - Always visible in card mode */}
         {displayMode === "card" && (
-          <details
-            open
-            className={`mb-4 rounded-xl shadow-md border overflow-hidden transition-colors ${
-              darkMode ? "bg-gray-800 border-gray-700" : "bg-white/90 border-[#014167]/20"
-            }`}
-          >
-            <summary
-              className={`cursor-pointer px-4 py-3 font-bold transition-all flex items-center justify-between ${
-                darkMode ? "text-gray-200 hover:bg-gray-700" : "text-[#014167] hover:bg-[#014167]/10"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Quick Navigation
-              </span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </summary>
-            <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-1 xl:gap-2">
-                {(
-                  view === "surgery"
-                    ? SURGERY_DEPTS
-                    : view === "ortho"
-                      ? ORTHO_DEPTS
-                      : [...SURGERY_DEPTS, ...ORTHO_DEPTS]
-                ).map((dept) => {
-                  const cases = getCasesForDepartment(dept);
-                  const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
-                  return (
-                    <button
-                      key={dept}
-                      onClick={() => scrollToDepartment(dept)}
-                      className={`rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-200 shadow-sm hover:shadow-md group ${
-                        darkMode
-                          ? `bg-gray-700 hover:text-white text-gray-200 ${
-                              isSurgery
-                                ? "border border-[#ff7063]/50 hover:bg-[#E55143]"
-                                : "border border-[#8bc34a]/50 hover:bg-[#699D5D]"
-                            }`
-                          : `bg-white hover:text-white text-[#014167] ${
-                              isSurgery
-                                ? "border border-[#E55143]/30 hover:bg-[#E55143]"
-                                : "border border-[#699D5D]/30 hover:bg-[#699D5D]"
-                            }`
+          <div className={`mb-4 rounded-xl overflow-hidden transition-colors ${
+            darkMode ? "bg-gray-800/50 border border-gray-700" : "bg-white/60 border border-[#C7CFDA]/30 backdrop-blur-sm"
+          }`}>
+            <div className="flex overflow-x-auto lg:grid lg:grid-cols-9 gap-1.5 p-2 hide-scrollbar">
+              {(
+                view === "surgery"
+                  ? SURGERY_DEPTS
+                  : view === "ortho"
+                    ? ORTHO_DEPTS
+                    : [...SURGERY_DEPTS, ...ORTHO_DEPTS]
+              ).map((dept) => {
+                const cases = getCasesForDepartment(dept);
+                const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
+                const hasCases = cases.length > 0;
+                return (
+                  <button
+                    key={dept}
+                    onClick={() => scrollToDepartment(dept)}
+                    className={`flex-shrink-0 w-[88px] lg:w-auto rounded-lg px-2 py-2 transition-all duration-200 group flex flex-col items-center justify-center border tap-feedback ${
+                      hasCases
+                        ? darkMode
+                          ? `bg-gray-800 text-white ${isSurgery ? "border-[#E55143]/40 hover:bg-[#E55143]" : "border-[#699D5D]/40 hover:bg-[#699D5D]"} hover:text-white shadow-sm`
+                          : `bg-white text-[#014167] ${isSurgery ? "border-[#E55143]/30 hover:bg-[#E55143]" : "border-[#699D5D]/30 hover:bg-[#699D5D]"} hover:text-white shadow-sm`
+                        : darkMode
+                          ? "bg-gray-800/50 text-gray-500 border-gray-700/50 hover:bg-gray-700/50"
+                          : "bg-gray-50/50 text-gray-400 border-gray-200/50 hover:bg-gray-100"
+                    }`}
+                  >
+                    <div className="text-[11px] font-bold mb-0.5 w-full truncate text-center" title={dept}>{dept}</div>
+                    <div
+                      className={`text-base font-extrabold leading-none tabular-nums ${
+                        hasCases
+                          ? "text-[#E55143] group-hover:text-white"
+                          : darkMode ? "text-gray-600" : "text-gray-300"
                       }`}
                     >
-                      <div className="text-xs font-bold mb-1">{dept}</div>
-                      <div
-                        className={`text-lg font-bold ${
-                          cases.length > 0
-                            ? "text-[#E55143] group-hover:text-white"
-                            : "text-[#699D5D] group-hover:text-white"
-                        }`}
-                      >
-                        {cases.length}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                      {cases.length}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-          </details>
+          </div>
         )}
 
         {/* ------------------------------------------------------------------------ */}
@@ -535,14 +402,15 @@ export default function Dashboard() {
                         </div>
                         {cases.length === 0 ? (
                           <div
-                            className={`text-center py-2 px-3 rounded-lg border ${
+                            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border ${
                               darkMode
-                                ? "bg-emerald-500/10 border-emerald-500/20"
-                                : "bg-[#699D5D]/10 border-[#699D5D]/30"
+                                ? "bg-emerald-500/5 border-emerald-500/20"
+                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
                             }`}
                           >
-                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400" : "text-[#4d7845]"}`}>
-                              ✓ ไม่มีเคสค้าง
+                            <svg className={`w-4 h-4 ${darkMode ? "text-emerald-400" : "text-[#699D5D]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400/80" : "text-[#699D5D]"}`}>
+                              ไม่มีเคสค้าง
                             </p>
                           </div>
                         ) : (
@@ -612,14 +480,15 @@ export default function Dashboard() {
                         </div>
                         {cases.length === 0 ? (
                           <div
-                            className={`text-center py-2 px-3 rounded-lg border ${
+                            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border ${
                               darkMode
-                                ? "bg-emerald-500/10 border-emerald-500/20"
-                                : "bg-[#699D5D]/10 border-[#699D5D]/30"
+                                ? "bg-emerald-500/5 border-emerald-500/20"
+                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
                             }`}
                           >
-                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400" : "text-[#4d7845]"}`}>
-                              ✓ ไม่มีเคสค้าง
+                            <svg className={`w-4 h-4 ${darkMode ? "text-emerald-400" : "text-[#699D5D]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400/80" : "text-[#699D5D]"}`}>
+                              ไม่มีเคสค้าง
                             </p>
                           </div>
                         ) : (
@@ -836,48 +705,70 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           {deptName}
         </span>
         
-        <div className="flex-1 flex flex-col gap-1.5">
-          <div className="flex gap-1 items-center h-7">
+        <div className="flex-1 flex flex-col gap-1.5 w-full">
+          <div className="flex gap-2 items-stretch h-8">
             {!isAccepted ? (
               <>
                 <button
                   onClick={onAccept}
                   disabled={isUpdating}
-                  className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${isUpdating ? "bg-gray-400 text-white cursor-not-allowed" : "bg-[#699D5D] text-white hover:bg-[#5a8a4f]"}`}
+                  className={`flex-1 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm ${
+                    isUpdating
+                      ? "bg-gray-400 text-white cursor-not-allowed"
+                      : "bg-[#699D5D] text-white hover:bg-[#5a8a4f] hover:shadow-md transform hover:-translate-y-0.5"
+                  }`}
                 >
-                  {isUpdating ? "..." : "รับเคส"}
+                  {isUpdating ? "..." : (
+                    <>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      รับเคส
+                    </>
+                  )}
                 </button>
-                <button disabled className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold cursor-not-allowed ${darkMode ? "bg-gray-700 text-gray-500" : "bg-gray-100 text-gray-400"}`}>
+                <button disabled className={`flex-1 rounded-md text-xs font-bold flex items-center justify-center gap-1 cursor-not-allowed ${
+                  darkMode ? "bg-gray-800 border border-dashed border-gray-600 text-gray-500" : "bg-gray-50 border border-dashed border-gray-300 text-gray-400"
+                }`}>
+                  <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                   ปิดเคส
                 </button>
               </>
             ) : (
               <>
-                <select
-                  value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                  onChange={(e) => onStatusChange(e.target.value as PostAcceptStatus)}
-                  disabled={isUpdating}
-                  className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold border text-center appearance-none cursor-pointer ${
-                    actionStatus && actionStatus !== ACCEPT_STATUS
-                      ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-400/10 text-amber-700 border-amber-400")
-                      : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-gray-50 text-[#014167] border-[#C7CFDA]")
-                  }`}
-                >
-                  <option value="" disabled>สถานะ</option>
-                  {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <div className="flex-1 relative">
+                  <select
+                    value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
+                    onChange={(e) => onStatusChange(e.target.value as PostAcceptStatus)}
+                    disabled={isUpdating}
+                    className={`w-full h-full rounded-md text-xs font-bold border appearance-none cursor-pointer pl-2 pr-6 focus:outline-none focus:ring-2 focus:ring-amber-500/50 shadow-sm transition-colors ${
+                      actionStatus && actionStatus !== ACCEPT_STATUS
+                        ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-50 text-amber-700 border-amber-400")
+                        : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-white text-[#014167] border-[#C7CFDA]")
+                    }`}
+                  >
+                    <option value="" disabled>สถานะ</option>
+                    {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 ${darkMode ? "text-gray-400" : "text-gray-500"}`}>
+                    <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                  </div>
+                </div>
                 <button
                   onClick={() => setShowConfirm(true)}
                   disabled={isUpdating || !isStatusSelected}
-                  className={`flex-1 h-full rounded text-[10px] sm:text-xs font-bold transition-all ${
+                  className={`flex-1 rounded-md text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-sm ${
                     isUpdating || !isStatusSelected
                       ? darkMode
-                        ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
-                        : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-inner"
-                      : "bg-[#E55143] text-white hover:bg-[#d44639]"
+                        ? "bg-gray-800 text-gray-500 cursor-not-allowed border border-dashed border-gray-600"
+                        : "bg-gray-50 text-gray-400 cursor-not-allowed border border-dashed border-gray-300"
+                      : "bg-[#E55143] text-white hover:bg-[#d44639] hover:shadow-md transform hover:-translate-y-0.5"
                   }`}
                 >
-                  {isUpdating ? "..." : "ปิดเคส"}
+                  {isUpdating ? "..." : (
+                    <>
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      ปิดเคส
+                    </>
+                  )}
                 </button>
               </>
             )}
@@ -885,7 +776,11 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
             <button
               onClick={() => setShowCancelConfirm(true)}
               disabled={isUpdating}
-              className={`w-6 h-7 flex items-center justify-center rounded transition-colors ${darkMode ? "text-gray-400 hover:text-red-400 hover:bg-red-500/10" : "text-gray-400 hover:text-red-500 hover:bg-red-50"}`}
+              className={`w-7 h-8 flex items-center justify-center rounded-md transition-colors border shadow-sm ${
+                darkMode 
+                  ? "bg-gray-800 border-gray-700 text-gray-400 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30" 
+                  : "bg-white border-[#C7CFDA]/50 text-gray-400 hover:text-red-500 hover:bg-red-50 hover:border-red-200"
+              }`}
               title="ยกเลิก"
               aria-label="ยกเลิกการปรึกษา"
             >
@@ -896,7 +791,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
           </div>
 
             {milestones.length > 0 && (
-              <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
+              <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
                 {milestones.map((m, idx, arr) => (
                   <React.Fragment key={`${m.label}-${m.raw}`}>
                     <div className="flex items-center gap-1 text-[10px]">
@@ -909,7 +804,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                       ) : null}
-                      <span className={`font-bold whitespace-nowrap ${darkMode ? m.colorDark : m.colorLight}`}>{m.label} {m.time}</span>
+                      <span className={`font-semibold whitespace-nowrap ${darkMode ? m.colorDark : m.colorLight}`}>{m.label} {m.time}</span>
                     </div>
                     {idx < arr.length - 1 && (
                       <span className={darkMode ? "text-gray-700" : "text-[#014167]/20"}>→</span>

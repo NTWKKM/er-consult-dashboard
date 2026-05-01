@@ -5,15 +5,19 @@ import { createContext, useContext, useEffect, useCallback, ReactNode, useSyncEx
 interface SettingsContextType {
   darkMode: boolean;
   soundEnabled: boolean;
+  displayMode: "card" | "table";
   toggleDarkMode: () => void;
   toggleSound: () => void;
+  setDisplayMode: (mode: "card" | "table") => void;
 }
 
 const SettingsContext = createContext<SettingsContextType>({
   darkMode: false,
   soundEnabled: false,
+  displayMode: "card",
   toggleDarkMode: () => {},
   toggleSound: () => {},
+  setDisplayMode: () => {},
 });
 
 // For subscribing to window events (both cross-tab and same-tab)
@@ -40,8 +44,15 @@ const getSoundEnabledSnapshot = () => {
     return saved !== null ? saved === "true" : false;
 };
 
+const getDisplayModeSnapshot = (): "card" | "table" => {
+    if (typeof window === "undefined") return "card";
+    const saved = localStorage.getItem("dashboard_displayMode");
+    return saved === "table" ? "table" : "card";
+};
+
 const darkModeServerSnapshot = () => false;
 const soundEnabledServerSnapshot = () => false;
+const displayModeServerSnapshot = (): "card" | "table" => "card";
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   // Use modern React store synchronization for safe SSR/Hydration
@@ -55,6 +66,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     subscribe,
     getSoundEnabledSnapshot,
     soundEnabledServerSnapshot
+  );
+
+  const displayMode = useSyncExternalStore(
+    subscribe,
+    getDisplayModeSnapshot,
+    displayModeServerSnapshot
   );
 
   // Helper to trigger UI updates in the current tab
@@ -79,8 +96,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     notifyChange();
   }, [soundEnabled, notifyChange]);
 
+  const setDisplayMode = useCallback((mode: "card" | "table") => {
+    localStorage.setItem("dashboard_displayMode", mode);
+    notifyChange();
+  }, [notifyChange]);
+
   return (
-    <SettingsContext.Provider value={{ darkMode, soundEnabled, toggleDarkMode, toggleSound }}>
+    <SettingsContext.Provider value={{ darkMode, soundEnabled, displayMode, toggleDarkMode, toggleSound, setDisplayMode }}>
       {children}
     </SettingsContext.Provider>
   );

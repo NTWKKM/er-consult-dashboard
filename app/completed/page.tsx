@@ -417,35 +417,51 @@ export default function CompletedPage() {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : "bg-[#014167]"}`}>
       <div className="max-w-[1800px] mx-auto p-4">
-        <div className="mb-4 text-center">
-          <h1 className={`text-2xl font-bold mb-2 ${darkMode ? "text-gray-100" : "text-[#FDFCDF]"}`}>
-            เคสที่ปรึกษาเสร็จแล้ว
-          </h1>
-          <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
-            <div
-              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full shadow-sm border ${
-                darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
-              }`}
-            >
-              <span className={`font-semibold text-sm ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>ผลการค้นหา:</span>
-              <span className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
-                {searchStatus === "loading" ? "..." : filteredCases.length}
-              </span>
-              <span className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>เคส</span>
+        <div className="mb-5">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-md ${
+                darkMode ? "bg-gray-700" : "bg-white/15 backdrop-blur-sm"
+              }`}>
+                <svg className="w-5 h-5 text-[#FDFCDF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+              </div>
+              <div>
+                <h1 className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#FDFCDF]"}`}>
+                  เคสที่ปรึกษาเสร็จแล้ว
+                </h1>
+                <p className={`text-xs ${darkMode ? "text-gray-400" : "text-[#C7CFDA]"}`}>
+                  ค้นหาและจัดการประวัติเคส
+                </p>
+              </div>
             </div>
-            <button
-              onClick={() => {
-                setExportStartDate("");
-                setExportEndDate("");
-                setShowExportModal(true);
-              }}
-              className="inline-flex items-center gap-2 bg-[#699D5D] hover:bg-[#58854D] text-white px-4 py-1.5 rounded-full shadow-sm font-semibold text-sm transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Export Excel
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl shadow-sm border ${
+                  darkMode ? "bg-gray-800 border-gray-700" : "bg-white/10 border-white/15 backdrop-blur-sm"
+                }`}
+              >
+                <span className={`font-semibold text-sm ${darkMode ? "text-gray-300" : "text-[#C7CFDA]"}`}>ผลการค้นหา:</span>
+                <span className={`text-xl font-extrabold tabular-nums ${darkMode ? "text-gray-100" : "text-[#FDFCDF]"}`}>
+                  {searchStatus === "loading" ? "..." : filteredCases.length}
+                </span>
+                <span className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#C7CFDA]"}`}>เคส</span>
+              </div>
+              <button
+                onClick={() => {
+                  setExportStartDate("");
+                  setExportEndDate("");
+                  setShowExportModal(true);
+                }}
+                className="inline-flex items-center gap-2 bg-[#699D5D] hover:bg-[#5a8a4f] text-white px-4 py-2 rounded-xl shadow-md font-bold text-sm transition-all hover:shadow-lg hover:-translate-y-0.5 tap-feedback"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export Excel
+              </button>
+            </div>
           </div>
         </div>
 
@@ -456,8 +472,9 @@ export default function CompletedPage() {
           }`}
         >
           <div className="flex-1">
-            <label className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-              🔍 ค้นหา HN
+            <label className={`text-xs font-bold mb-1 flex items-center gap-1 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              ค้นหา HN
             </label>
             <input
               type="text"
@@ -472,8 +489,9 @@ export default function CompletedPage() {
             />
           </div>
           <div className="flex-1">
-            <label className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-              🏥 กรองแผนก
+            <label className={`text-xs font-bold mb-1 flex items-center gap-1 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+              กรองแผนก
             </label>
             <select
               value={filterDept}
@@ -493,8 +511,9 @@ export default function CompletedPage() {
             </select>
           </div>
           <div className="flex-1">
-            <label className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-              📅 กรองวันที่
+            <label className={`text-xs font-bold mb-1 flex items-center gap-1 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+              กรองวันที่
             </label>
             <input
               type="date"
@@ -536,23 +555,24 @@ export default function CompletedPage() {
           {/* Desktop table */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
-              <thead className={`text-white ${darkMode ? "bg-gray-700" : "bg-[#E55143]"}`}>
+              <thead className={`text-white ${darkMode ? "bg-gray-700" : "bg-[#014167]"}`}>
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-bold w-[8%]">HN</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold w-[12%]">ชื่อ-สกุล</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold w-[8%]">ห้อง</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold w-[18%]">Dx</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold w-[12%]">แผนก</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold w-[10%]">วันที่ส่ง</th>
-                  <th className="px-4 py-3 text-left text-sm font-bold w-[22%]">สถานะ / เวลา</th>
-                  <th className="px-4 py-3 text-center text-sm font-bold w-[10%]">จัดการ</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[8%]">HN</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[12%]">ชื่อ-สกุล</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[8%]">ห้อง</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[18%]">Dx</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[12%]">แผนก</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[10%]">วันที่ส่ง</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[22%]">สถานะ / เวลา</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[10%]">จัดการ</th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${darkMode ? "divide-gray-700" : "divide-[#014167]/10"}`}>
                 {currentCases.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className={`px-4 py-8 text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
-                      ไม่มีข้อมูล
+                    <td colSpan={8} className={`px-4 py-12 text-center ${darkMode ? "text-gray-500" : "text-[#014167]/50"}`}>
+                      <svg className="w-10 h-10 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                      <p className="font-medium text-sm">ไม่มีข้อมูล</p>
                     </td>
                   </tr>
                 ) : (
