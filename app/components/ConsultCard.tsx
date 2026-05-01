@@ -145,10 +145,17 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   {fullName}
                 </p>
               )}
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex items-center gap-1.5 text-xs flex-wrap">
                 <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{departmentName}</span>
-                <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>•</span>
-                <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{room}</span>
+                <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>→</span>
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[11px] ${
+                  room.startsWith("Resus")
+                    ? darkMode ? "bg-[#E55143]/15 text-[#ff7063] border border-[#E55143]/20" : "bg-[#E55143]/10 text-[#c23a2e] border border-[#E55143]/15"
+                    : darkMode ? "bg-[#699D5D]/15 text-[#86efac] border border-[#699D5D]/20" : "bg-[#699D5D]/10 text-[#4d7845] border border-[#699D5D]/15"
+                }`}>
+                  <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  {room}
+                </span>
                 <RoomTransferButton 
                   consultId={caseId}
                   currentRoom={room}

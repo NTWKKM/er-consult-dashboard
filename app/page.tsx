@@ -200,127 +200,106 @@ export default function Dashboard() {
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : ""}`}>
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         {/* --- Toolbar --- */}
-        <div className="mb-4 flex justify-center slide-in w-full">
-          {/* Centered Group */}
-          <div className="flex flex-col lg:flex-row items-center gap-3 w-full sm:w-auto">
-            {/* Box 1: Pending Count */}
-            <div className={`flex items-center gap-3 w-full sm:w-auto justify-center px-6 py-2.5 rounded-xl shadow-sm border transition-colors ${
-              darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60"
+        <div className="mb-4 slide-in w-full">
+          <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl shadow-sm border transition-colors ${
+            darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60 backdrop-blur-sm"
+          }`}>
+            {/* Pending Count */}
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
+              darkMode ? "bg-gray-900/60" : "bg-[#014167]/5"
             }`}>
-              <div className={`flex items-center gap-2 font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                <svg className="w-5 h-5 text-[#E55143]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <span>รอปรึกษา:</span>
-              </div>
-              <span className={`text-xl font-bold px-3 py-0.5 rounded-full shadow-inner ${
-                  totalPendingCases > 0 
-                    ? "bg-[#E55143]/10 text-[#E55143] dark:bg-[#E55143]/20" 
-                    : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
-                }`}>
+              <svg className="w-4 h-4 text-[#E55143] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span className={`text-xs font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รอปรึกษา</span>
+              <span className={`text-base font-extrabold tabular-nums min-w-[28px] text-center px-2 py-0.5 rounded-full ${
+                totalPendingCases > 0 
+                  ? "bg-[#E55143] text-white shadow-sm" 
+                  : darkMode ? "bg-gray-700 text-gray-400" : "bg-gray-200 text-gray-400"
+              }`}>
                 {totalPendingCases}
               </span>
             </div>
 
-            {/* Box 2: Controls */}
-            <div className={`flex flex-wrap items-center justify-center gap-2 sm:gap-3 w-full sm:w-auto p-2 sm:px-3 sm:py-2 rounded-xl shadow-sm border transition-colors ${
-              darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60"
-          }`}>
-             {/* Layout Toggle */}
-             <div className={`flex items-center p-1 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-               <button aria-pressed={displayMode === "card"} onClick={() => setDisplayMode("card")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1.5 ${displayMode === "card" ? "bg-white dark:bg-gray-700 text-[#014167] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>
-                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                 Card
-               </button>
-               <button aria-pressed={displayMode === "table"} onClick={() => setDisplayMode("table")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1.5 ${displayMode === "table" ? "bg-white dark:bg-gray-700 text-[#014167] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>
-                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                 Table
-               </button>
-             </div>
-             {/* Room Filter */}
-             <div className={`flex items-center p-1 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-               <button aria-pressed={roomFilter === "all"} onClick={() => setRoomFilter("all")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "all" ? "bg-white dark:bg-gray-700 text-[#014167] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>All</button>
-               <button aria-pressed={roomFilter === "resus"} onClick={() => setRoomFilter("resus")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "resus" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>Resus</button>
-               <button aria-pressed={roomFilter === "non-resus"} onClick={() => setRoomFilter("non-resus")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "non-resus" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>Non-Resus</button>
-             </div>
+            {/* Divider */}
+            <div className={`hidden sm:block w-px h-7 ${darkMode ? "bg-gray-700" : "bg-[#C7CFDA]/40"}`} />
 
-             {/* View Filter (Card View Only) */}
-             {displayMode === "card" && (
-                <div className={`flex items-center p-1 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                   <button aria-pressed={view === "both"} onClick={() => setView("both")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "both" ? "bg-white dark:bg-gray-700 text-[#014167] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>Both</button>
-                   <button aria-pressed={view === "surgery"} onClick={() => setView("surgery")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "surgery" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>Surgery</button>
-                   <button aria-pressed={view === "ortho"} onClick={() => setView("ortho")} className={`px-3 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "ortho" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"}`}>Ortho</button>
+            {/* Control Groups */}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-1">
+              {/* Layout Toggle */}
+              <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
+                <button aria-pressed={displayMode === "card"} onClick={() => setDisplayMode("card")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "card" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                  <span className="hidden sm:inline">Card</span>
+                </button>
+                <button aria-pressed={displayMode === "table"} onClick={() => setDisplayMode("table")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "table" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                  <span className="hidden sm:inline">Table</span>
+                </button>
+              </div>
+
+              {/* Room Filter */}
+              <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
+                <button aria-pressed={roomFilter === "all"} onClick={() => setRoomFilter("all")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "all" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>All</button>
+                <button aria-pressed={roomFilter === "resus"} onClick={() => setRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "resus" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Resus</button>
+                <button aria-pressed={roomFilter === "non-resus"} onClick={() => setRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "non-resus" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Non-Resus</button>
+              </div>
+
+              {/* View Filter (Card View Only) */}
+              {displayMode === "card" && (
+                <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
+                  <button aria-pressed={view === "both"} onClick={() => setView("both")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "both" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Both</button>
+                  <button aria-pressed={view === "surgery"} onClick={() => setView("surgery")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "surgery" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Surgery</button>
+                  <button aria-pressed={view === "ortho"} onClick={() => setView("ortho")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "ortho" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Ortho</button>
                 </div>
-             )}
-           </div>
-         </div>
+              )}
+            </div>
+          </div>
         </div>
 
+        {/* Quick Navigation - Always visible in card mode */}
         {displayMode === "card" && (
-          <details
-            className={`mb-4 rounded-xl shadow-sm border overflow-hidden transition-colors ${
-              darkMode ? "bg-gray-800 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60"
-            }`}
-          >
-            <summary
-              className={`cursor-pointer px-4 py-3 font-bold transition-all flex items-center justify-between select-none ${
-                darkMode ? "text-gray-200 hover:bg-gray-700/50" : "text-[#014167] hover:bg-gray-50"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Quick Navigation
-              </span>
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </summary>
-            <div className={`p-3 border-t ${darkMode ? "border-gray-700" : "border-gray-100"}`}>
-              {/* Horizontal Scroll Area for mobile, grid for larger screens */}
-              <div className="flex overflow-x-auto lg:grid lg:grid-cols-9 gap-2 pb-2 hide-scrollbar">
-                {(
-                  view === "surgery"
-                    ? SURGERY_DEPTS
-                    : view === "ortho"
-                      ? ORTHO_DEPTS
-                      : [...SURGERY_DEPTS, ...ORTHO_DEPTS]
-                ).map((dept) => {
-                  const cases = getCasesForDepartment(dept);
-                  const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
-                  return (
-                    <button
-                      key={dept}
-                      onClick={() => scrollToDepartment(dept)}
-                      className={`flex-shrink-0 w-24 lg:w-auto rounded-lg px-2 py-2 transition-all duration-200 shadow-sm hover:shadow-md group flex flex-col items-center justify-center border ${
-                        darkMode
-                          ? `bg-gray-800 text-gray-200 ${
-                              isSurgery
-                                ? "border-[#ff7063]/30 hover:bg-[#E55143] hover:text-white"
-                                : "border-[#8bc34a]/30 hover:bg-[#699D5D] hover:text-white"
-                            }`
-                          : `bg-white text-[#014167] ${
-                              isSurgery
-                                ? "border-[#E55143]/20 hover:bg-[#E55143] hover:text-white"
-                                : "border-[#699D5D]/20 hover:bg-[#699D5D] hover:text-white"
-                            }`
+          <div className={`mb-4 rounded-xl overflow-hidden transition-colors ${
+            darkMode ? "bg-gray-800/50 border border-gray-700" : "bg-white/60 border border-[#C7CFDA]/30 backdrop-blur-sm"
+          }`}>
+            <div className="flex overflow-x-auto lg:grid lg:grid-cols-9 gap-1.5 p-2 hide-scrollbar">
+              {(
+                view === "surgery"
+                  ? SURGERY_DEPTS
+                  : view === "ortho"
+                    ? ORTHO_DEPTS
+                    : [...SURGERY_DEPTS, ...ORTHO_DEPTS]
+              ).map((dept) => {
+                const cases = getCasesForDepartment(dept);
+                const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
+                const hasCases = cases.length > 0;
+                return (
+                  <button
+                    key={dept}
+                    onClick={() => scrollToDepartment(dept)}
+                    className={`flex-shrink-0 w-[88px] lg:w-auto rounded-lg px-2 py-2 transition-all duration-200 group flex flex-col items-center justify-center border tap-feedback ${
+                      hasCases
+                        ? darkMode
+                          ? `bg-gray-800 text-white ${isSurgery ? "border-[#E55143]/40 hover:bg-[#E55143]" : "border-[#699D5D]/40 hover:bg-[#699D5D]"} hover:text-white shadow-sm`
+                          : `bg-white text-[#014167] ${isSurgery ? "border-[#E55143]/30 hover:bg-[#E55143]" : "border-[#699D5D]/30 hover:bg-[#699D5D]"} hover:text-white shadow-sm`
+                        : darkMode
+                          ? "bg-gray-800/50 text-gray-500 border-gray-700/50 hover:bg-gray-700/50"
+                          : "bg-gray-50/50 text-gray-400 border-gray-200/50 hover:bg-gray-100"
+                    }`}
+                  >
+                    <div className="text-[11px] font-bold mb-0.5 w-full truncate text-center" title={dept}>{dept}</div>
+                    <div
+                      className={`text-base font-extrabold leading-none tabular-nums ${
+                        hasCases
+                          ? "text-[#E55143] group-hover:text-white"
+                          : darkMode ? "text-gray-600" : "text-gray-300"
                       }`}
                     >
-                      <div className="text-[11px] font-bold mb-1 w-full truncate text-center" title={dept}>{dept}</div>
-                      <div
-                        className={`text-lg font-bold leading-none ${
-                          cases.length > 0
-                            ? "text-[#E55143] group-hover:text-white"
-                            : darkMode ? "text-gray-500 group-hover:text-white" : "text-gray-400 group-hover:text-white"
-                        }`}
-                      >
-                        {cases.length}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                      {cases.length}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-          </details>
+          </div>
         )}
 
         {/* ------------------------------------------------------------------------ */}
@@ -423,14 +402,15 @@ export default function Dashboard() {
                         </div>
                         {cases.length === 0 ? (
                           <div
-                            className={`text-center py-2 px-3 rounded-lg border ${
+                            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border ${
                               darkMode
-                                ? "bg-emerald-500/10 border-emerald-500/20"
-                                : "bg-[#699D5D]/10 border-[#699D5D]/30"
+                                ? "bg-emerald-500/5 border-emerald-500/20"
+                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
                             }`}
                           >
-                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400" : "text-[#4d7845]"}`}>
-                              ✓ ไม่มีเคสค้าง
+                            <svg className={`w-4 h-4 ${darkMode ? "text-emerald-400" : "text-[#699D5D]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400/80" : "text-[#699D5D]"}`}>
+                              ไม่มีเคสค้าง
                             </p>
                           </div>
                         ) : (
@@ -500,14 +480,15 @@ export default function Dashboard() {
                         </div>
                         {cases.length === 0 ? (
                           <div
-                            className={`text-center py-2 px-3 rounded-lg border ${
+                            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border ${
                               darkMode
-                                ? "bg-emerald-500/10 border-emerald-500/20"
-                                : "bg-[#699D5D]/10 border-[#699D5D]/30"
+                                ? "bg-emerald-500/5 border-emerald-500/20"
+                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
                             }`}
                           >
-                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400" : "text-[#4d7845]"}`}>
-                              ✓ ไม่มีเคสค้าง
+                            <svg className={`w-4 h-4 ${darkMode ? "text-emerald-400" : "text-[#699D5D]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400/80" : "text-[#699D5D]"}`}>
+                              ไม่มีเคสค้าง
                             </p>
                           </div>
                         ) : (

@@ -167,11 +167,11 @@ export default function SubmitPage() {
   }, [handleSubmit, isLoading]);
 
   const inputClasses = (fieldName: string) =>
-    `w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all duration-200 text-sm ${errors[fieldName]
+    `w-full px-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 transition-all duration-200 text-sm shadow-sm ${errors[fieldName]
       ? "border-[#E55143] focus:border-[#E55143] focus:ring-[#E55143]/20 bg-[#E55143]/5"
       : darkMode
         ? "border-gray-600 bg-gray-700 text-gray-100 placeholder-gray-400 focus:border-[#699D5D] focus:ring-[#699D5D]/20"
-        : "border-[#C7CFDA]/30 bg-white text-[#014167] placeholder-[#C7CFDA] focus:border-[#699D5D] focus:ring-[#699D5D]/20"
+        : "border-[#C7CFDA]/40 bg-white/90 text-[#014167] placeholder-[#C7CFDA] focus:border-[#699D5D] focus:ring-[#699D5D]/20 hover:border-[#C7CFDA]/60"
     }`;
 
   const labelClasses = `flex items-center gap-1.5 text-xs font-bold mb-2 ${darkMode ? "text-gray-200" : "text-[#014167]"
@@ -183,22 +183,25 @@ export default function SubmitPage() {
         }`}
     >
       <div className="relative max-w-4xl w-full">
-        <div className="flex items-center gap-2 mb-3 px-2">
-          <div className={`w-6 h-6 rounded-md flex items-center justify-center ${darkMode ? "bg-gray-700 text-gray-300" : "bg-[#014167]/10 text-[#014167]"}`}>
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        <div className="flex items-center gap-2.5 mb-4 px-1">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ${darkMode ? "bg-[#699D5D]/20 text-[#699D5D]" : "bg-white/15 text-white backdrop-blur-sm"}`}>
+            <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </div>
-          <h1 className={`text-base font-bold ${darkMode ? "text-gray-200" : "text-white"}`}>ส่งเคสปรึกษาแบบฟอร์ม</h1>
+          <div>
+            <h1 className={`text-lg font-bold ${darkMode ? "text-gray-100" : "text-white"}`}>ส่งเคสปรึกษา</h1>
+            <p className={`text-[11px] ${darkMode ? "text-gray-400" : "text-white/60"}`}>กรอกข้อมูลผู้ป่วยและเลือกแผนกที่ต้องการปรึกษา</p>
+          </div>
         </div>
 
         <div
-          className={`p-5 md:p-6 rounded-xl shadow-md relative z-0 border transition-colors ${darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
+          className={`p-5 md:p-6 rounded-2xl shadow-lg relative z-0 border transition-colors ${darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA]/90 border-[#C7CFDA]/30 backdrop-blur-sm"
             }`}
         >
-          <form className="space-y-4">
-            <fieldset disabled={isLoading} className="space-y-4">
-              {/* HN + Name row */}
+          <form className="space-y-5">
+            <fieldset disabled={isLoading} className="space-y-5">
+              {/* Step 1: HN + Name row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label htmlFor="hn" className={labelClasses}>
@@ -267,7 +270,7 @@ export default function SubmitPage() {
                 </div>
               </div>
 
-              {/* Room */}
+              {/* Step 2: Room */}
               <div>
                 <label htmlFor="room" className={labelClasses}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -296,7 +299,7 @@ export default function SubmitPage() {
                 {errors.room && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.room}</p>}
               </div>
 
-              {/* Problem */}
+              {/* Step 3: Problem */}
               <div>
                 <label htmlFor="problem" className={labelClasses}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -319,7 +322,7 @@ export default function SubmitPage() {
                 {errors.problem && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.problem}</p>}
               </div>
 
-              {/* Departments */}
+              {/* Step 4: Departments */}
               <div>
                 <label id="departments-label" className={labelClasses}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -389,63 +392,63 @@ export default function SubmitPage() {
               </div>
 
               {/* Submit buttons */}
-              <div className={`pt-3 border-t ${darkMode ? "border-gray-700" : "border-[#C7CFDA]/30"}`}>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1.5">
-                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                      💡 คลิกเพื่อส่งเคสปกติ
-                    </p>
+              <div className={`pt-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-2">
                     <button
                       type="button"
                       onClick={() => handleSubmit(false)}
                       disabled={isLoading}
-                      className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
+                      className={`w-full font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-md text-sm flex items-center justify-center gap-2 tap-feedback ${isLoading
                           ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                          : "bg-[#699D5D] text-white hover:shadow-md transform hover:-translate-y-0.5"
+                          : "bg-[#699D5D] text-white hover:shadow-lg hover:bg-[#5a8a4f] transform hover:-translate-y-0.5 active:translate-y-0"
                         }`}
                     >
                       {isLoading ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span className="hidden sm:inline">กำลังส่ง...</span>
+                          <span>กำลังส่ง...</span>
                         </>
                       ) : (
                         <>
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                           </svg>
-                          Consult
+                          ส่ง Consult
                         </>
                       )}
                     </button>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-                      ⚡ {isMac ? "⌘+Enter" : "Ctrl+Enter"}: ส่ง Fast Track
+                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-500" : "text-[#014167]/40"}`}>
+                      คลิกเพื่อส่งเคสปกติ
                     </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
                     <button
                       type="button"
                       onClick={() => handleSubmit(true)}
                       disabled={isLoading}
-                      className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm text-sm flex items-center justify-center gap-2 ${isLoading
+                      className={`w-full font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-md text-sm flex items-center justify-center gap-2 tap-feedback ${isLoading
                           ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                          : "bg-[#E55143] text-white hover:shadow-md transform hover:-translate-y-0.5"
+                          : "bg-[#E55143] text-white hover:shadow-lg hover:bg-[#d04535] transform hover:-translate-y-0.5 active:translate-y-0"
                         }`}
                     >
                       {isLoading ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span className="hidden sm:inline">กำลังส่ง...</span>
+                          <span>กำลังส่ง...</span>
                         </>
                       ) : (
                         <>
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                           </svg>
-                          Consult FastTrack
+                          Fast Track
                         </>
                       )}
                     </button>
+                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-500" : "text-[#014167]/40"}`}>
+                      <kbd className={`px-1 py-0.5 rounded text-[9px] font-mono ${darkMode ? "bg-gray-700" : "bg-white/60"}`}>{isMac ? "⌘" : "Ctrl"}+Enter</kbd> ส่งด่วน
+                    </p>
                   </div>
                 </div>
               </div>

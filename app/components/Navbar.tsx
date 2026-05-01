@@ -7,15 +7,29 @@ import ConnectionStatus from "./ConnectionStatus";
 import { useSettings } from "../contexts/SettingsContext";
 
 export default function Navbar() {
-  const { darkMode, displayMode, setDisplayMode } = useSettings();
+  const { darkMode } = useSettings();
   const pathname = usePathname();
+
+  const isHome = pathname === "/";
+  const isCompleted = pathname === "/completed";
+  const isSubmit = pathname === "/submit";
+
+  const navLinkBase = `relative font-semibold p-1.5 sm:py-2 sm:px-3 rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5 text-sm`;
+
+  const navLinkActive = darkMode
+    ? "bg-white/15 text-white shadow-inner border border-white/20"
+    : "bg-white/20 text-[#FDFCDF] shadow-inner border border-white/20";
+
+  const navLinkInactive = darkMode
+    ? "text-gray-400 hover:bg-gray-700/60 hover:text-gray-200 border border-transparent"
+    : "text-[#C7CFDA] hover:bg-white/10 hover:text-[#FDFCDF] border border-transparent";
 
   return (
     <nav
-      className={`shadow-lg border-b sticky top-0 z-50 backdrop-blur-sm transition-colors duration-300 ${
+      className={`shadow-lg border-b sticky top-0 z-50 backdrop-blur-md transition-colors duration-300 ${
         darkMode
-          ? "bg-gray-900 border-gray-700"
-          : "bg-[#014167] border-[#E55143]/30"
+          ? "bg-gray-900/95 border-gray-700"
+          : "bg-[#014167]/95 border-[#E55143]/30"
       }`}
     >
       <div className="container mx-auto px-3">
@@ -53,15 +67,16 @@ export default function Navbar() {
               </div>
             </div>
           </Link>
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <NavbarControls />
+            
+            {/* Divider */}
+            <div className={`hidden sm:block w-px h-6 mx-0.5 ${darkMode ? "bg-gray-700" : "bg-white/20"}`} />
+
             <Link
               href="/"
-              className={`font-semibold p-1.5 sm:py-2 sm:px-3 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-center gap-1.5 text-sm glow-hover ${
-                darkMode
-                  ? "bg-gray-700 hover:bg-gray-600 text-gray-200 border border-gray-600"
-                  : "bg-[#C7CFDA] hover:bg-[#C7CFDA]/80 text-[#014167] border border-[#014167]/30"
-              }`}
+              className={`${navLinkBase} ${isHome ? navLinkActive : navLinkInactive}`}
+              aria-current={isHome ? "page" : undefined}
             >
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -69,14 +84,15 @@ export default function Navbar() {
               <span className="hidden lg:inline whitespace-nowrap">
                 หน้าแรก
               </span>
+              {/* Active bottom accent */}
+              {isHome && (
+                <span className="absolute -bottom-[1px] left-2 right-2 h-[2px] bg-[#E55143] rounded-full" />
+              )}
             </Link>
             <Link
               href="/completed"
-              className={`font-semibold p-1.5 sm:py-2 sm:px-4 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-center gap-2 text-sm glow-hover ${
-                darkMode
-                  ? "bg-gray-700 hover:bg-gray-600 text-gray-200 border border-gray-600"
-                  : "bg-[#C7CFDA] hover:bg-[#C7CFDA]/80 text-[#014167] border border-[#014167]/30"
-              }`}
+              className={`${navLinkBase} ${isCompleted ? navLinkActive : navLinkInactive}`}
+              aria-current={isCompleted ? "page" : undefined}
             >
               <svg
                 className="w-4 h-4 shrink-0"
@@ -94,10 +110,16 @@ export default function Navbar() {
               <span className="hidden sm:inline whitespace-nowrap">
                 จัดการเคส
               </span>
+              {isCompleted && (
+                <span className="absolute -bottom-[1px] left-2 right-2 h-[2px] bg-[#C7CFDA] rounded-full" />
+              )}
             </Link>
             <Link
               href="/submit"
-              className="bg-[#699D5D] hover:shadow-lg text-[#FDFCDF] font-bold p-1.5 sm:py-2 sm:px-4 rounded-lg shadow-md transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 text-sm glow-hover"
+              className={`relative bg-[#699D5D] hover:shadow-lg text-[#FDFCDF] font-bold p-1.5 sm:py-2 sm:px-4 rounded-lg shadow-md transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 text-sm glow-hover ${
+                isSubmit ? "ring-2 ring-[#FDFCDF]/40 shadow-lg shadow-[#699D5D]/30" : ""
+              }`}
+              aria-current={isSubmit ? "page" : undefined}
             >
               <svg
                 className="w-4 h-4 shrink-0"
@@ -115,6 +137,9 @@ export default function Navbar() {
               <span className="hidden sm:inline whitespace-nowrap">
                 ส่งเคสปรึกษา
               </span>
+              {isSubmit && (
+                <span className="absolute -bottom-[1px] left-2 right-2 h-[2px] bg-[#FDFCDF] rounded-full" />
+              )}
             </Link>
           </div>
         </div>
