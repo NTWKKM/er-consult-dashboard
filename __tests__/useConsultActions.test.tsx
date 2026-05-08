@@ -7,8 +7,9 @@ import { ACCEPT_STATUS, SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
 // ---------------------------------------------------------------------------
 // Mock firebase and lib/db BEFORE importing the hook
 // ---------------------------------------------------------------------------
-const { mockUpdateConsult } = vi.hoisted(() => ({
+const { mockUpdateConsult, mockTransactionalUpdateConsult } = vi.hoisted(() => ({
   mockUpdateConsult: vi.fn(),
+  mockTransactionalUpdateConsult: vi.fn(),
 }));
 
 vi.mock("@/lib/firebase", () => ({ db: {} }));
@@ -29,6 +30,7 @@ vi.mock("firebase/firestore", () => ({
 
 vi.mock("@/lib/db", () => ({
   updateConsult: mockUpdateConsult,
+  transactionalUpdateConsult: mockTransactionalUpdateConsult,
 }));
 
 import { useConsultActions } from "@/app/hooks/useConsultActions";
@@ -45,11 +47,11 @@ function wrapper({ children }: { children: React.ReactNode }) {
 type UpdaterFn = (current: Consult) => Partial<Omit<Consult, "id">> | null;
 
 /**
- * Captures the updater function that was passed to updateConsult,
+ * Captures the updater function that was passed to updateConsult or transactionalUpdateConsult,
  * and calls it with the given consult snapshot.
  */
-function captureAndRunUpdater(snapshot: Consult): Partial<Omit<Consult, "id">> | null {
-  const call = mockUpdateConsult.mock.calls[0];
+function captureAndRunUpdater(snapshot: Consult, mock: ReturnType<typeof vi.fn> = mockUpdateConsult): Partial<Omit<Consult, "id">> | null {
+  const call = mock.mock.calls[0];
   const updaterFn: UpdaterFn = call[1];
   return updaterFn(snapshot);
 }
@@ -135,8 +137,8 @@ describe("useConsultActions", () => {
   // handleAccept
   // -------------------------------------------------------------------------
   describe("handleAccept", () => {
-    it("calls updateConsult with the correct caseId", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+    it("calls transactionalUpdateConsult with the correct caseId", async () => {
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("my-case-id", "Gen Sx", "123456"),
         { wrapper }
@@ -146,7 +148,7 @@ describe("useConsultActions", () => {
         await result.current.handleAccept();
       });
 
-      expect(mockUpdateConsult).toHaveBeenCalledWith(
+      expect(mockTransactionalUpdateConsult).toHaveBeenCalledWith(
         "my-case-id",
         expect.any(Function),
         expect.any(Object)
@@ -155,7 +157,7 @@ describe("useConsultActions", () => {
 
     it("sets isUpdating=true while updating, then false after", async () => {
       let resolveUpdate!: (v: ReturnType<typeof makeSuccessResult>) => void;
-      mockUpdateConsult.mockReturnValueOnce(
+      mockTransactionalUpdateConsult.mockReturnValueOnce(
         new Promise((resolve) => {
           resolveUpdate = resolve;
         })
@@ -183,7 +185,7 @@ describe("useConsultActions", () => {
     });
 
     it("updater returns null when dept status is not pending", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -199,12 +201,12 @@ describe("useConsultActions", () => {
         },
       });
 
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult);
       expect(updated).toBeNull();
     });
 
     it("updater sets ACCEPT_STATUS on the surgery department", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const deptName = "Gen Sx" as (typeof SURGERY_DEPTS)[number];
       const { result } = renderHook(
         () => useConsultActions("consult-1", deptName, "123456"),
@@ -221,13 +223,13 @@ describe("useConsultActions", () => {
         },
       });
 
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult) as Record<string, unknown> | null;
       expect(updated).not.toBeNull();
-      expect(updated!.departments![deptName].actionStatus).toBe(ACCEPT_STATUS);
+      expect(updated![`departments.${deptName}.actionStatus`]).toBe(ACCEPT_STATUS);
     });
 
     it("updater sets ACCEPT_STATUS on the ortho department", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const deptName = "Ortho" as (typeof ORTHO_DEPTS)[number];
       const { result } = renderHook(
         () => useConsultActions("consult-1", deptName, "123456"),
@@ -244,13 +246,13 @@ describe("useConsultActions", () => {
         },
       });
 
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult) as Record<string, unknown> | null;
       expect(updated).not.toBeNull();
-      expect(updated!.departments![deptName].actionStatus).toBe(ACCEPT_STATUS);
+      expect(updated![`departments.${deptName}.actionStatus`]).toBe(ACCEPT_STATUS);
     });
 
     it("preserves existing acceptedAt if already set", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -270,13 +272,14 @@ describe("useConsultActions", () => {
         },
       });
 
-      const updated = captureAndRunUpdater(snapshot);
-      expect(updated!.departments!["Gen Sx"].acceptedAt).toBe(existingAcceptedAt);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult) as Record<string, unknown> | null;
+      // acceptedAt should NOT be overwritten — the key should not appear in the update payload
+      expect(updated![`departments.Gen Sx.acceptedAt`]).toBeUndefined();
     });
 
-    it("returns early and does not call updateConsult when already updating", async () => {
+    it("returns early and does not call transactionalUpdateConsult when already updating", async () => {
       let resolveFirst!: (v: ReturnType<typeof makeSuccessResult>) => void;
-      mockUpdateConsult.mockReturnValueOnce(
+      mockTransactionalUpdateConsult.mockReturnValueOnce(
         new Promise((resolve) => {
           resolveFirst = resolve;
         })
@@ -297,8 +300,8 @@ describe("useConsultActions", () => {
         await result.current.handleAccept();
       });
 
-      // updateConsult should only be called once
-      expect(mockUpdateConsult).toHaveBeenCalledTimes(1);
+      // transactionalUpdateConsult should only be called once
+      expect(mockTransactionalUpdateConsult).toHaveBeenCalledTimes(1);
 
       // Clean up
       await act(async () => {
@@ -307,7 +310,7 @@ describe("useConsultActions", () => {
     });
 
     it("calls onUpdate callback after successful accept", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const onUpdate = vi.fn();
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456", onUpdate),
@@ -322,7 +325,7 @@ describe("useConsultActions", () => {
     });
 
     it("handles error gracefully and resets isUpdating", async () => {
-      mockUpdateConsult.mockRejectedValueOnce(new Error("network error"));
+      mockTransactionalUpdateConsult.mockRejectedValueOnce(new Error("network error"));
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -336,7 +339,7 @@ describe("useConsultActions", () => {
     });
 
     it("returns early without calling onUpdate when updater returns null and not queued", async () => {
-      mockUpdateConsult.mockResolvedValue({
+      mockTransactionalUpdateConsult.mockResolvedValue({
         consult: null,
         isQueued: false,
         backgroundPromise: null,
@@ -390,11 +393,11 @@ describe("useConsultActions", () => {
       });
 
       const snapshot = makePendingConsult();
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
       expect(updated).not.toBeNull();
-      expect(updated!.departments!["Gen Sx"].admittedAt).toBeDefined();
-      expect(updated!.departments!["Gen Sx"].returnedAt).toBeUndefined();
-      expect(updated!.departments!["Gen Sx"].dischargedAt).toBeUndefined();
+      expect(updated![`departments.Gen Sx.admittedAt`]).toBeDefined();
+      expect(updated![`departments.Gen Sx.returnedAt`]).toBeNull();
+      expect(updated![`departments.Gen Sx.dischargedAt`]).toBeNull();
     });
 
     it("updater sets returnedAt when status is คืน ER", async () => {
@@ -409,10 +412,10 @@ describe("useConsultActions", () => {
       });
 
       const snapshot = makePendingConsult();
-      const updated = captureAndRunUpdater(snapshot);
-      expect(updated!.departments!["Gen Sx"].returnedAt).toBeDefined();
-      expect(updated!.departments!["Gen Sx"].admittedAt).toBeUndefined();
-      expect(updated!.departments!["Gen Sx"].dischargedAt).toBeUndefined();
+      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      expect(updated![`departments.Gen Sx.returnedAt`]).toBeDefined();
+      expect(updated![`departments.Gen Sx.admittedAt`]).toBeNull();
+      expect(updated![`departments.Gen Sx.dischargedAt`]).toBeNull();
     });
 
     it("updater sets dischargedAt when status is D/C", async () => {
@@ -427,10 +430,10 @@ describe("useConsultActions", () => {
       });
 
       const snapshot = makePendingConsult();
-      const updated = captureAndRunUpdater(snapshot);
-      expect(updated!.departments!["Gen Sx"].dischargedAt).toBeDefined();
-      expect(updated!.departments!["Gen Sx"].admittedAt).toBeUndefined();
-      expect(updated!.departments!["Gen Sx"].returnedAt).toBeUndefined();
+      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      expect(updated![`departments.Gen Sx.dischargedAt`]).toBeDefined();
+      expect(updated![`departments.Gen Sx.admittedAt`]).toBeNull();
+      expect(updated![`departments.Gen Sx.returnedAt`]).toBeNull();
     });
 
     it("clears previous action timestamps when changing status", async () => {
@@ -455,9 +458,9 @@ describe("useConsultActions", () => {
         },
       });
 
-      const updated = captureAndRunUpdater(snapshot);
-      expect(updated!.departments!["Gen Sx"].admittedAt).toBeUndefined();
-      expect(updated!.departments!["Gen Sx"].returnedAt).toBeDefined();
+      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      expect(updated![`departments.Gen Sx.admittedAt`]).toBeNull();
+      expect(updated![`departments.Gen Sx.returnedAt`]).toBeDefined();
     });
 
     it("updater returns null when dept is not pending", async () => {
@@ -527,9 +530,9 @@ describe("useConsultActions", () => {
       });
 
       const snapshot = makePendingConsult();
-      const updated = captureAndRunUpdater(snapshot);
-      expect(updated!.departments!["Gen Sx"].status).toBe("completed");
-      expect(updated!.departments!["Gen Sx"].completedAt).toBeDefined();
+      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      expect(updated![`departments.Gen Sx.status`]).toBe("completed");
+      expect(updated![`departments.Gen Sx.completedAt`]).toBeDefined();
     });
 
     it("updater promotes overall consult status when all depts are done", async () => {
@@ -641,9 +644,9 @@ describe("useConsultActions", () => {
       });
 
       const snapshot = makePendingConsult();
-      const updated = captureAndRunUpdater(snapshot);
-      expect(updated!.departments!["Gen Sx"].status).toBe("cancelled");
-      expect(updated!.departments!["Gen Sx"].completedAt).toBeDefined();
+      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      expect(updated![`departments.Gen Sx.status`]).toBe("cancelled");
+      expect(updated![`departments.Gen Sx.completedAt`]).toBeDefined();
     });
 
     it("updater promotes overall status to completed when all depts are finished (completed or cancelled)", async () => {
@@ -749,7 +752,7 @@ describe("useConsultActions", () => {
         resolveBackground = resolve;
       });
 
-      mockUpdateConsult.mockResolvedValue({
+      mockTransactionalUpdateConsult.mockResolvedValue({
         consult: makePendingConsult(),
         isQueued: true,
         backgroundPromise,

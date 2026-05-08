@@ -12,6 +12,7 @@ const {
   mockGetDocs,
   mockOnSnapshot,
   mockSetDoc,
+  mockRunTransaction,
   mockCollection,
   mockDoc,
   mockQuery,
@@ -26,6 +27,7 @@ const {
   mockGetDocs: vi.fn(),
   mockOnSnapshot: vi.fn(),
   mockSetDoc: vi.fn(),
+  mockRunTransaction: vi.fn(),
   mockCollection: vi.fn(() => ({ type: "collection" })),
   mockDoc: vi.fn(() => ({ type: "docRef", id: "mock-id" })),
   mockQuery: vi.fn((...args: unknown[]) => args[0]),
@@ -45,6 +47,7 @@ vi.mock("firebase/firestore", () => ({
   updateDoc: mockUpdateDoc,
   deleteDoc: mockDeleteDoc,
   getDocs: mockGetDocs,
+  runTransaction: mockRunTransaction,
   onSnapshot: mockOnSnapshot,
   query: mockQuery,
   where: mockWhere,
@@ -58,6 +61,7 @@ vi.mock("firebase/firestore", () => ({
 // ---------------------------------------------------------------------------
 import {
   updateConsult,
+  transactionalUpdateConsult,
   searchCompletedConsults,
   fetchAllCompletedConsultsForExport,
   getConsultById,
@@ -424,7 +428,143 @@ describe("updateConsult", () => {
   });
 });
 
+// ===========================================================================
+// transactionalUpdateConsult
+// ===========================================================================
+describe("transactionalUpdateConsult", () => {
+  const existingData = {
+    hn: "123456",
+    firstName: "Jane",
+    lastName: "Doe",
+    room: "Urgent",
+    problem: "Headache",
+    createdAt: "2024-01-10T08:00:00.000Z",
+    status: "pending",
+    isUrgent: false,
+    departments: {
+      "Gen Sx": { status: "pending", completedAt: null, acceptedAt: null },
+    },
+  };
 
+  /**
+   * Helper: sets up mockRunTransaction to invoke the callback with a mock transaction object.
+   * The mock transaction.get returns the provided snapshot, and transaction.update is a spy.
+   */
+  function setupTransaction(docSnapshot: ReturnType<typeof makeDocSnapshot>) {
+    const mockTransactionUpdate = vi.fn();
+    mockRunTransaction.mockImplementation(async (_db: unknown, cb: (t: unknown) => Promise<unknown>) => {
+      const mockTransaction = {
+        get: vi.fn().mockResolvedValue(docSnapshot),
+        update: mockTransactionUpdate,
+      };
+      return cb(mockTransaction);
+    });
+    return { mockTransactionUpdate };
+  }
+
+  describe("awaited path (awaitRemote: true)", () => {
+    it("runs updater inside transaction and writes updates", async () => {
+      const { mockTransactionUpdate } = setupTransaction(makeDocSnapshot("case-1", existingData));
+
+      const result = await transactionalUpdateConsult(
+        "case-1",
+        () => ({ status: "completed" as const }),
+      );
+
+      expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+      expect(mockTransactionUpdate).toHaveBeenCalledWith(
+        expect.anything(),
+        { status: "completed" },
+      );
+      expect(result.applied).toBe(true);
+      expect(result.consult?.status).toBe("completed");
+      expect(result.isQueued).toBe(false);
+    });
+
+    it("returns applied: false when updater returns null (condition not met)", async () => {
+      setupTransaction(makeDocSnapshot("case-1", existingData));
+
+      const result = await transactionalUpdateConsult(
+        "case-1",
+        () => null,
+      );
+
+      expect(result.applied).toBe(false);
+      expect(result.consult).toBeNull();
+    });
+
+    it("throws when document does not exist", async () => {
+      setupTransaction(makeDocSnapshot("missing", null, false));
+
+      await expect(
+        transactionalUpdateConsult("missing", () => ({ status: "completed" as const }))
+      ).rejects.toThrow("Consult not found: missing");
+    });
+  });
+
+  describe("optimistic path (awaitRemote: false)", () => {
+    it("returns optimistic result immediately while transaction runs in background", async () => {
+      // Pre-read for optimistic response
+      mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
+      // Transaction never resolves during this test
+      mockRunTransaction.mockReturnValue(new Promise(() => {}));
+
+      const result = await transactionalUpdateConsult(
+        "case-1",
+        () => ({ status: "completed" as const }),
+        { awaitRemote: false },
+      );
+
+      expect(result.consult?.status).toBe("completed");
+      expect(result.isQueued).toBe(true);
+      expect(result.applied).toBe(true);
+      expect(result.backgroundPromise).toBeDefined();
+    });
+
+    it("calls onBackgroundError with TRANSACTION_CONDITION_NOT_MET when condition not met in background", async () => {
+      mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
+      // Transaction resolves with applied: false
+      const { mockTransactionUpdate } = setupTransaction(makeDocSnapshot("case-1", {
+        ...existingData,
+        departments: { "Gen Sx": { status: "completed", completedAt: "2024-01-10T09:00:00.000Z" } },
+      }));
+
+      const onBackgroundError = vi.fn();
+      await transactionalUpdateConsult(
+        "case-1",
+        (current) => {
+          if (current.departments["Gen Sx"]?.status !== "pending") return null;
+          return { status: "completed" as const };
+        },
+        { awaitRemote: false, onBackgroundError },
+      );
+
+      // Give microtasks a chance to run
+      await new Promise((r) => setTimeout(r, 0));
+      expect(onBackgroundError).toHaveBeenCalledTimes(1);
+      const errorArg = onBackgroundError.mock.calls[0][0] as Error;
+      expect(errorArg.message).toBe("TRANSACTION_CONDITION_NOT_MET");
+      // transaction.update should NOT have been called
+      expect(mockTransactionUpdate).not.toHaveBeenCalled();
+    });
+
+    it("calls onBackgroundError when transaction rejects (network error)", async () => {
+      mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
+      const networkError = new Error("Failed to reach Firestore");
+      mockRunTransaction.mockRejectedValue(networkError);
+
+      const onBackgroundError = vi.fn();
+      await transactionalUpdateConsult(
+        "case-1",
+        () => ({ status: "completed" as const }),
+        { awaitRemote: false, onBackgroundError },
+      );
+
+      await new Promise((r) => setTimeout(r, 0));
+      expect(onBackgroundError).toHaveBeenCalledWith(networkError);
+    });
+  });
+});
 
 // ===========================================================================
 // searchCompletedConsults

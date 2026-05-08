@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { updateConsult, ConsultDepartment } from "@/lib/db";
+import { updateConsult, transactionalUpdateConsult, ConsultDepartment } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS, ACCEPT_STATUS, POST_ACCEPT_STATUSES } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 
@@ -35,7 +35,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     setIsUpdating(true);
     beginSync();
     try {
-      const result = await updateConsult(caseId, (current) => {
+      const result = await transactionalUpdateConsult(caseId, (current) => {
         // Guard against stale snapshots or missing departments
         if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
@@ -63,11 +63,22 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         return Object.keys(updates).length > 0 ? updates : null;
       }, { 
         awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
+        onBackgroundError: (error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : "";
+          
+          if (errorMessage === "TRANSACTION_CONDITION_NOT_MET") {
+            // Case was already accepted by another physician
+            addToast({ 
+              type: "warning", 
+              message: "เคสนี้ถูกรับโดยแพทย์ท่านอื่นแล้ว ระบบกำลังรีเฟรชข้อมูล" 
+            });
+          } else {
+            // Network / Firestore connectivity error
+            addToast({ 
+              type: "error", 
+              message: "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล กรุณาลองใหม่อีกครั้ง" 
+            });
+          }
         }
       });
 
