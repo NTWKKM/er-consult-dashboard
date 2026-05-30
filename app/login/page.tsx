@@ -32,7 +32,7 @@ export default function LoginPage() {
       await signInWithEmailAndPassword(auth, email, password);
       router.push("/");
     } catch (err: unknown) {
-      console.error(err);
+      console.error("Login failed:", err instanceof Error ? err.message : "unknown");
       setError("Passcode ไม่ถูกต้อง หรือไม่มีสิทธิ์เข้าถึง");
     } finally {
       setIsLoading(false);

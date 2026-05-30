@@ -26,7 +26,7 @@ export default function ErrorBoundary({
           เกิดข้อผิดพลาดในการโหลดหน้าเว็บ
         </h2>
         <p className="text-sm text-[#014167]/80 dark:text-gray-300 mb-6 font-medium break-words">
-          {error.message || "ระบบไม่สามารถประมวลผลข้อมูลได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง"}
+          ระบบไม่สามารถประมวลผลข้อมูลได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง
         </p>
         <button
           onClick={() => reset()}

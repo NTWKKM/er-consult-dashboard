@@ -1,9 +1,27 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only authenticated users (ER staff) can read or write to the consults collection.
+    // Only authenticated users (ER staff) can access the consults collection.
+    // Document deletions are prohibited to preserve the clinical audit trail.
     match /consults/{consultId} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+
+      // New consults must have a valid HN and start as "pending"
+      allow create: if request.auth != null
+        && request.resource.data.hn is string
+        && request.resource.data.hn.size() > 0
+        && request.resource.data.status == "pending"
+        && request.resource.data.isUrgent is bool;
+
+      // Updates: validate document shape after merge
+      allow update: if request.auth != null
+        && request.resource.data.hn is string
+        && request.resource.data.hn.size() > 0
+        && request.resource.data.status in ["pending", "completed"]
+        && request.resource.data.isUrgent is bool;
+
+      // Explicit deny: no deletions — audit trail must be preserved
+      allow delete: if false;
     }
   }
 }

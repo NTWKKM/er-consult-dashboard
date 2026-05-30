@@ -22,7 +22,7 @@ export const DepartmentSchema = z.object({
 // Define the schema for the main Consult document
 export const ConsultSchema = z.object({
   id: z.string(),
-  hn: z.string(),
+  hn: z.string().regex(/^\d+$/, "HN must contain only numeric digits"),
   // Fallback to empty strings if missing (backward compatibility with old data)
   firstName: z.string().catch(""),
   lastName: z.string().catch(""),

@@ -31,7 +31,7 @@ export default function GlobalError({
             ข้อผิดพลาดร้ายแรงของระบบ
           </h1>
           <p className="text-sm text-[#014167]/80 dark:text-gray-300 mb-8 font-medium bg-white/50 dark:bg-gray-900/50 p-3 rounded-lg border border-gray-300 dark:border-gray-700 break-words">
-            {error.message || "เกิดข้อผิดพลาดในโครงสร้างหลักของแอปพลิเคชัน กรุณารีเฟรชหน้าเว็บหรือติดต่อผู้ดูแลระบบ"}
+            เกิดข้อผิดพลาดในโครงสร้างหลักของแอปพลิเคชัน กรุณารีเฟรชหน้าเว็บหรือติดต่อผู้ดูแลระบบ
           </p>
           <button
             onClick={() => {

@@ -29,7 +29,6 @@ To ensure the app feels instantaneous under intermittent hospital Wi-Fi, apply t
 - **Atomic Operations:** Use Firestore Transactions (`runTransaction`) for operations depending on current state.
 - **Schema Validation:** Strictly adhere to interfaces and validate all incoming Firestore data at runtime using `zod` (`lib/schema.ts`).
 - **Offline Resilience:** Ensure functionality during momentary signal drops. `persistentLocalCache` must remain enabled.
-- **Offline Resilience:** Ensure functionality during momentary signal drops.
 - **Race Condition Prevention:** Implement UI locks (e.g., disabling buttons) during in-flight mutations. Never allow concurrent identical network requests for the same record.
 - **Strict Type Safety:** The use of `any` type is strictly forbidden. All database payloads must explicitly conform to mapped types (e.g., Firestore `UpdateData<T>`) before writing.
 - **Database Indexes:** Compound/Composite Indexes must be maintained in `firestore.indexes.json` to ensure complex queries (e.g., sorting by `createdAt` while filtering by `status`) do not fail.
@@ -151,5 +150,19 @@ When a doctor triggers a Re-consult on a case from `/completed`:
 
 - **Export Trigger:** Triggered in `/completed` using date ranges `exportStartDate` and `exportEndDate`.
 - **Bandwidth Safeguard:** The frontend validates that the date range is at most 31 days. Ranges exceeding 31 days are rejected to protect against daily read quota exhaustions.
-- **Fetch Capping:** Queries Firestore using cursor-based chunks of 1000 items. If the result set exceeds 50,000 cases, it truncates the list and displays a warning Toast to preserve browser memory.
 - **Data Generation:** Dynamically imports the `xlsx` package. Map milestones for each department (e.g. Admit time, D/C time, Accept time, Cancel time) and formats them in local Thai Time (`toLocaleString("th-TH")`) before exporting.
+
+## Core Components
+1. Whiteboard Dashboard (`app/page.tsx`) — Real-time display of active cases — Dependencies: `useConsults`, `useConsultActions`
+2. Submission Form (`app/submit/page.tsx`) — Entry point for new clinical cases — Dependencies: `lib/db.ts` (`addConsult`), `lib/schema.ts`
+3. Completed History (`app/completed/page.tsx`) — Searchable archive and export — Dependencies: `fetchCompletedConsultsPage`, `searchCompletedConsults`
+
+## Data Flow
+1. `app/submit/page.tsx` → `addConsult` (Firestore SDK) → Firestore `consults` collection (async, local-first write)
+2. Firestore `consults` collection → `subscribeToConsultsByStatus` listener → `useConsults` React State (async, cached via `persistentLocalCache`)
+3. `useConsults` state → `departmentCasesMap` grouping → `ConsultCard` UI rendering (sync)
+
+## Warnings & Gotchas
+- Concurrency / race condition: Root `status` transitions (complete/cancel) depend on department state and must use `transactionalUpdateConsult` to prevent stuck cases during concurrent re-consults.
+- Offline-sync edge case: Optimistic UI updates with `awaitRemote: false` apply instantly but must handle rollback on failure. The `TRANSACTION_CONDITION_NOT_MET` warning indicates another physician beat the local write.
+- Clinical constraint: Re-consults must preserve non-re-consulted department history (timestamps, statuses) to maintain the full audit trail for Excel exports and clinical review. Document deletions are strictly prohibited.

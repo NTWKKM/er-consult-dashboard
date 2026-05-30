@@ -138,7 +138,8 @@ export default function CompletedPage() {
         // Guard against missing department
         if (!current.departments) return null;
 
-        const updatedDepartments: Record<string, ConsultDepartment> = {};
+        // Preserve existing departments; only reset the re-consulted ones
+        const updatedDepartments: Record<string, ConsultDepartment> = { ...current.departments };
         selectedDepartments.forEach((dept) => {
           updatedDepartments[dept] = { status: "pending", completedAt: null };
         });
