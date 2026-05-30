@@ -60,13 +60,37 @@ export default function Dashboard() {
 
   const { darkMode, soundEnabled, displayMode, setDisplayMode } = useSettings();
 
+  const handleSetDisplayMode = (mode: "card" | "table") => {
+    if (document.startViewTransition) {
+      document.startViewTransition(() => setDisplayMode(mode));
+    } else {
+      setDisplayMode(mode);
+    }
+  };
+
+  const handleSetView = (v: "both" | "surgery" | "ortho") => {
+    if (document.startViewTransition) {
+      document.startViewTransition(() => setView(v));
+    } else {
+      setView(v);
+    }
+  };
+
+  const handleSetRoomFilter = (filter: RoomFilter) => {
+    if (document.startViewTransition) {
+      document.startViewTransition(() => setRoomFilter(filter));
+    } else {
+      setRoomFilter(filter);
+    }
+  };
+
   const previousCaseIdsRef = useRef<Set<string>>(new Set());
   const isInitialLoadRef = useRef(true);
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
 
   const scrollToDepartment = (deptName: string) => {
-    deptRefs.current[deptName]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    Reflect.get(deptRefs.current, deptName)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const initAudioContext = useCallback(() => {
@@ -183,7 +207,7 @@ export default function Dashboard() {
   }, [filteredAllCases]);
 
   const getCasesForDepartment = (deptName: string) => {
-    return departmentCasesMap[deptName] || [];
+    return Reflect.get(departmentCasesMap, deptName) || [];
   };
 
   const totalPendingCases = visibleTableCases.length;
@@ -201,15 +225,15 @@ export default function Dashboard() {
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         {/* --- Toolbar --- */}
         <div className="mb-4 slide-in w-full flex justify-center">
-          <div className={`inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl shadow-sm border transition-colors ${
-            darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60 backdrop-blur-sm"
+          <div className={`inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl shadow-sm border transition-colors glass-panel ${
+            darkMode ? "dark" : ""
           }`}>
             {/* Pending Count */}
             <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
               darkMode ? "bg-gray-900/60" : "bg-[#014167]/5"
             }`}>
               <svg className="w-4 h-4 text-[#E55143] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span className={`text-xs font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รอปรึกษา</span>
+              <span className={`text-xs font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{"รอปรึกษา"}</span>
               <span className={`text-base font-extrabold tabular-nums min-w-[28px] text-center px-2 py-0.5 rounded-full ${
                 totalPendingCases > 0 
                   ? "bg-[#E55143] text-white shadow-sm" 
@@ -226,29 +250,29 @@ export default function Dashboard() {
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
               {/* Layout Toggle */}
               <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                <button aria-pressed={displayMode === "card"} onClick={() => setDisplayMode("card")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "card" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
+                <button aria-pressed={displayMode === "card"} onClick={() => handleSetDisplayMode("card")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 tap-feedback ${displayMode === "card" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                  <span className="hidden sm:inline">Card</span>
+                  <span className="hidden sm:inline">{"Card"}</span>
                 </button>
-                <button aria-pressed={displayMode === "table"} onClick={() => setDisplayMode("table")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "table" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
+                <button aria-pressed={displayMode === "table"} onClick={() => handleSetDisplayMode("table")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 tap-feedback ${displayMode === "table" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                  <span className="hidden sm:inline">Table</span>
+                  <span className="hidden sm:inline">{"Table"}</span>
                 </button>
               </div>
 
               {/* Room Filter */}
               <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                <button aria-pressed={roomFilter === "all"} onClick={() => setRoomFilter("all")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "all" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>All</button>
-                <button aria-pressed={roomFilter === "resus"} onClick={() => setRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "resus" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Resus</button>
-                <button aria-pressed={roomFilter === "non-resus"} onClick={() => setRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "non-resus" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Non-Resus</button>
+                <button aria-pressed={roomFilter === "all"} onClick={() => handleSetRoomFilter("all")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${roomFilter === "all" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"All"}</button>
+                <button aria-pressed={roomFilter === "resus"} onClick={() => handleSetRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${roomFilter === "resus" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Resus"}</button>
+                <button aria-pressed={roomFilter === "non-resus"} onClick={() => handleSetRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${roomFilter === "non-resus" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Non-Resus"}</button>
               </div>
 
               {/* View Filter (Card View Only) */}
               {displayMode === "card" && (
                 <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                  <button aria-pressed={view === "both"} onClick={() => setView("both")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "both" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Both</button>
-                  <button aria-pressed={view === "surgery"} onClick={() => setView("surgery")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "surgery" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Surgery</button>
-                  <button aria-pressed={view === "ortho"} onClick={() => setView("ortho")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "ortho" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Ortho</button>
+                  <button aria-pressed={view === "both"} onClick={() => handleSetView("both")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${view === "both" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Both"}</button>
+                  <button aria-pressed={view === "surgery"} onClick={() => handleSetView("surgery")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${view === "surgery" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Surgery"}</button>
+                  <button aria-pressed={view === "ortho"} onClick={() => handleSetView("ortho")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${view === "ortho" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Ortho"}</button>
                 </div>
               )}
             </div>
@@ -257,8 +281,8 @@ export default function Dashboard() {
 
         {/* Quick Navigation - Always visible in card mode */}
         {displayMode === "card" && (
-          <div className={`mb-4 rounded-xl overflow-hidden transition-colors ${
-            darkMode ? "bg-gray-800/50 border border-gray-700" : "bg-white/60 border border-[#C7CFDA]/30 backdrop-blur-sm"
+          <div className={`mb-4 rounded-xl overflow-hidden transition-colors glass-panel ${
+            darkMode ? "dark" : ""
           }`}>
             <div className="flex overflow-x-auto lg:grid lg:grid-cols-9 gap-1.5 p-2 hide-scrollbar">
               {(
@@ -309,15 +333,15 @@ export default function Dashboard() {
         {displayMode === "table" ? (
           <>
             {/* Desktop Table View */}
-            <div className={`hidden md:block rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
+            <div className={`hidden md:block rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in glass-panel ${darkMode ? "dark border-gray-700" : "border-[#C7CFDA]"}`}>
               <div className="overflow-x-auto relative w-full">
                 <table className="w-full text-left border-collapse min-w-[900px]">
                   <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
                     <tr>
-                      <th className="p-3 w-[20%] font-bold">PATIENT</th>
-                      <th className="p-3 w-[10%] font-bold">ROOM</th>
-                      <th className="p-3 w-[40%] font-bold">DX</th>
-                      <th className="p-3 w-[30%] font-bold">MANAGEMENT</th>
+                      <th className="p-3 w-[20%] font-bold">{"PATIENT"}</th>
+                      <th className="p-3 w-[10%] font-bold">{"ROOM"}</th>
+                      <th className="p-3 w-[40%] font-bold">{"DX"}</th>
+                      <th className="p-3 w-[30%] font-bold">{"MANAGEMENT"}</th>
                     </tr>
                   </thead>
                   <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
@@ -357,8 +381,8 @@ export default function Dashboard() {
               <div
                 className={`${
                   view === "both" ? "lg:flex-[3]" : "flex-1"
-                } rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${
-                  darkMode ? "bg-gray-900" : "bg-[#b0bac7]"
+                } rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in glass-panel ${
+                  darkMode ? "dark" : ""
                 }`}
               >
                 <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
@@ -379,7 +403,7 @@ export default function Dashboard() {
                         key={dept}
                         className="flex flex-col gap-2"
                         ref={(el) => {
-                          deptRefs.current[dept] = el;
+                          if (el) Reflect.set(deptRefs.current, dept, el);
                         }}
                       >
                         <div
@@ -435,8 +459,8 @@ export default function Dashboard() {
               <div
                 className={`${
                   view === "both" ? "lg:flex-[1]" : "flex-1"
-                } rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${
-                  darkMode ? "bg-gray-900" : "bg-[#b0bac7]"
+                } rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in glass-panel ${
+                  darkMode ? "dark" : ""
                 }`}
               >
                 <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
@@ -457,7 +481,7 @@ export default function Dashboard() {
                         key={dept}
                         className="flex flex-col gap-2 max-w-full"
                         ref={(el) => {
-                          deptRefs.current[dept] = el;
+                          if (el) Reflect.set(deptRefs.current, dept, el);
                         }}
                       >
                         <div
@@ -529,15 +553,37 @@ export default function Dashboard() {
 // ===========================================================================
 
 function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
+  const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
+  const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
+
   const pendingDepts = Object.keys(caseData.departments).filter(
     (d) => caseData.departments[d].status === "pending"
   );
+
   if (pendingDepts.length === 0) return null;
 
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
   const sentTimeFull = caseData.createdAt
     ? formatTime(caseData.createdAt)
     : "";
+
+  const onToggleUrgencyClick = () => {
+    if (isUpdating) return;
+    setShowUrgencyConfirm(true);
+  };
+
+  const confirmToggleUrgency = async () => {
+    setShowUrgencyConfirm(false);
+    const toggleFunc = async () => {
+      await handleToggleUrgency(caseData.isUrgent);
+    };
+
+    if (document.startViewTransition) {
+      document.startViewTransition(toggleFunc);
+    } else {
+      await toggleFunc();
+    }
+  };
 
   return (
     <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white border-[#C7CFDA] shadow-sm"} flex flex-col gap-3`}>
@@ -546,9 +592,25 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>{caseData.hn}</span>
-            {caseData.isUrgent && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
-            )}
+            <button
+              type="button"
+              onClick={onToggleUrgencyClick}
+              disabled={isUpdating}
+              title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+              aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                caseData.isUrgent
+                  ? "bg-[#E55143] text-white shadow-md border border-[#E55143]"
+                  : darkMode
+                    ? "bg-gray-700 border border-gray-600 text-gray-400 hover:text-[#ff7063] hover:border-[#E55143]/40"
+                    : "bg-gray-100 border border-gray-300 text-gray-500 hover:text-[#c23a2e] hover:border-[#E55143]/30"
+              }`}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              {caseData.isUrgent ? "FAST" : "NORMAL"}
+            </button>
           </div>
           {fullName && (
             <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
@@ -572,7 +634,7 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
 
       {/* DX Section */}
       <div className={`text-sm p-3 rounded-md ${darkMode ? "bg-gray-900/50 text-gray-300" : "bg-gray-50 text-[#014167]"}`}>
-        <div className={`text-xs font-semibold mb-1 opacity-70`}>Dx / Problem</div>
+        <div className={`text-xs font-semibold mb-1 opacity-70`}>{"Dx / Problem"}</div>
         <div className="whitespace-pre-wrap">{caseData.problem}</div>
       </div>
 
@@ -593,14 +655,27 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
           <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
         ))}
       </div>
+      <ConfirmModal
+        isOpen={showUrgencyConfirm}
+        title={caseData.isUrgent ? "ยกเลิก FAST TRACK" : "เปลี่ยนเป็น FAST TRACK"}
+        message={`คุณต้องการเปลี่ยนเคส HN: ${caseData.hn} ${caseData.isUrgent ? "กลับเป็นเคสปกติ" : "เป็นเคส FAST TRACK (ด่วน)"} หรือไม่?`}
+        confirmText="ยืนยัน"
+        cancelText="ยกเลิก"
+        variant={caseData.isUrgent ? "warning" : "danger"}
+        onConfirm={confirmToggleUrgency}
+        onCancel={() => setShowUrgencyConfirm(false)}
+      />
     </div>
   );
 }
 
 function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
+  const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
+  const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
+
   // กรองเฉพาะแผนกที่สถานะยังรออยู่ (pending) ของเคสนี้
   const pendingDepts = Object.keys(caseData.departments).filter(
-    (d) => caseData.departments[d].status === "pending"
+    (d) => Reflect.get(caseData.departments, d)?.status === "pending"
   );
 
   if (pendingDepts.length === 0) return null;
@@ -610,14 +685,48 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
     ? formatTime(caseData.createdAt)
     : "";
 
+  const onToggleUrgencyClick = () => {
+    if (isUpdating) return;
+    setShowUrgencyConfirm(true);
+  };
+
+  const confirmToggleUrgency = async () => {
+    setShowUrgencyConfirm(false);
+    const toggleFunc = async () => {
+      await handleToggleUrgency(caseData.isUrgent);
+    };
+
+    if (document.startViewTransition) {
+      document.startViewTransition(toggleFunc);
+    } else {
+      await toggleFunc();
+    }
+  };
+
   return (
     <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
       <td className={`p-3 align-top ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
         <div className="flex items-center gap-2 mb-1">
           <span className="font-bold">{caseData.hn}</span>
-          {caseData.isUrgent && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
-          )}
+          <button
+            type="button"
+            onClick={onToggleUrgencyClick}
+            disabled={isUpdating}
+            title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+            aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              caseData.isUrgent
+                ? "bg-[#E55143] text-white shadow-md border border-[#E55143]"
+                : darkMode
+                  ? "bg-gray-700 border border-gray-600 text-gray-400 hover:text-[#ff7063] hover:border-[#E55143]/40"
+                  : "bg-gray-100 border border-gray-300 text-gray-500 hover:text-[#c23a2e] hover:border-[#E55143]/30"
+            }`}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            {caseData.isUrgent ? "FAST" : "NORMAL"}
+          </button>
         </div>
         {fullName && (
           <div className={`text-sm font-medium mb-2 ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
@@ -656,6 +765,16 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           ))}
         </div>
       </td>
+      <ConfirmModal
+        isOpen={showUrgencyConfirm}
+        title={caseData.isUrgent ? "ยกเลิก FAST TRACK" : "เปลี่ยนเป็น FAST TRACK"}
+        message={`คุณต้องการเปลี่ยนเคส HN: ${caseData.hn} ${caseData.isUrgent ? "กลับเป็นเคสปกติ" : "เป็นเคส FAST TRACK (ด่วน)"} หรือไม่?`}
+        confirmText="ยืนยัน"
+        cancelText="ยกเลิก"
+        variant={caseData.isUrgent ? "warning" : "danger"}
+        onConfirm={confirmToggleUrgency}
+        onCancel={() => setShowUrgencyConfirm(false)}
+      />
     </tr>
   );
 }
@@ -664,7 +783,7 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
-  const dept = caseData.departments[deptName];
+  const dept = Reflect.get(caseData.departments, deptName);
   const isAccepted = !!dept?.acceptedAt;
   const actionStatus = dept?.actionStatus || "";
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;

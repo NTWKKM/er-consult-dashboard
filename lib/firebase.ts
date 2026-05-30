@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, type Firestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -22,6 +23,9 @@ if (typeof window !== "undefined" && !firebaseConfig.apiKey) {
 // Initialize Firebase only if it hasn't been initialized already (important for Next.js hot-reloading)
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
+// Initialize Firebase Auth
+const auth = getAuth(app);
+
 // Initialize Firestore with persistent local cache for offline support.
 // ER environments may have unstable WiFi — this lets doctors view cached data
 // and queued writes auto-sync when connectivity returns.
@@ -43,5 +47,5 @@ if (typeof window === "undefined") {
   }
 }
 
-export { db };
+export { db, auth };
 

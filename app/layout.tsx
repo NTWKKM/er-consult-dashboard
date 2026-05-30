@@ -3,8 +3,10 @@ import { Inter, Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { ToastProvider } from "./contexts/ToastContext";
-import Navbar from "./components/Navbar";
-import BottomNav from "./components/BottomNav";
+import { AuthProvider } from "./contexts/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import ClientLayoutWrapper from "./components/ClientLayoutWrapper";
+import OfflineIndicator from "./components/OfflineIndicator";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -31,15 +33,18 @@ export default function RootLayout({
   return (
     <html lang="th" suppressHydrationWarning className={`${inter.variable} ${notoSansThai.variable}`}>
       <body className="bg-[#014167] dark:bg-gray-900 min-h-screen transition-colors duration-300">
-        <SettingsProvider>
-          <ToastProvider>
-            <Navbar />
-            <main className="pb-20 lg:pb-0">
-              {children}
-            </main>
-            <BottomNav />
-          </ToastProvider>
-        </SettingsProvider>
+        <AuthProvider>
+          <SettingsProvider>
+            <ToastProvider>
+              <OfflineIndicator />
+              <ProtectedRoute>
+                <ClientLayoutWrapper>
+                  {children}
+                </ClientLayoutWrapper>
+              </ProtectedRoute>
+            </ToastProvider>
+          </SettingsProvider>
+        </AuthProvider>
       </body>
     </html>
   );

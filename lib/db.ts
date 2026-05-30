@@ -1,8 +1,9 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type UpdateData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { ROOMS, RoomName } from "./constants";
+import { ConsultSchema } from "./schema";
 
 export interface ConsultTransfer {
     to: RoomName;
@@ -28,7 +29,7 @@ export interface Consult {
     room: RoomName;
     problem: string;
     createdAt: string; // ISO string
-    status: "pending" | "completed";
+    status: "pending" | "completed" | "cancelled";
     isUrgent: boolean;
     departments: { [key: string]: ConsultDepartment };
 }
@@ -36,67 +37,18 @@ export interface Consult {
 const COLLECTION_NAME = "consults";
 
 /**
- * Runtime validator to ensure room names from schemaless Firestore data 
- * match the defined RoomName type.
- */
-function isValidRoomName(room: unknown): room is RoomName {
-    return typeof room === "string" && (ROOMS as readonly string[]).includes(room);
-}
-
-/**
- * Sanitizes and validates raw Firestore data into a Consult object.
+ * Sanitizes and validates raw Firestore data into a Consult object using Zod.
  */
 function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     if (!data) return null;
-
-    // Validate and fallback for the main room field
-    let room: RoomName = ROOMS[0]; // Default to first valid room
-    if (isValidRoomName(data.room)) {
-        room = data.room;
-    } else if (data.room !== undefined) {
-        console.warn(`[mapRawToConsult] Invalid room "${data.room}" for consult ${id}, defaulting to ${ROOMS[0]}`);
+    
+    try {
+        const parsed = ConsultSchema.parse({ ...data, id });
+        return parsed as Consult;
+    } catch (e) {
+        console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, e);
+        return null; // Ignore malformed documents to prevent app crashes
     }
-
-    // Deeply validate and sanitize transfers in all departments
-    const validatedDepts: { [key: string]: ConsultDepartment } = {};
-    if (data.departments) {
-        Object.keys(data.departments).forEach(deptKey => {
-            const dept = data.departments[deptKey];
-            const { transfers, ...rest } = dept;
-            const validatedDept: ConsultDepartment = { ...rest };
-            
-            if (Array.isArray(transfers)) {
-                validatedDept.transfers = transfers.map((t: unknown, index: number) => {
-                    const tObj = (t && typeof t === "object") ? t as Record<string, unknown> : {};
-                    const isValidTo = isValidRoomName(tObj.to);
-                    if (!isValidTo && tObj.to !== undefined) {
-                        console.warn(`[mapRawToConsult] Invalid transfer destination "${tObj.to}" at index ${index} for dept ${deptKey} in consult ${id}`);
-                    }
-                    
-                    const result: ConsultTransfer = {
-                        to: isValidTo ? (tObj.to as RoomName) : room
-                    };
-                    
-                    if (typeof tObj.at === "string") {
-                        result.at = tObj.at;
-                    }
-                    
-                    return result;
-                });
-            }
-            
-            validatedDepts[deptKey] = validatedDept;
-        });
-    }
-
-    return {
-        ...data,
-        id,
-        firstName: data.firstName ?? "",
-        lastName: data.lastName ?? "",
-        room,
-        departments: validatedDepts,
-    } as Consult;
 }
 
 /**
@@ -465,6 +417,116 @@ export async function updateConsult(
         };
     }
 }
+
+/**
+ * Atomic update using Firestore Transaction.
+ * Use ONLY for critical race-condition-prone operations (e.g., case acceptance).
+ *
+ * Unlike updateConsult(), this function guarantees atomicity by reading and writing
+ * within a single Firestore transaction. The trade-off is that transactions
+ * REQUIRE network connectivity and will fail when offline.
+ *
+ * For offline-tolerant operations, use updateConsult() instead.
+ */
+export async function transactionalUpdateConsult(
+    id: string,
+    updater: ConsultUpdater,
+    options: UpdateConsultOptions = {}
+): Promise<UpdateResults> {
+    const docRef = doc(db, COLLECTION_NAME, id);
+    const { awaitRemote = true } = options;
+
+    // For Optimistic UI: read local cache first for immediate UI response
+    let optimisticConsult: Consult | null = null;
+
+    if (!awaitRemote) {
+        // Pre-read for optimistic response (may hit local cache)
+        const preSnap = await getDoc(docRef);
+        if (preSnap.exists()) {
+            const preData = mapRawToConsult(preSnap.id, preSnap.data());
+            if (preData) {
+                const preUpdates = updater(preData);
+                if (preUpdates !== null) {
+                    const hasDottedKeys = Object.keys(preUpdates).some(k => k.includes("."));
+                    optimisticConsult = hasDottedKeys ? null : {
+                        ...preData,
+                        ...preUpdates,
+                    } as Consult;
+                }
+            }
+        }
+    }
+
+    const transactionWork = async (): Promise<{ applied: boolean; consult: Consult | null }> => {
+        return runTransaction(db, async (transaction) => {
+            const docSnap = await transaction.get(docRef);
+            if (!docSnap.exists()) {
+                throw new Error(`Consult not found: ${id}`);
+            }
+
+            const currentData = mapRawToConsult(docSnap.id, docSnap.data());
+            if (!currentData) {
+                throw new Error(`Consult not found: ${id}`);
+            }
+
+            const updates = updater(currentData);
+            if (updates === null) {
+                // Condition not met (e.g., already accepted by another user)
+                // Do NOT write, do NOT throw — just signal "not applied"
+                return { applied: false, consult: null };
+            }
+
+            transaction.update(docRef, updates);
+
+            const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
+            return {
+                applied: true,
+                consult: hasDottedKeys ? null : {
+                    ...currentData,
+                    ...updates,
+                } as Consult,
+            };
+        });
+    };
+
+    if (!awaitRemote) {
+        // Fire transaction in background, return optimistic result immediately
+        const backgroundPromise = transactionWork().then(result => {
+            if (!result.applied) {
+                // Transaction succeeded but condition was not met — another user got there first
+                const abortError = new Error("TRANSACTION_CONDITION_NOT_MET");
+                if (options.onBackgroundError) {
+                    options.onBackgroundError(abortError);
+                }
+            }
+        }).catch(err => {
+            console.error("Background transaction failed:", err);
+            if (options.onBackgroundError) {
+                options.onBackgroundError(err);
+            }
+        });
+
+        // Attach no-op catch to prevent unhandled rejection warning
+        void backgroundPromise;
+
+        return {
+            consult: optimisticConsult,
+            isQueued: true,
+            backgroundPromise,
+            applied: optimisticConsult !== null,
+        };
+    }
+
+    // Awaited path: run transaction and wait for server confirmation
+    const result = await transactionWork();
+    return {
+        consult: result.consult,
+        isQueued: false,
+        backgroundPromise: null,
+        applied: result.applied,
+    };
+}
+
 export async function transferConsultRoom(
     id: string,
     newRoom: RoomName,

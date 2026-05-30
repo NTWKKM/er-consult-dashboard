@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { updateConsult, ConsultDepartment } from "@/lib/db";
+import { updateConsult, transactionalUpdateConsult, ConsultDepartment } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS, ACCEPT_STATUS, POST_ACCEPT_STATUSES } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 
@@ -35,7 +35,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     setIsUpdating(true);
     beginSync();
     try {
-      const result = await updateConsult(caseId, (current) => {
+      const result = await transactionalUpdateConsult(caseId, (current) => {
         // Guard against stale snapshots or missing departments
         if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
@@ -50,7 +50,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
             : [departmentName];
         const now = new Date().toISOString();
 
-        const updates: any = {};
+        const updates: Record<string, string | null> = {};
         Object.keys(current.departments).forEach((dept) => {
           if ((targetDepts as readonly string[]).includes(dept) && current.departments[dept].status === "pending") {
             if (!current.departments[dept].acceptedAt) {
@@ -63,11 +63,22 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         return Object.keys(updates).length > 0 ? updates : null;
       }, { 
         awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
+        onBackgroundError: (error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : "";
+          
+          if (errorMessage === "TRANSACTION_CONDITION_NOT_MET") {
+            // Case was already accepted by another physician
+            addToast({ 
+              type: "warning", 
+              message: "เคสนี้ถูกรับโดยแพทย์ท่านอื่นแล้ว ระบบกำลังรีเฟรชข้อมูล" 
+            });
+          } else {
+            // Network / Firestore connectivity error
+            addToast({ 
+              type: "error", 
+              message: "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล กรุณาลองใหม่อีกครั้ง" 
+            });
+          }
         }
       });
 
@@ -115,12 +126,19 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         }
 
         const now = new Date().toISOString();
-        const updates: any = {
+        const updates: Record<string, string | null> = {
           [`departments.${departmentName}.actionStatus`]: newStatus,
-          [`departments.${departmentName}.admittedAt`]: newStatus === "Admit" ? now : null,
-          [`departments.${departmentName}.returnedAt`]: newStatus === "คืน ER" ? now : null,
-          [`departments.${departmentName}.dischargedAt`]: newStatus === "D/C" ? now : null,
         };
+
+        // Only write the timestamp for the selected status.
+        // Preserve sibling timestamps for full audit trail.
+        if (newStatus === "Admit") {
+          updates[`departments.${departmentName}.admittedAt`] = now;
+        } else if (newStatus === "คืน ER") {
+          updates[`departments.${departmentName}.returnedAt`] = now;
+        } else if (newStatus === "D/C") {
+          updates[`departments.${departmentName}.dischargedAt`] = now;
+        }
 
         if (!current.departments[departmentName].acceptedAt) {
           updates[`departments.${departmentName}.acceptedAt`] = now;
@@ -173,13 +191,13 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     setIsUpdating(true);
     beginSync();
     try {
-      const result = await updateConsult(caseId, (current) => {
+      const result = await transactionalUpdateConsult(caseId, (current) => {
         if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
         }
 
         const now = new Date().toISOString();
-        const updates: any = {
+        const updates: Record<string, string | null> = {
           [`departments.${departmentName}.status`]: "completed",
           [`departments.${departmentName}.completedAt`]: now,
         };
@@ -196,11 +214,19 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         };
       }, { 
         awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
+        onBackgroundError: (error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : "";
+          if (errorMessage === "TRANSACTION_CONDITION_NOT_MET") {
+            addToast({ 
+              type: "warning", 
+              message: "เคสนี้ถูกแก้ไขโดยแพทย์ท่านอื่นแล้ว ระบบกำลังรีเฟรชข้อมูล" 
+            });
+          } else {
+            addToast({ 
+              type: "error", 
+              message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+            });
+          }
         }
       });
 
@@ -240,13 +266,13 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     setIsUpdating(true);
     beginSync();
     try {
-      const result = await updateConsult(caseId, (current) => {
+      const result = await transactionalUpdateConsult(caseId, (current) => {
         if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
           return null;
         }
 
         const now = new Date().toISOString();
-        const updates: any = {
+        const updates: Record<string, string | null> = {
           [`departments.${departmentName}.status`]: "cancelled",
           [`departments.${departmentName}.completedAt`]: now,
         };
@@ -263,11 +289,19 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         };
       }, { 
         awaitRemote: false,
-        onBackgroundError: () => {
-          addToast({ 
-            type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
-          });
+        onBackgroundError: (error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : "";
+          if (errorMessage === "TRANSACTION_CONDITION_NOT_MET") {
+            addToast({ 
+              type: "warning", 
+              message: "เคสนี้ถูกแก้ไขโดยแพทย์ท่านอื่นแล้ว ระบบกำลังรีเฟรชข้อมูล" 
+            });
+          } else {
+            addToast({ 
+              type: "error", 
+              message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+            });
+          }
         }
       });
 
@@ -301,5 +335,63 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     }
   }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
 
-  return { isUpdating, isSyncing, handleAccept, handleStatusChange, handleComplete, handleCancel };
+  const handleToggleUrgency = useCallback(async (currentUrgent: boolean): Promise<boolean> => {
+    if (inFlightRef.current) return false;
+    inFlightRef.current = true;
+    setIsUpdating(true);
+    beginSync();
+    try {
+      const result = await updateConsult(caseId, (current) => {
+        return {
+          isUrgent: !current.isUrgent
+        };
+      }, {
+        awaitRemote: false,
+        onBackgroundError: () => {
+          addToast({
+            type: "error",
+            message: "อัปเดตสถานะความเร่งด่วนไม่สำเร็จ: เกิดข้อผิดพลาดในระบบหลังบ้าน"
+          });
+        }
+      });
+
+      if (!result.applied) {
+        endSync();
+        setIsUpdating(false);
+        inFlightRef.current = false;
+        return false;
+      }
+
+      setIsUpdating(false);
+
+      if (result.backgroundPromise) {
+        void result.backgroundPromise.then(
+          () => endSync(),
+          () => endSync()
+        );
+      } else {
+        endSync();
+      }
+
+      addToast({
+        type: "success",
+        message: currentUrgent
+          ? "เปลี่ยนเป็นเคสปกติสำเร็จ"
+          : "เปลี่ยนเป็นเคส FAST TRACK สำเร็จ"
+      });
+      onUpdate?.();
+      inFlightRef.current = false;
+      return true;
+    } catch (error) {
+      console.error("Error toggling urgency:", error);
+      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการเปลี่ยนสถานะความเร่งด่วน" });
+      setIsUpdating(false);
+      endSync();
+      inFlightRef.current = false;
+      return false;
+    }
+  }, [caseId, addToast, onUpdate, beginSync, endSync]);
+
+  return { isUpdating, isSyncing, handleAccept, handleStatusChange, handleComplete, handleCancel, handleToggleUrgency };
 }
+

@@ -38,6 +38,17 @@ export default function CompletedPage() {
   const { darkMode } = useSettings();
   const { addToast } = useToast();
 
+  // Validate if export date range is within the 31-day database read safeguard
+  const isRangeValid = useMemo(() => {
+    if (!exportStartDate || !exportEndDate) return true;
+    if (exportStartDate > exportEndDate) return false;
+    const start = new Date(exportStartDate);
+    const end = new Date(exportEndDate);
+    const diffTime = end.getTime() - start.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays <= 31;
+  }, [exportStartDate, exportEndDate]);
+
   const ITEMS_PER_PAGE = 25;
 
   // Store Firestore cursor snapshots for each page boundary
@@ -127,7 +138,8 @@ export default function CompletedPage() {
         // Guard against missing department
         if (!current.departments) return null;
 
-        const updatedDepartments: Record<string, ConsultDepartment> = {};
+        // Preserve existing departments; only reset the re-consulted ones
+        const updatedDepartments: Record<string, ConsultDepartment> = { ...current.departments };
         selectedDepartments.forEach((dept) => {
           updatedDepartments[dept] = { status: "pending", completedAt: null };
         });
@@ -210,6 +222,10 @@ export default function CompletedPage() {
     }
     if (exportStartDate > exportEndDate) {
       addToast({ type: "error", message: "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด" });
+      return;
+    }
+    if (!isRangeValid) {
+      addToast({ type: "error", message: "Export date range exceeds the maximum limit of 31 days to preserve system bandwidth." });
       return;
     }
 
@@ -1043,6 +1059,11 @@ export default function CompletedPage() {
               <p className={`text-sm ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
                 กรุณาเลือกช่วงวันที่เริ่มต้นและสิ้นสุดของข้อมูลที่ต้องการ Export
               </p>
+              {!isRangeValid && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-400 font-medium animate-fade-in">
+                  🚨 Export range is restricted to a maximum of 31 days to preserve database bandwidth.
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="exportStartDate" className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
@@ -1092,14 +1113,14 @@ export default function CompletedPage() {
               </button>
               <button
                 onClick={handleExportExcel}
-                disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate}
-                aria-disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate}
+                disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate || !isRangeValid}
+                aria-disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate || !isRangeValid}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
-                  isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate
+                  isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate || !isRangeValid
                     ? darkMode
                       ? "bg-gray-700 text-gray-500 cursor-not-allowed"
                       : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                    : "bg-[#699D5D] text-white hover:shadow-md"
+                    : "bg-[#699D5D] text-white hover:shadow-md hover:-translate-y-0.5"
                 }`}
               >
                 {isExporting ? (

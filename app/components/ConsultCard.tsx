@@ -23,6 +23,7 @@ interface ConsultCardProps {
 function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate, animationDelay = 0 }: ConsultCardProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
   const [flashSuccess, setFlashSuccess] = useState(false);
 
   const hn = caseData.hn || "-";
@@ -34,7 +35,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const isResusRoom = /\bresus\b/.test(normalizedRoom) && !/\bnon[-\s]?resus\b/.test(normalizedRoom);
   const problem = caseData.problem || "-";
   const isUrgent = caseData.isUrgent || false;
-  const dept = caseData.departments[departmentName];
+  const dept = Reflect.get(caseData.departments, departmentName);
   const isTerminal = dept?.status === "completed" || dept?.status === "cancelled";
   const isAccepted = dept?.acceptedAt;
   const completedTime = dept?.completedAt
@@ -44,7 +45,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     ? new Date(caseData.createdAt).toLocaleString("th-TH")
     : "-";
 
-  const actionStatus = caseData.departments[departmentName]?.actionStatus || "";
+  const actionStatus = Reflect.get(Reflect.get(caseData.departments, departmentName) ?? {}, "actionStatus") || "";
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
 
   const {
@@ -54,14 +55,40 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     handleStatusChange,
     handleComplete,
     handleCancel,
+    handleToggleUrgency,
   } = useConsultActions(caseId, departmentName, hn, onUpdate);
 
+  const handleToggleUrgencyClick = useCallback(() => {
+    if (isUpdating) return;
+    setShowUrgencyConfirm(true);
+  }, [isUpdating]);
 
+  const confirmToggleUrgency = useCallback(async () => {
+    setShowUrgencyConfirm(false);
+    const toggleFunc = async () => {
+      await handleToggleUrgency(isUrgent);
+    };
+
+    if (document.startViewTransition) {
+      document.startViewTransition(toggleFunc);
+    } else {
+      await toggleFunc();
+    }
+  }, [isUrgent, handleToggleUrgency]);
 
   const handleAcceptCase = useCallback(async () => {
-    if (await handleAccept()) {
-      setFlashSuccess(true);
-      setTimeout(() => setFlashSuccess(false), 700);
+    if (document.startViewTransition) {
+      document.startViewTransition(async () => {
+        if (await handleAccept()) {
+          setFlashSuccess(true);
+          setTimeout(() => setFlashSuccess(false), 700);
+        }
+      });
+    } else {
+      if (await handleAccept()) {
+        setFlashSuccess(true);
+        setTimeout(() => setFlashSuccess(false), 700);
+      }
     }
   }, [handleAccept]);
 
@@ -79,20 +106,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   return (
     <>
       <div
-        className={`card-shadow hover:card-shadow-hover transition-all duration-200 rounded-lg p-3 hover:-translate-y-1 animate-stagger-in relative ${
+        className={`transition-all duration-200 rounded-xl p-3 animate-stagger-in relative glass-panel border-l-4 ${
           flashSuccess ? "animate-success-flash" : ""
         } ${
-          darkMode
-            ? `bg-gray-800 ${
-                isUrgent
-                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30"
-                  : "border-l-4 border-gray-700"
-              }`
-            : `bg-white/95 ${
-                isUrgent
-                  ? "border-l-4 border-[#E55143] ring-2 ring-[#E55143]/30"
-                  : "border-l-4 border-[#699D5D]/50"
-              }`
+          isUrgent 
+            ? "border-l-[#E55143] shadow-[0_0_15px_rgba(229,81,67,0.15)]" 
+            : darkMode ? "border-l-gray-600" : "border-l-[#699D5D]"
         }`}
         style={{ animationDelay: `${animationDelay}ms` }}
       >
@@ -116,8 +135,13 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         )}
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-2">
-            <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${
+            <button
+              type="button"
+              onClick={handleToggleUrgencyClick}
+              disabled={isUpdating}
+              title={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+              aria-label={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                 isUrgent ? "bg-[#E55143]" : "bg-[#699D5D]"
               }`}
             >
@@ -130,11 +154,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               )}
-            </div>
+            </button>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 mb-1">
                 <h3 className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
-                  HN: {hn}
+                  {"HN: "}
+                  {hn}
                 </h3>
                 {isUrgent && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-[#E55143] text-white shadow-md">
@@ -149,7 +174,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               )}
               <div className="flex items-center gap-1.5 text-xs flex-wrap">
                 <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{departmentName}</span>
-                <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>→</span>
+                <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>{"→"}</span>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[11px] ${
                   isResusRoom
                     ? darkMode ? "bg-[#E55143]/15 text-[#ff7063] border border-[#E55143]/20" : "bg-[#E55143]/10 text-[#c23a2e] border border-[#E55143]/15"
@@ -166,13 +191,13 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 />
               </div>
               {Object.keys(caseData.departments).filter(
-                (d) => d !== departmentName && caseData.departments[d].status === "pending"
+                (d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending"
               ).length > 0 && (
                 <div className="flex items-center gap-1 text-xs mt-1">
-                  <span className={`font-medium ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>แผนกอื่น:</span>
+                  <span className={`font-medium ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>{"แผนกอื่น:"}</span>
                   <span className={`font-semibold underline ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                     {Object.keys(caseData.departments)
-                      .filter((d) => d !== departmentName && caseData.departments[d].status === "pending")
+                      .filter((d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending")
                       .join(", ")}
                   </span>
                 </div>
@@ -264,12 +289,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   <button
                     onClick={handleAcceptCase}
                     disabled={isUpdating}
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 ${
+                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 tap-feedback ${
                       isUpdating
                         ? darkMode
                           ? "bg-gray-700 text-gray-400 cursor-not-allowed"
                           : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                        : "bg-[#699D5D] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5"
+                        : "bg-[#699D5D] text-white hover:shadow-lg glow-hover"
                     }`}
                   >
                     {isUpdating ? (
@@ -344,7 +369,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                         ? darkMode
                           ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-dashed border-gray-600"
                           : "bg-gray-100 text-gray-400 cursor-not-allowed border border-dashed border-gray-300"
-                        : "bg-[#E55143] text-white hover:shadow-lg glow-hover transform hover:-translate-y-0.5"
+                        : "bg-[#E55143] text-white hover:shadow-lg glow-hover"
                     }`}
                   >
                     {isUpdating ? (
@@ -393,6 +418,17 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         variant="warning"
         onConfirm={handleCancelConsult}
         onCancel={() => setShowCancelConfirm(false)}
+      />
+
+      <ConfirmModal
+        isOpen={showUrgencyConfirm}
+        title={isUrgent ? "ยกเลิก FAST TRACK" : "เปลี่ยนเป็น FAST TRACK"}
+        message={`คุณต้องการเปลี่ยนเคส HN: ${hn} ${isUrgent ? "กลับเป็นเคสปกติ" : "เป็นเคส FAST TRACK (ด่วน)"} หรือไม่?`}
+        confirmText="ยืนยัน"
+        cancelText="ยกเลิก"
+        variant={isUrgent ? "warning" : "danger"}
+        onConfirm={confirmToggleUrgency}
+        onCancel={() => setShowUrgencyConfirm(false)}
       />
     </>
   );
