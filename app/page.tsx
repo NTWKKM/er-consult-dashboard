@@ -564,9 +564,15 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
     : "";
 
   const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
+  const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
 
-  const onToggleUrgency = async () => {
+  const onToggleUrgencyClick = () => {
     if (isUpdating) return;
+    setShowUrgencyConfirm(true);
+  };
+
+  const confirmToggleUrgency = async () => {
+    setShowUrgencyConfirm(false);
     const toggleFunc = async () => {
       await handleToggleUrgency(caseData.isUrgent);
     };
@@ -587,7 +593,7 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
             <span className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>{caseData.hn}</span>
             <button
               type="button"
-              onClick={onToggleUrgency}
+              onClick={onToggleUrgencyClick}
               disabled={isUpdating}
               title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
               aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
@@ -648,6 +654,16 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
           <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
         ))}
       </div>
+      <ConfirmModal
+        isOpen={showUrgencyConfirm}
+        title={caseData.isUrgent ? "ยกเลิก FAST TRACK" : "เปลี่ยนเป็น FAST TRACK"}
+        message={`คุณต้องการเปลี่ยนเคส HN: ${caseData.hn} ${caseData.isUrgent ? "กลับเป็นเคสปกติ" : "เป็นเคส FAST TRACK (ด่วน)"} หรือไม่?`}
+        confirmText="ยืนยัน"
+        cancelText="ยกเลิก"
+        variant={caseData.isUrgent ? "warning" : "danger"}
+        onConfirm={confirmToggleUrgency}
+        onCancel={() => setShowUrgencyConfirm(false)}
+      />
     </div>
   );
 }
@@ -666,9 +682,15 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
     : "";
 
   const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
+  const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
 
-  const onToggleUrgency = async () => {
+  const onToggleUrgencyClick = () => {
     if (isUpdating) return;
+    setShowUrgencyConfirm(true);
+  };
+
+  const confirmToggleUrgency = async () => {
+    setShowUrgencyConfirm(false);
     const toggleFunc = async () => {
       await handleToggleUrgency(caseData.isUrgent);
     };
@@ -687,7 +709,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           <span className="font-bold">{caseData.hn}</span>
           <button
             type="button"
-            onClick={onToggleUrgency}
+            onClick={onToggleUrgencyClick}
             disabled={isUpdating}
             title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
             aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
@@ -742,6 +764,16 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           ))}
         </div>
       </td>
+      <ConfirmModal
+        isOpen={showUrgencyConfirm}
+        title={caseData.isUrgent ? "ยกเลิก FAST TRACK" : "เปลี่ยนเป็น FAST TRACK"}
+        message={`คุณต้องการเปลี่ยนเคส HN: ${caseData.hn} ${caseData.isUrgent ? "กลับเป็นเคสปกติ" : "เป็นเคส FAST TRACK (ด่วน)"} หรือไม่?`}
+        confirmText="ยืนยัน"
+        cancelText="ยกเลิก"
+        variant={caseData.isUrgent ? "warning" : "danger"}
+        onConfirm={confirmToggleUrgency}
+        onCancel={() => setShowUrgencyConfirm(false)}
+      />
     </tr>
   );
 }

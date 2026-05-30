@@ -23,6 +23,7 @@ interface ConsultCardProps {
 function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate, animationDelay = 0 }: ConsultCardProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
   const [flashSuccess, setFlashSuccess] = useState(false);
 
   const hn = caseData.hn || "-";
@@ -57,8 +58,13 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     handleToggleUrgency,
   } = useConsultActions(caseId, departmentName, hn, onUpdate);
 
-  const handleToggleUrgencyClick = useCallback(async () => {
+  const handleToggleUrgencyClick = useCallback(() => {
     if (isUpdating) return;
+    setShowUrgencyConfirm(true);
+  }, [isUpdating]);
+
+  const confirmToggleUrgency = useCallback(async () => {
+    setShowUrgencyConfirm(false);
     const toggleFunc = async () => {
       await handleToggleUrgency(isUrgent);
     };
@@ -68,7 +74,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     } else {
       await toggleFunc();
     }
-  }, [isUrgent, isUpdating, handleToggleUrgency]);
+  }, [isUrgent, handleToggleUrgency]);
 
   const handleAcceptCase = useCallback(async () => {
     if (document.startViewTransition) {
@@ -411,6 +417,17 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         variant="warning"
         onConfirm={handleCancelConsult}
         onCancel={() => setShowCancelConfirm(false)}
+      />
+
+      <ConfirmModal
+        isOpen={showUrgencyConfirm}
+        title={isUrgent ? "ยกเลิก FAST TRACK" : "เปลี่ยนเป็น FAST TRACK"}
+        message={`คุณต้องการเปลี่ยนเคส HN: ${hn} ${isUrgent ? "กลับเป็นเคสปกติ" : "เป็นเคส FAST TRACK (ด่วน)"} หรือไม่?`}
+        confirmText="ยืนยัน"
+        cancelText="ยกเลิก"
+        variant={isUrgent ? "warning" : "danger"}
+        onConfirm={confirmToggleUrgency}
+        onCancel={() => setShowUrgencyConfirm(false)}
       />
     </>
   );
