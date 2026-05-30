@@ -3,6 +3,7 @@ import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, wher
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { ROOMS, RoomName } from "./constants";
+import { ConsultSchema } from "./schema";
 
 export interface ConsultTransfer {
     to: RoomName;
@@ -36,67 +37,18 @@ export interface Consult {
 const COLLECTION_NAME = "consults";
 
 /**
- * Runtime validator to ensure room names from schemaless Firestore data 
- * match the defined RoomName type.
- */
-function isValidRoomName(room: unknown): room is RoomName {
-    return typeof room === "string" && (ROOMS as readonly string[]).includes(room);
-}
-
-/**
- * Sanitizes and validates raw Firestore data into a Consult object.
+ * Sanitizes and validates raw Firestore data into a Consult object using Zod.
  */
 function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     if (!data) return null;
-
-    // Validate and fallback for the main room field
-    let room: RoomName = ROOMS[0]; // Default to first valid room
-    if (isValidRoomName(data.room)) {
-        room = data.room;
-    } else if (data.room !== undefined) {
-        console.warn(`[mapRawToConsult] Invalid room "${data.room}" for consult ${id}, defaulting to ${ROOMS[0]}`);
+    
+    try {
+        const parsed = ConsultSchema.parse({ ...data, id });
+        return parsed as unknown as Consult;
+    } catch (e) {
+        console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, e);
+        return null; // Ignore malformed documents to prevent app crashes
     }
-
-    // Deeply validate and sanitize transfers in all departments
-    const validatedDepts: { [key: string]: ConsultDepartment } = {};
-    if (data.departments) {
-        Object.keys(data.departments).forEach(deptKey => {
-            const dept = data.departments[deptKey];
-            const { transfers, ...rest } = dept;
-            const validatedDept: ConsultDepartment = { ...rest };
-            
-            if (Array.isArray(transfers)) {
-                validatedDept.transfers = transfers.map((t: unknown, index: number) => {
-                    const tObj = (t && typeof t === "object") ? t as Record<string, unknown> : {};
-                    const isValidTo = isValidRoomName(tObj.to);
-                    if (!isValidTo && tObj.to !== undefined) {
-                        console.warn(`[mapRawToConsult] Invalid transfer destination "${tObj.to}" at index ${index} for dept ${deptKey} in consult ${id}`);
-                    }
-                    
-                    const result: ConsultTransfer = {
-                        to: isValidTo ? (tObj.to as RoomName) : room
-                    };
-                    
-                    if (typeof tObj.at === "string") {
-                        result.at = tObj.at;
-                    }
-                    
-                    return result;
-                });
-            }
-            
-            validatedDepts[deptKey] = validatedDept;
-        });
-    }
-
-    return {
-        ...data,
-        id,
-        firstName: data.firstName ?? "",
-        lastName: data.lastName ?? "",
-        room,
-        departments: validatedDepts,
-    } as Consult;
 }
 
 /**

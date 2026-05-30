@@ -27,5 +27,5 @@ In a high-pressure ER, animations must serve a cognitive purpose, not just decor
 
 ## 6. Strict Development Guardrails
 - **No Distracting Fluff:** Do not implement scroll-driven parallax or continuous loop animations.
-- **Offline Resiliency Display:** Optimistic updates must provide immediate visual feedback. If a network request fails, the UI rollback must be accompanied by a clear, non-intrusive Toast notification.
+- **Offline Resiliency Display:** Optimistic updates must provide immediate visual feedback. Network drops must trigger the `OfflineIndicator` banner (View Transitions compliant) without obstructing the main clinical view. If a network request fails, the UI rollback must be accompanied by a clear, non-intrusive Toast notification.
 - **Consistency:** Any new component must strictly follow these rules and be approved by the UI Architect Sub-Agent.

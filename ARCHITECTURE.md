@@ -20,7 +20,8 @@ To ensure the app feels instantaneous under intermittent hospital Wi-Fi, apply t
 
 ## 4. Data Stability & Integrity Protocols
 - **Atomic Operations:** Use Firestore Transactions (`runTransaction`) for operations depending on current state.
-- **Schema Validation:** Strictly adhere to interfaces defined in `lib/constants.ts`.
+- **Schema Validation:** Strictly adhere to interfaces and validate all incoming Firestore data at runtime using `zod` (`lib/schema.ts`).
+- **Offline Resilience:** Ensure functionality during momentary signal drops. `persistentLocalCache` must remain enabled.
 - **Offline Resilience:** Ensure functionality during momentary signal drops.
 - **Race Condition Prevention:** Implement UI locks (e.g., disabling buttons) during in-flight mutations. Never allow concurrent identical network requests for the same record.
 - **Strict Type Safety:** The use of `any` type is strictly forbidden. All database payloads must explicitly conform to mapped types (e.g., Firestore `UpdateData<T>`) before writing.
@@ -36,5 +37,7 @@ To ensure the app feels instantaneous under intermittent hospital Wi-Fi, apply t
 - **Mandatory Review Targets:** Always check `lib/db.ts` and `app/hooks/useConsultActions.ts` before altering database logic.
 
 ## 7. Security & Patient Privacy (PHI)
+- **Authentication:** All access requires Firebase Authentication via `AuthContext`.
+- **Infrastructure as Code:** `firestore.rules` must be strictly maintained in the repository to block unauthenticated access.
 - **No Sensitive Logging:** Under absolutely NO circumstances should Patient Identifiable Information (PII/PHI) such as Patient Names, Hospital Numbers (HN), or specific medical diagnoses be logged to `console.log()`, external error trackers, or any unencrypted analytics service.
 - **Data Minimization:** Fetch and display only the data strictly necessary for the immediate clinical workflow.
