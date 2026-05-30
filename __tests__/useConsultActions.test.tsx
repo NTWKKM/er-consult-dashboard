@@ -779,4 +779,48 @@ describe("useConsultActions", () => {
       expect(result.current.isSyncing).toBe(false);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // handleToggleUrgency
+  // -------------------------------------------------------------------------
+  describe("handleToggleUrgency", () => {
+    it("calls updateConsult with the correct caseId and toggles isUrgent", async () => {
+      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      const { result } = renderHook(
+        () => useConsultActions("consult-1", "Gen Sx", "123456"),
+        { wrapper }
+      );
+
+      await act(async () => {
+        await result.current.handleToggleUrgency(false);
+      });
+
+      expect(mockUpdateConsult).toHaveBeenCalledWith(
+        "consult-1",
+        expect.any(Function),
+        expect.any(Object)
+      );
+
+      const snapshot = makePendingConsult({ isUrgent: false });
+      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      expect(updated).not.toBeNull();
+      expect(updated!.isUrgent).toBe(true);
+    });
+
+    it("toggles true to false", async () => {
+      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      const { result } = renderHook(
+        () => useConsultActions("consult-1", "Gen Sx", "123456"),
+        { wrapper }
+      );
+
+      await act(async () => {
+        await result.current.handleToggleUrgency(true);
+      });
+
+      const snapshot = makePendingConsult({ isUrgent: true });
+      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      expect(updated!.isUrgent).toBe(false);
+    });
+  });
 });

@@ -54,9 +54,21 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     handleStatusChange,
     handleComplete,
     handleCancel,
+    handleToggleUrgency,
   } = useConsultActions(caseId, departmentName, hn, onUpdate);
 
+  const handleToggleUrgencyClick = useCallback(async () => {
+    if (isUpdating) return;
+    const toggleFunc = async () => {
+      await handleToggleUrgency(isUrgent);
+    };
 
+    if (document.startViewTransition) {
+      document.startViewTransition(toggleFunc);
+    } else {
+      await toggleFunc();
+    }
+  }, [isUrgent, isUpdating, handleToggleUrgency]);
 
   const handleAcceptCase = useCallback(async () => {
     if (document.startViewTransition) {
@@ -117,8 +129,13 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
         )}
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-2">
-            <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${
+            <button
+              type="button"
+              onClick={handleToggleUrgencyClick}
+              disabled={isUpdating}
+              title={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+              aria-label={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                 isUrgent ? "bg-[#E55143]" : "bg-[#699D5D]"
               }`}
             >
@@ -131,7 +148,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               )}
-            </div>
+            </button>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>

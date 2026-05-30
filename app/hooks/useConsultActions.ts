@@ -312,5 +312,63 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     }
   }, [caseId, departmentName, hn, addToast, onUpdate, beginSync, endSync]);
 
-  return { isUpdating, isSyncing, handleAccept, handleStatusChange, handleComplete, handleCancel };
+  const handleToggleUrgency = useCallback(async (currentUrgent: boolean): Promise<boolean> => {
+    if (inFlightRef.current) return false;
+    inFlightRef.current = true;
+    setIsUpdating(true);
+    beginSync();
+    try {
+      const result = await updateConsult(caseId, (current) => {
+        return {
+          isUrgent: !current.isUrgent
+        };
+      }, {
+        awaitRemote: false,
+        onBackgroundError: () => {
+          addToast({
+            type: "error",
+            message: "อัปเดตสถานะความเร่งด่วนไม่สำเร็จ: เกิดข้อผิดพลาดในระบบหลังบ้าน"
+          });
+        }
+      });
+
+      if (!result.applied) {
+        endSync();
+        setIsUpdating(false);
+        inFlightRef.current = false;
+        return false;
+      }
+
+      setIsUpdating(false);
+
+      if (result.backgroundPromise) {
+        void result.backgroundPromise.then(
+          () => endSync(),
+          () => endSync()
+        );
+      } else {
+        endSync();
+      }
+
+      addToast({
+        type: "success",
+        message: currentUrgent
+          ? "เปลี่ยนเป็นเคสปกติสำเร็จ"
+          : "เปลี่ยนเป็นเคส FAST TRACK สำเร็จ"
+      });
+      onUpdate?.();
+      inFlightRef.current = false;
+      return true;
+    } catch (error) {
+      console.error("Error toggling urgency:", error);
+      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการเปลี่ยนสถานะความเร่งด่วน" });
+      setIsUpdating(false);
+      endSync();
+      inFlightRef.current = false;
+      return false;
+    }
+  }, [caseId, addToast, onUpdate, beginSync, endSync]);
+
+  return { isUpdating, isSyncing, handleAccept, handleStatusChange, handleComplete, handleCancel, handleToggleUrgency };
 }
+

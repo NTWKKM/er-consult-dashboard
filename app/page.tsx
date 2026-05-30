@@ -563,6 +563,21 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
     ? formatTime(caseData.createdAt)
     : "";
 
+  const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
+
+  const onToggleUrgency = async () => {
+    if (isUpdating) return;
+    const toggleFunc = async () => {
+      await handleToggleUrgency(caseData.isUrgent);
+    };
+
+    if (document.startViewTransition) {
+      document.startViewTransition(toggleFunc);
+    } else {
+      await toggleFunc();
+    }
+  };
+
   return (
     <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white border-[#C7CFDA] shadow-sm"} flex flex-col gap-3`}>
       {/* Header: HN & Fast Track */}
@@ -570,9 +585,25 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>{caseData.hn}</span>
-            {caseData.isUrgent && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
-            )}
+            <button
+              type="button"
+              onClick={onToggleUrgency}
+              disabled={isUpdating}
+              title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+              aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                caseData.isUrgent
+                  ? "bg-[#E55143] text-white shadow-md border border-[#E55143]"
+                  : darkMode
+                    ? "bg-gray-700 border border-gray-600 text-gray-400 hover:text-[#ff7063] hover:border-[#E55143]/40"
+                    : "bg-gray-100 border border-gray-300 text-gray-500 hover:text-[#c23a2e] hover:border-[#E55143]/30"
+              }`}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              {caseData.isUrgent ? "FAST" : "NORMAL"}
+            </button>
           </div>
           {fullName && (
             <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
@@ -634,14 +665,45 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
     ? formatTime(caseData.createdAt)
     : "";
 
+  const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
+
+  const onToggleUrgency = async () => {
+    if (isUpdating) return;
+    const toggleFunc = async () => {
+      await handleToggleUrgency(caseData.isUrgent);
+    };
+
+    if (document.startViewTransition) {
+      document.startViewTransition(toggleFunc);
+    } else {
+      await toggleFunc();
+    }
+  };
+
   return (
     <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
       <td className={`p-3 align-top ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
         <div className="flex items-center gap-2 mb-1">
           <span className="font-bold">{caseData.hn}</span>
-          {caseData.isUrgent && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
-          )}
+          <button
+            type="button"
+            onClick={onToggleUrgency}
+            disabled={isUpdating}
+            title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+            aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              caseData.isUrgent
+                ? "bg-[#E55143] text-white shadow-md border border-[#E55143]"
+                : darkMode
+                  ? "bg-gray-700 border border-gray-600 text-gray-400 hover:text-[#ff7063] hover:border-[#E55143]/40"
+                  : "bg-gray-100 border border-gray-300 text-gray-500 hover:text-[#c23a2e] hover:border-[#E55143]/30"
+            }`}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            {caseData.isUrgent ? "FAST" : "NORMAL"}
+          </button>
         </div>
         {fullName && (
           <div className={`text-sm font-medium mb-2 ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>

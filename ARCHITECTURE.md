@@ -119,7 +119,15 @@ Consult cards progress through specific lifecycle milestones represented as time
    - Cancel sets `status: "cancelled"`, `completedAt: timestamp`.
    - If all departments in a case are either completed or cancelled, the root document `status` transitions to `"completed"`, removing it from the active whiteboard dashboard.
 
-## 13. Re-consulting Mechanism
+## 13. Urgency Toggling (Fast Track)
+
+Medical staff can dynamically toggle the urgency of an active case (Fast Track vs. Normal) directly from the dashboard:
+
+- The client invokes `handleToggleUrgency` (via `useConsultActions`), which calls `updateConsult` with `awaitRemote: false` for an instantaneous Optimistic UI update.
+- This immediately updates the `isUrgent` boolean field on the Firestore document.
+- The UI applies the View Transitions API (`document.startViewTransition`) to ensure the transition between the Fast Track status and normal status is fluid and avoids jarring layout shifts.
+
+## 14. Re-consulting Mechanism
 
 When a doctor triggers a Re-consult on a case from `/completed`:
 
@@ -139,7 +147,7 @@ When a doctor triggers a Re-consult on a case from `/completed`:
   `problem: "${current.problem}\n\n[Re-consult]: ${newProblem}"`
 - It updates `createdAt = new Date().toISOString()`, sorting it back to the top of the whiteboard.
 
-## 14. Excel Export Pipeline & Safeguards
+## 15. Excel Export Pipeline & Safeguards
 
 - **Export Trigger:** Triggered in `/completed` using date ranges `exportStartDate` and `exportEndDate`.
 - **Bandwidth Safeguard:** The frontend validates that the date range is at most 31 days. Ranges exceeding 31 days are rejected to protect against daily read quota exhaustions.
