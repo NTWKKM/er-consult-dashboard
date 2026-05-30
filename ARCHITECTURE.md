@@ -43,3 +43,8 @@ To ensure the app feels instantaneous under intermittent hospital Wi-Fi, apply t
 - **Infrastructure as Code:** `firestore.rules` must be strictly maintained in the repository to block unauthenticated access.
 - **No Sensitive Logging:** Under absolutely NO circumstances should Patient Identifiable Information (PII/PHI) such as Patient Names, Hospital Numbers (HN), or specific medical diagnoses be logged to `console.log()`, external error trackers, or any unencrypted analytics service.
 - **Data Minimization:** Fetch and display only the data strictly necessary for the immediate clinical workflow.
+
+## 8. Database Usage & Quota Management (Firebase Spark Plan)
+- **Strict Export Safeguards:** To protect against daily read quota exhaustion (50,000 reads/day) on the Free Tier, a hard 31-day limit is enforced on all data exports (e.g., Excel exports). UI-level validation prevents exceeding this limit.
+- **Optimized Data Retrieval:** Historical queries (e.g., in `app/completed/page.tsx`) must utilize Firestore cursors (`cursorMapRef`) to manage paginated reads, rather than fetching bulk documents.
+- **Security Restrictions:** `firestore.rules` are hardened. Collection-specific matching (`/consults/{consultId}`) is strictly enforced, and wildcard paths (`/{document=**}`) are prohibited to block unauthorized or malicious mass-read operations.

@@ -1,8 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only authenticated users (ER staff) can read or write any document.
-    match /{document=**} {
+    // Only authenticated users (ER staff) can read or write to the consults collection.
+    match /consults/{consultId} {
       allow read, write: if request.auth != null;
     }
   }
