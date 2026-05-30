@@ -25,6 +25,8 @@ To ensure the app feels instantaneous under intermittent hospital Wi-Fi, apply t
 - **Offline Resilience:** Ensure functionality during momentary signal drops.
 - **Race Condition Prevention:** Implement UI locks (e.g., disabling buttons) during in-flight mutations. Never allow concurrent identical network requests for the same record.
 - **Strict Type Safety:** The use of `any` type is strictly forbidden. All database payloads must explicitly conform to mapped types (e.g., Firestore `UpdateData<T>`) before writing.
+- **Database Indexes:** Compound/Composite Indexes must be maintained in `firestore.indexes.json` to ensure complex queries (e.g., sorting by `createdAt` while filtering by `status`) do not fail.
+- **Mock Data & Testing:** Any script generating mock data MUST strictly adhere to the `Zod` schemas defined in `lib/schema.ts`. Scripts that generate malformed data are strictly forbidden as they pollute the database and fail client-side parsing.
 
 ## 5. UI/UX & Language Standards
 - **Professionalism:** All user-facing strings (Labels, Modals, Toasts) MUST use **Professional Medical English** (e.g., "Awaiting Specialty Evaluation").
