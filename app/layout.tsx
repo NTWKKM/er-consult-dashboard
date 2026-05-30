@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Inter, Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
-import { SettingsProvider } from "./contexts/SettingsContext";
-import { ToastProvider } from "./contexts/ToastContext";
-import { AuthProvider } from "./contexts/AuthContext";
-import ProtectedRoute from "./components/ProtectedRoute";
-import ClientLayoutWrapper from "./components/ClientLayoutWrapper";
-import OfflineIndicator from "./components/OfflineIndicator";
+import { SettingsProvider } from "../contexts/SettingsContext";
+import { ToastProvider } from "../contexts/ToastContext";
+import { AuthProvider } from "../contexts/AuthContext";
+import ProtectedRoute from "../components/ProtectedRoute";
+import ClientLayoutWrapper from "../components/ClientLayoutWrapper";
+import OfflineIndicator from "../components/OfflineIndicator";
 
 const inter = Inter({
   subsets: ["latin"],
