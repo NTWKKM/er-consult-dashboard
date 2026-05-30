@@ -29,10 +29,5 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return null;
   }
 
-  // Hide Navbar/BottomNav on login page
-  if (pathname === "/login") {
-    return <>{children}</>;
-  }
-
   return <>{children}</>;
 }

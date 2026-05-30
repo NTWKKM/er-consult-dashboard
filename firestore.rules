@@ -17,7 +17,7 @@ service cloud.firestore {
       allow update: if request.auth != null
         && request.resource.data.hn is string
         && request.resource.data.hn.size() > 0
-        && request.resource.data.status in ["pending", "completed"]
+        && request.resource.data.status in ["pending", "completed", "cancelled"]
         && request.resource.data.isUrgent is bool;
 
       // Explicit deny: no deletions — audit trail must be preserved

@@ -236,6 +236,11 @@ body {
     animation: none !important;
     transition: none !important;
   }
+  /* Disable View Transitions API fade animations for motion-sensitive users */
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
 }
 
 /* Hide scrollbar utility (used in Quick Navigation) */

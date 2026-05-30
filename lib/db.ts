@@ -29,7 +29,7 @@ export interface Consult {
     room: RoomName;
     problem: string;
     createdAt: string; // ISO string
-    status: "pending" | "completed";
+    status: "pending" | "completed" | "cancelled";
     isUrgent: boolean;
     departments: { [key: string]: ConsultDepartment };
 }
@@ -44,7 +44,7 @@ function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     
     try {
         const parsed = ConsultSchema.parse({ ...data, id });
-        return parsed as unknown as Consult;
+        return parsed as Consult;
     } catch (e) {
         console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, e);
         return null; // Ignore malformed documents to prevent app crashes
