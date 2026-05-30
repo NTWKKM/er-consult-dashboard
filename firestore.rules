@@ -8,17 +8,33 @@ service cloud.firestore {
 
       // New consults must have a valid HN and start as "pending"
       allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
+        && request.resource.data.id is string
         && request.resource.data.hn is string
         && request.resource.data.hn.size() > 0
+        && request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.room is string
+        && request.resource.data.problem is string
+        && request.resource.data.createdAt is string
         && request.resource.data.status == "pending"
-        && request.resource.data.isUrgent is bool;
+        && request.resource.data.isUrgent is bool
+        && request.resource.data.departments is map;
 
       // Updates: validate document shape after merge
       allow update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
+        && request.resource.data.id is string
         && request.resource.data.hn is string
         && request.resource.data.hn.size() > 0
+        && request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.room is string
+        && request.resource.data.problem is string
+        && request.resource.data.createdAt is string
         && request.resource.data.status in ["pending", "completed", "cancelled"]
-        && request.resource.data.isUrgent is bool;
+        && request.resource.data.isUrgent is bool
+        && request.resource.data.departments is map;
 
       // Explicit deny: no deletions — audit trail must be preserved
       allow delete: if false;
