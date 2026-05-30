@@ -10,6 +10,7 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
         && request.resource.data.id is string
+        && request.resource.data.id == consultId
         && request.resource.data.hn is string
         && request.resource.data.hn.size() > 0
         && request.resource.data.firstName is string
@@ -25,6 +26,7 @@ service cloud.firestore {
       allow update: if request.auth != null
         && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
         && request.resource.data.id is string
+        && request.resource.data.id == consultId
         && request.resource.data.hn is string
         && request.resource.data.hn.size() > 0
         && request.resource.data.firstName is string
@@ -32,6 +34,7 @@ service cloud.firestore {
         && request.resource.data.room is string
         && request.resource.data.problem is string
         && request.resource.data.createdAt is string
+        && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.status in ["pending", "completed", "cancelled"]
         && request.resource.data.isUrgent is bool
         && request.resource.data.departments is map;
