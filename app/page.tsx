@@ -1,42 +1,28 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useConsultActions, PostAcceptStatus } from "./hooks/useConsultActions";
-import ConsultCard from "@/app/components/ConsultCard";
-import SkeletonLoading from "@/app/components/SkeletonLoading";
-import ErrorState from "@/app/components/ErrorState";
-import ConfirmModal from "@/app/components/ConfirmModal";
-import { RoomTransferButton } from "@/app/components/RoomTransferButton";
 import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
-import { getMilestones, formatTime } from "@/lib/utils";
-import { ElapsedTime as PatientTableElapsedTime } from "@/app/components/ElapsedTime";
-import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
-import { buildDepartmentCasesMap, type RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
-
-
+import { type RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
+import { SURGERY_DEPTS } from "@/lib/constants";
+import SkeletonLoading from "@/app/components/SkeletonLoading";
+import ErrorState from "@/app/components/ErrorState";
+import ConsultCard from "@/app/components/ConsultCard";
+import { RoomTransferButton } from "@/app/components/RoomTransferButton";
 
 export default function Dashboard() {
   const [allCases, setAllCases] = useState<Consult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Persistence logic for filters and view modes
-  const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
   const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
   const settingsLoadedRef = useRef(false);
 
-  // Load from localStorage on mount
   useEffect(() => {
     try {
-      const savedView = localStorage.getItem("dashboard_view");
       const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
-      
-      if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
-        setView(savedView);
-      }
       if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
         setRoomFilter(savedRoomFilter as RoomFilter);
       }
@@ -47,27 +33,20 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Save to localStorage when changed
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     try {
-      localStorage.setItem("dashboard_view", view);
       localStorage.setItem("dashboard_roomFilter", roomFilter);
     } catch (e) {
       console.warn("Failed to save settings to localStorage:", e);
     }
-  }, [view, roomFilter]);
+  }, [roomFilter]);
 
-  const { darkMode, soundEnabled, displayMode, setDisplayMode } = useSettings();
+  const { darkMode, soundEnabled } = useSettings();
 
   const previousCaseIdsRef = useRef<Set<string>>(new Set());
   const isInitialLoadRef = useRef(true);
-  const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
-
-  const scrollToDepartment = (deptName: string) => {
-    deptRefs.current[deptName]?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
 
   const initAudioContext = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -92,11 +71,9 @@ export default function Dashboard() {
       document.removeEventListener("touchstart", unlockAudio);
       document.removeEventListener("keydown", unlockAudio);
     };
-
     document.addEventListener("click", unlockAudio);
     document.addEventListener("touchstart", unlockAudio);
     document.addEventListener("keydown", unlockAudio);
-
     return () => {
       document.removeEventListener("click", unlockAudio);
       document.removeEventListener("touchstart", unlockAudio);
@@ -106,31 +83,21 @@ export default function Dashboard() {
 
   const playNotificationSound = useCallback(() => {
     if (!soundEnabled) return;
-
-    if (!audioContextRef.current) {
-      initAudioContext();
-    }
+    if (!audioContextRef.current) initAudioContext();
     if (!audioContextRef.current) return;
-
     const audioContext = audioContextRef.current;
-
     const playBeep = (startTime: number) => {
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
-
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-
       oscillator.frequency.value = 800;
       oscillator.type = "sine";
-
       gainNode.gain.setValueAtTime(0.8, startTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
-
       oscillator.start(startTime);
       oscillator.stop(startTime + 0.5);
     };
-
     const now = audioContext.currentTime;
     playBeep(now);
     playBeep(now + 0.6);
@@ -141,9 +108,7 @@ export default function Dashboard() {
     const currentIds = new Set(allCases.map((c) => c.id));
     if (!isInitialLoadRef.current) {
       const newIds = findNewCaseIds(currentIds, previousCaseIdsRef.current);
-      if (newIds.length > 0) {
-        playNotificationSound();
-      }
+      if (newIds.length > 0) playNotificationSound();
     }
     previousCaseIdsRef.current = currentIds;
     isInitialLoadRef.current = false;
@@ -170,7 +135,7 @@ export default function Dashboard() {
     return allCases.filter((caseData) => matchesRoomFilter(caseData, roomFilter));
   }, [allCases, roomFilter]);
 
-  const visibleTableCases = useMemo(
+  const visibleCases = useMemo(
     () =>
       filteredAllCases.filter((caseData) =>
         Object.values(caseData.departments).some((dept) => dept.status === "pending")
@@ -178,665 +143,158 @@ export default function Dashboard() {
     [filteredAllCases]
   );
 
-  const departmentCasesMap = useMemo(() => {
-    return buildDepartmentCasesMap(filteredAllCases, "all");
-  }, [filteredAllCases]);
+  const totalPendingCases = visibleCases.length;
 
-  const getCasesForDepartment = (deptName: string) => {
-    return departmentCasesMap[deptName] || [];
+  const handleSelectCase = (id: string | null) => {
+    if (document.startViewTransition) {
+      document.startViewTransition(() => setSelectedCaseId(id));
+    } else {
+      setSelectedCaseId(id);
+    }
   };
 
-  const totalPendingCases = visibleTableCases.length;
+  const selectedCase = useMemo(() => visibleCases.find(c => c.id === selectedCaseId), [visibleCases, selectedCaseId]);
 
-  if (loading) {
-    return <SkeletonLoading darkMode={darkMode} />;
-  }
-
-  if (error) {
-    return <ErrorState error={error} onRetry={() => window.location.reload()} />;
-  }
+  if (loading) return <SkeletonLoading darkMode={darkMode} />;
+  if (error) return <ErrorState error={error} onRetry={() => window.location.reload()} />;
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : ""}`}>
-      <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
-        {/* --- Toolbar --- */}
-        <div className="mb-4 slide-in w-full flex justify-center">
-          <div className={`inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl shadow-sm border transition-colors ${
-            darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white/90 border-[#C7CFDA]/60 backdrop-blur-sm"
-          }`}>
-            {/* Pending Count */}
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
-              darkMode ? "bg-gray-900/60" : "bg-[#014167]/5"
-            }`}>
+    <div className={`min-h-[calc(100vh-100px)] transition-colors duration-300 ${darkMode ? "bg-gray-900" : ""}`}>
+      <div className="max-w-[1600px] mx-auto p-3 lg:p-5 flex flex-col h-full lg:h-[calc(100vh-80px)]">
+        {/* Toolbar */}
+        <div className="mb-4 slide-in w-full flex justify-center shrink-0">
+          <div className={`inline-flex items-center gap-3 p-3 rounded-xl shadow-sm border glass-panel ${darkMode ? "dark" : ""}`}>
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${darkMode ? "bg-gray-900/60" : "bg-[#014167]/5"}`}>
               <svg className="w-4 h-4 text-[#E55143] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               <span className={`text-xs font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รอปรึกษา</span>
-              <span className={`text-base font-extrabold tabular-nums min-w-[28px] text-center px-2 py-0.5 rounded-full ${
-                totalPendingCases > 0 
-                  ? "bg-[#E55143] text-white shadow-sm" 
-                  : darkMode ? "bg-gray-700 text-gray-400" : "bg-gray-200 text-gray-400"
-              }`}>
+              <span className={`text-base font-extrabold tabular-nums min-w-[28px] text-center px-2 py-0.5 rounded-full ${totalPendingCases > 0 ? "bg-[#E55143] text-white shadow-sm" : darkMode ? "bg-gray-700 text-gray-400" : "bg-gray-200 text-gray-400"}`}>
                 {totalPendingCases}
               </span>
             </div>
-
-            {/* Divider */}
-            <div className={`hidden sm:block w-px h-7 ${darkMode ? "bg-gray-700" : "bg-[#C7CFDA]/40"}`} />
-
-            {/* Control Groups */}
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-              {/* Layout Toggle */}
-              <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                <button aria-pressed={displayMode === "card"} onClick={() => setDisplayMode("card")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "card" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                  <span className="hidden sm:inline">Card</span>
-                </button>
-                <button aria-pressed={displayMode === "table"} onClick={() => setDisplayMode("table")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 ${displayMode === "table" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                  <span className="hidden sm:inline">Table</span>
-                </button>
-              </div>
-
-              {/* Room Filter */}
-              <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                <button aria-pressed={roomFilter === "all"} onClick={() => setRoomFilter("all")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "all" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>All</button>
-                <button aria-pressed={roomFilter === "resus"} onClick={() => setRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "resus" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Resus</button>
-                <button aria-pressed={roomFilter === "non-resus"} onClick={() => setRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "non-resus" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Non-Resus</button>
-              </div>
-
-              {/* View Filter (Card View Only) */}
-              {displayMode === "card" && (
-                <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                  <button aria-pressed={view === "both"} onClick={() => setView("both")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "both" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Both</button>
-                  <button aria-pressed={view === "surgery"} onClick={() => setView("surgery")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "surgery" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Surgery</button>
-                  <button aria-pressed={view === "ortho"} onClick={() => setView("ortho")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${view === "ortho" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Ortho</button>
-                </div>
-              )}
+            <div className={`w-px h-7 ${darkMode ? "bg-gray-700" : "bg-[#C7CFDA]/40"}`} />
+            <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
+              <button onClick={() => setRoomFilter("all")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "all" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>All</button>
+              <button onClick={() => setRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "resus" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Resus</button>
+              <button onClick={() => setRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs ${roomFilter === "non-resus" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>Non-Resus</button>
             </div>
           </div>
         </div>
 
-        {/* Quick Navigation - Always visible in card mode */}
-        {displayMode === "card" && (
-          <div className={`mb-4 rounded-xl overflow-hidden transition-colors ${
-            darkMode ? "bg-gray-800/50 border border-gray-700" : "bg-white/60 border border-[#C7CFDA]/30 backdrop-blur-sm"
-          }`}>
-            <div className="flex overflow-x-auto lg:grid lg:grid-cols-9 gap-1.5 p-2 hide-scrollbar">
-              {(
-                view === "surgery"
-                  ? SURGERY_DEPTS
-                  : view === "ortho"
-                    ? ORTHO_DEPTS
-                    : [...SURGERY_DEPTS, ...ORTHO_DEPTS]
-              ).map((dept) => {
-                const cases = getCasesForDepartment(dept);
-                const isSurgery = (SURGERY_DEPTS as readonly string[]).includes(dept);
-                const hasCases = cases.length > 0;
+        {/* Split Screen Layout */}
+        <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 overflow-hidden">
+          
+          {/* Left Panel: Patient Roster */}
+          <div className={`w-full lg:w-1/3 xl:w-1/4 flex flex-col gap-2 overflow-y-auto hide-scrollbar rounded-xl p-3 glass-panel ${darkMode ? "dark" : ""} slide-in h-[40vh] lg:h-full`}>
+            <h2 className={`font-bold text-sm mb-2 px-1 flex-shrink-0 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>Patient Roster</h2>
+            {visibleCases.length === 0 ? (
+              <div className={`text-center py-8 rounded-lg border font-bold text-sm ${darkMode ? "bg-gray-800/50 border-gray-700 text-gray-500" : "bg-gray-50 border-[#C7CFDA]/50 text-[#014167]/50"}`}>
+                ไม่มีเคสรอปรึกษา
+              </div>
+            ) : (
+              visibleCases.map(caseData => {
+                const isSelected = caseData.id === selectedCaseId;
+                const pendingDepts = Object.keys(caseData.departments).filter(d => caseData.departments[d].status === "pending");
+                const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
+                
                 return (
                   <button
-                    key={dept}
-                    onClick={() => scrollToDepartment(dept)}
-                    className={`flex-shrink-0 w-[88px] lg:w-auto rounded-lg px-2 py-2 transition-all duration-200 group flex flex-col items-center justify-center border tap-feedback ${
-                      hasCases
-                        ? darkMode
-                          ? `bg-gray-800 text-white ${isSurgery ? "border-[#E55143]/40 hover:bg-[#E55143]" : "border-[#699D5D]/40 hover:bg-[#699D5D]"} hover:text-white shadow-sm`
-                          : `bg-white text-[#014167] ${isSurgery ? "border-[#E55143]/30 hover:bg-[#E55143]" : "border-[#699D5D]/30 hover:bg-[#699D5D]"} hover:text-white shadow-sm`
-                        : darkMode
-                          ? "bg-gray-800/50 text-gray-500 border-gray-700/50 hover:bg-gray-700/50"
-                          : "bg-gray-50/50 text-gray-400 border-gray-200/50 hover:bg-gray-100"
+                    key={caseData.id}
+                    onClick={() => handleSelectCase(caseData.id)}
+                    className={`w-full text-left p-3 rounded-lg border transition-all duration-200 tap-feedback flex flex-col gap-2 relative overflow-hidden flex-shrink-0 ${
+                      isSelected 
+                        ? darkMode ? "bg-gray-800 border-blue-500/50 shadow-md ring-1 ring-blue-500/30" : "bg-white border-blue-400 shadow-md ring-1 ring-blue-400/30"
+                        : darkMode ? "bg-gray-800/40 border-gray-700 hover:bg-gray-800/80 hover:border-gray-600" : "bg-white/60 border-[#C7CFDA]/40 hover:bg-white hover:border-[#C7CFDA]"
                     }`}
                   >
-                    <div className="text-[11px] font-bold mb-0.5 w-full truncate text-center" title={dept}>{dept}</div>
-                    <div
-                      className={`text-base font-extrabold leading-none tabular-nums ${
-                        hasCases
-                          ? "text-[#E55143] group-hover:text-white"
-                          : darkMode ? "text-gray-600" : "text-gray-300"
-                      }`}
-                    >
-                      {cases.length}
+                    {caseData.isUrgent && <div className="absolute top-0 left-0 w-1 h-full bg-[#E55143]" />}
+                    <div className="flex justify-between items-start pl-1">
+                      <div className="flex flex-col">
+                        <span className={`font-bold tabular-nums ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>HN: {caseData.hn}</span>
+                        {fullName && <span className={`text-xs font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>{fullName}</span>}
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${darkMode ? "bg-gray-700 text-gray-300" : "bg-gray-100 text-gray-600"}`}>{caseData.room}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1 pl-1">
+                      {pendingDepts.map(dept => (
+                        <span key={dept} className={`text-[9px] px-1.5 py-0.5 rounded-sm font-semibold ${(SURGERY_DEPTS as readonly string[]).includes(dept) ? "bg-[#E55143]/10 text-[#E55143]" : "bg-[#699D5D]/10 text-[#699D5D]"}`}>{dept}</span>
+                      ))}
                     </div>
                   </button>
                 );
-              })}
-            </div>
+              })
+            )}
           </div>
-        )}
 
-        {/* ------------------------------------------------------------------------ */}
-        {/* RENDER LOGIC: TABLE VIEW OR CARD VIEW */}
-        {/* ------------------------------------------------------------------------ */}
-
-        {displayMode === "table" ? (
-          <>
-            {/* Desktop Table View */}
-            <div className={`hidden md:block rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
-              <div className="overflow-x-auto relative w-full">
-                <table className="w-full text-left border-collapse min-w-[900px]">
-                  <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
-                    <tr>
-                      <th className="p-3 w-[20%] font-bold">PATIENT</th>
-                      <th className="p-3 w-[10%] font-bold">ROOM</th>
-                      <th className="p-3 w-[40%] font-bold">DX</th>
-                      <th className="p-3 w-[30%] font-bold">MANAGEMENT</th>
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
-                    {visibleTableCases.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className={`p-8 text-center font-bold ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
-                          ไม่มีเคสรอปรึกษา
-                        </td>
-                      </tr>
-                    ) : (
-                      visibleTableCases.map((caseData) => (
-                        <PatientTableRow key={caseData.id} caseData={caseData} darkMode={darkMode} />
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Mobile Stacked Card Layout */}
-            <div className="md:hidden flex flex-col gap-3 slide-in">
-              {visibleTableCases.length === 0 ? (
-                <div className={`text-center py-8 rounded-xl border font-bold ${darkMode ? "bg-gray-800 border-gray-700 text-gray-400" : "bg-white border-[#C7CFDA] text-[#014167]"}`}>
-                  ไม่มีเคสรอปรึกษา
-                </div>
-              ) : (
-                visibleTableCases.map((caseData) => (
-                  <MobilePatientCard key={caseData.id} caseData={caseData} darkMode={darkMode} />
-                ))
-              )}
-            </div>
-          </>
-        ) : (
-          /* ORIGINAL CARD VIEW */
-          <div className="flex flex-col lg:flex-row gap-4">
-            {(view === "surgery" || view === "both") && (
-              <div
-                className={`${
-                  view === "both" ? "lg:flex-[3]" : "flex-1"
-                } rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${
-                  darkMode ? "bg-gray-900" : "bg-[#b0bac7]"
-                }`}
-              >
-                <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
-                  <h2 className="text-xl font-bold flex items-center gap-2">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                    </svg>
-                    Surgery
-                    <span className="text-white/80 text-sm font-normal ml-1 hidden sm:inline">แผนกศัลยกรรม</span>
-                  </h2>
-                </div>
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {SURGERY_DEPTS.map((dept) => {
-                    const cases = getCasesForDepartment(dept);
-                    const isSurgery = true; // Inside surgery map block
-                    return (
-                      <div
-                        key={dept}
-                        className="flex flex-col gap-2"
-                        ref={(el) => {
-                          deptRefs.current[dept] = el;
-                        }}
-                      >
-                        <div
-                          className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
-                            darkMode
-                              ? isSurgery ? "bg-[#E55143]/10 border-[#ff7063]/50" : "bg-[#699D5D]/10 border-[#8bc34a]/50"
-                              : "bg-[#012a47] border-[#E55143]/20"
-                          }`}
-                        >
-                          <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                              cases.length > 0
-                                ? "bg-[#E55143]/20 text-[#E55143]"
-                                : "bg-[#699D5D]/20 text-[#699D5D]"
-                            }`}
-                          >
-                            {cases.length}
-                          </span>
-                        </div>
-                        {cases.length === 0 ? (
-                          <div
-                            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border ${
-                              darkMode
-                                ? "bg-emerald-500/5 border-emerald-500/20"
-                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
-                            }`}
-                          >
-                            <svg className={`w-4 h-4 ${darkMode ? "text-emerald-400" : "text-[#699D5D]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400/80" : "text-[#699D5D]"}`}>
-                              ไม่มีเคสค้าง
-                            </p>
-                          </div>
-                        ) : (
-                          cases.map((caseData, index) => (
-                            <ConsultCard
-                              key={caseData.id}
-                              caseData={caseData}
-                              caseId={caseData.id}
-                              departmentName={dept}
-                              darkMode={darkMode}
-                              animationDelay={index * 50}
-                            />
-                          ))
-                        )}
+          {/* Right Panel: Active Consult Details */}
+          <div className={`w-full lg:w-2/3 xl:w-3/4 flex flex-col rounded-xl overflow-y-auto hide-scrollbar glass-panel @container ${darkMode ? "dark" : ""} slide-in flex-1`}>
+            {selectedCase ? (
+              <div className="p-4 sm:p-6 flex flex-col gap-6 animate-fade-in h-full">
+                {/* Active Case Header */}
+                <div className="flex flex-col @md:flex-row justify-between items-start @md:items-center gap-4 flex-shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-md ${selectedCase.isUrgent ? "bg-[#E55143]" : "bg-[#699D5D]"}`}>
+                      <svg className={`w-6 h-6 ${selectedCase.isUrgent ? "text-white" : "text-[#FDFCDF]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <h2 className={`text-2xl font-black tabular-nums ${darkMode ? "text-white" : "text-[#014167]"}`}>HN: {selectedCase.hn}</h2>
+                        {selectedCase.isUrgent && <span className="px-2 py-1 rounded text-xs font-bold bg-[#E55143] text-white shadow-sm">FAST</span>}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            {(view === "ortho" || view === "both") && (
-              <div
-                className={`${
-                  view === "both" ? "lg:flex-[1]" : "flex-1"
-                } rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in ${
-                  darkMode ? "bg-gray-900" : "bg-[#b0bac7]"
-                }`}
-              >
-                <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
-                  <h2 className="text-xl font-bold flex items-center gap-2">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5c-3.5 0-6 2.5-6 6v3c0 1.5-1 2.5-2 3.5-.5.5-.5 1 0 1.5.5.5 1 .5 1.5 0 1.5-1.5 2.5-3 2.5-5v-3c0-2 1.5-3.5 4-3.5s4 1.5 4 3.5v3c0 2 1 3.5 2.5 5 .5.5 1 .5 1.5 0s.5-1 0-1.5c-1-1-2-2-2-3.5v-3c0-3.5-2.5-6-6-6z" />
-                    </svg>
-                    Ortho
-                    <span className="text-[#C7CFDA] text-sm font-normal ml-1 hidden sm:inline">ศัลยกรรมกระดูก</span>
-                  </h2>
-                </div>
-                <div className="p-4">
-                  {ORTHO_DEPTS.map((dept) => {
-                    const cases = getCasesForDepartment(dept);
-                    const isSurgery = false; // Inside ortho map block
-                    return (
-                      <div
-                        key={dept}
-                        className="flex flex-col gap-2 max-w-full"
-                        ref={(el) => {
-                          deptRefs.current[dept] = el;
-                        }}
-                      >
-                        <div
-                          className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
-                            darkMode
-                              ? isSurgery ? "bg-[#E55143]/10 border-[#ff7063]/50" : "bg-[#699D5D]/10 border-[#8bc34a]/50"
-                              : "bg-[#014a3d] border-[#699D5D]/20"
-                          }`}
-                        >
-                          <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                              cases.length > 0
-                                ? "bg-[#E55143]/20 text-[#E55143]"
-                                : "bg-[#699D5D]/20 text-[#699D5D]"
-                            }`}
-                          >
-                            {cases.length}
-                          </span>
-                        </div>
-                        {cases.length === 0 ? (
-                          <div
-                            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border ${
-                              darkMode
-                                ? "bg-emerald-500/5 border-emerald-500/20"
-                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
-                            }`}
-                          >
-                            <svg className={`w-4 h-4 ${darkMode ? "text-emerald-400" : "text-[#699D5D]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400/80" : "text-[#699D5D]"}`}>
-                              ไม่มีเคสค้าง
-                            </p>
-                          </div>
-                        ) : (
-                          <div
-                            className={
-                              view === "ortho"
-                                ? "grid grid-cols-1 md:grid-cols-2 gap-2"
-                                : "flex flex-col gap-2"
-                            }
-                          >
-                            {cases.map((caseData, index) => (
-                              <ConsultCard
-                                key={caseData.id}
-                                caseData={caseData}
-                                caseId={caseData.id}
-                                departmentName={dept}
-                                darkMode={darkMode}
-                                animationDelay={index * 50}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ===========================================================================
-// SUB-COMPONENTS FOR TABLE VIEW
-// ===========================================================================
-
-function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
-  const pendingDepts = Object.keys(caseData.departments).filter(
-    (d) => caseData.departments[d].status === "pending"
-  );
-  if (pendingDepts.length === 0) return null;
-
-  const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
-  const sentTimeFull = caseData.createdAt
-    ? formatTime(caseData.createdAt)
-    : "";
-
-  return (
-    <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white border-[#C7CFDA] shadow-sm"} flex flex-col gap-3`}>
-      {/* Header: HN & Fast Track */}
-      <div className="flex justify-between items-start">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>{caseData.hn}</span>
-            {caseData.isUrgent && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
-            )}
-          </div>
-          {fullName && (
-            <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
-              {fullName}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1 whitespace-nowrap">
-            <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
-              {caseData.room}
-            </span>
-            <RoomTransferButton 
-              consultId={caseData.id}
-              currentRoom={caseData.room}
-              darkMode={darkMode}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* DX Section */}
-      <div className={`text-sm p-3 rounded-md ${darkMode ? "bg-gray-900/50 text-gray-300" : "bg-gray-50 text-[#014167]"}`}>
-        <div className={`text-xs font-semibold mb-1 opacity-70`}>Dx / Problem</div>
-        <div className="whitespace-pre-wrap">{caseData.problem}</div>
-      </div>
-
-      {/* Time Info */}
-      <div className={`flex justify-between items-center text-[10px] font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
-        <div className="flex items-center gap-1">
-           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-           </svg>
-           {sentTimeFull}
-        </div>
-        <PatientTableElapsedTime createdAt={caseData.createdAt || ""} />
-      </div>
-
-      {/* Management Actions */}
-      <div className="flex flex-col gap-2 mt-1">
-        {pendingDepts.map(dept => (
-          <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
-  // กรองเฉพาะแผนกที่สถานะยังรออยู่ (pending) ของเคสนี้
-  const pendingDepts = Object.keys(caseData.departments).filter(
-    (d) => caseData.departments[d].status === "pending"
-  );
-
-  if (pendingDepts.length === 0) return null;
-
-  const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
-  const sentTimeFull = caseData.createdAt
-    ? formatTime(caseData.createdAt)
-    : "";
-
-  return (
-    <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
-      <td className={`p-3 align-top ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-bold">{caseData.hn}</span>
-          {caseData.isUrgent && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#E55143] text-white shadow-sm">FAST</span>
-          )}
-        </div>
-        {fullName && (
-          <div className={`text-sm font-medium mb-2 ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
-            {fullName}
-          </div>
-        )}
-        <div className={`text-[10px] font-medium flex flex-col gap-1 ${darkMode ? "text-gray-500" : "text-[#014167]/60"}`}>
-          <div className="flex items-center gap-1">
-             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-             </svg>
-             {sentTimeFull}
-          </div>
-          <PatientTableElapsedTime createdAt={caseData.createdAt || ""} />
-        </div>
-      </td>
-      <td className="p-3">
-        <div className="flex items-center gap-1 whitespace-nowrap">
-          <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
-            {caseData.room}
-          </span>
-          <RoomTransferButton 
-            consultId={caseData.id}
-            currentRoom={caseData.room}
-            darkMode={darkMode}
-          />
-        </div>
-      </td>
-      <td className={`p-3 text-sm whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-        {caseData.problem}
-      </td>
-      <td className="p-3">
-        <div className="flex flex-col gap-2">
-          {pendingDepts.map(dept => (
-            <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
-          ))}
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Consult; deptName: string; darkMode: boolean }) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-
-  const dept = caseData.departments[deptName];
-  const isAccepted = !!dept?.acceptedAt;
-  const actionStatus = dept?.actionStatus || "";
-  const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
-  const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
-
-  const milestones = getMilestones(dept, formatTime);
-
-  const {
-    isUpdating,
-    handleAccept,
-    handleStatusChange,
-    handleComplete,
-    handleCancel,
-  } = useConsultActions(caseData.id, deptName, caseData.hn);
-
-  const onAccept = async () => {
-    await handleAccept();
-  };
-
-  const onStatusChange = async (newStatus: PostAcceptStatus) => {
-    await handleStatusChange(newStatus);
-  };
-
-  const onComplete = async () => {
-    setShowConfirm(false);
-    await handleComplete();
-  };
-
-  const onCancel = async () => {
-    setShowCancelConfirm(false);
-    await handleCancel();
-  };
-
-  return (
-    <>
-      <div className={`p-1.5 rounded-lg border flex flex-row items-start gap-2 transition-all ${darkMode ? "bg-gray-800 border-gray-700 shadow-sm" : "bg-white border-[#C7CFDA]/50 shadow-sm"}`}>
-        <span className={`font-bold text-xs min-w-[65px] truncate mt-1.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`} title={deptName}>
-          {deptName}
-        </span>
-        
-        <div className="flex-1 flex flex-col gap-1.5 w-full">
-          <div className="flex gap-2 items-stretch h-8">
-            {!isAccepted ? (
-              <>
-                <button
-                  onClick={onAccept}
-                  disabled={isUpdating}
-                  className={`flex-1 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm ${
-                    isUpdating
-                      ? "bg-gray-400 text-white cursor-not-allowed"
-                      : "bg-[#699D5D] text-white hover:bg-[#5a8a4f] hover:shadow-md transform hover:-translate-y-0.5"
-                  }`}
-                >
-                  {isUpdating ? "..." : (
-                    <>
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                      รับเคส
-                    </>
-                  )}
-                </button>
-                <button disabled className={`flex-1 rounded-md text-xs font-bold flex items-center justify-center gap-1 cursor-not-allowed ${
-                  darkMode ? "bg-gray-800 border border-dashed border-gray-600 text-gray-500" : "bg-gray-50 border border-dashed border-gray-300 text-gray-400"
-                }`}>
-                  <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                  ปิดเคส
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="flex-1 relative">
-                  <select
-                    value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
-                    onChange={(e) => onStatusChange(e.target.value as PostAcceptStatus)}
-                    disabled={isUpdating}
-                    className={`w-full h-full rounded-md text-xs font-bold border appearance-none cursor-pointer pl-2 pr-6 focus:outline-none focus:ring-2 focus:ring-amber-500/50 shadow-sm transition-colors ${
-                      actionStatus && actionStatus !== ACCEPT_STATUS
-                        ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-50 text-amber-700 border-amber-400")
-                        : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-white text-[#014167] border-[#C7CFDA]")
-                    }`}
-                  >
-                    <option value="" disabled>สถานะ</option>
-                    {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 ${darkMode ? "text-gray-400" : "text-gray-500"}`}>
-                    <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                      <span className={`text-sm font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/80"}`}>
+                        {[selectedCase.firstName, selectedCase.lastName].filter(Boolean).join(" ")}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm ${darkMode ? "bg-gray-800 text-gray-200 border border-gray-700" : "bg-white text-[#014167] border border-[#C7CFDA]/50"}`}>
+                      {selectedCase.room}
+                    </span>
+                    <RoomTransferButton consultId={selectedCase.id} currentRoom={selectedCase.room} darkMode={darkMode} />
+                    <button onClick={() => handleSelectCase(null)} className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors tap-feedback shadow-sm border ${darkMode ? "bg-gray-800 text-gray-400 hover:text-white border-gray-700" : "bg-white text-gray-500 hover:text-gray-900 border-[#C7CFDA]/50"}`}>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowConfirm(true)}
-                  disabled={isUpdating || !isStatusSelected}
-                  className={`flex-1 rounded-md text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-sm ${
-                    isUpdating || !isStatusSelected
-                      ? darkMode
-                        ? "bg-gray-800 text-gray-500 cursor-not-allowed border border-dashed border-gray-600"
-                        : "bg-gray-50 text-gray-400 cursor-not-allowed border border-dashed border-gray-300"
-                      : "bg-[#E55143] text-white hover:bg-[#d44639] hover:shadow-md transform hover:-translate-y-0.5"
-                  }`}
-                >
-                  {isUpdating ? "..." : (
-                    <>
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                      ปิดเคส
-                    </>
-                  )}
-                </button>
-              </>
-            )}
 
-            <button
-              onClick={() => setShowCancelConfirm(true)}
-              disabled={isUpdating}
-              className={`w-7 h-8 flex items-center justify-center rounded-md transition-colors border shadow-sm ${
-                darkMode 
-                  ? "bg-gray-800 border-gray-700 text-gray-400 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30" 
-                  : "bg-white border-[#C7CFDA]/50 text-gray-400 hover:text-red-500 hover:bg-red-50 hover:border-red-200"
-              }`}
-              title="ยกเลิก"
-              aria-label="ยกเลิกการปรึกษา"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+                {/* Dx Section */}
+                <div className={`p-4 rounded-xl shadow-inner flex-shrink-0 ${darkMode ? "bg-gray-900/80 border border-gray-800" : "bg-gray-50 border border-gray-200"}`}>
+                  <h3 className={`text-xs font-bold mb-1 opacity-70 ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>Diagnosis / Problem</h3>
+                  <p className={`text-base whitespace-pre-wrap font-medium ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>{selectedCase.problem}</p>
+                </div>
 
-            {milestones.length > 0 && (
-              <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
-                {milestones.map((m, idx, arr) => (
-                  <React.Fragment key={`${m.label}-${m.raw}`}>
-                    <div className="flex items-center gap-1 text-[10px]">
-                      {m.icon === "check" ? (
-                        <svg className="w-2.5 h-2.5 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : m.icon === "transfer" ? (
-                        <svg className="w-2.5 h-2.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                      ) : null}
-                      <span className={`font-semibold whitespace-nowrap ${darkMode ? m.colorDark : m.colorLight}`}>{m.label} {m.time}</span>
-                    </div>
-                    {idx < arr.length - 1 && (
-                      <span className={darkMode ? "text-gray-700" : "text-[#014167]/20"}>→</span>
-                    )}
-                  </React.Fragment>
-                ))}
+                {/* Departments Grid */}
+                <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
+                  <h3 className={`text-sm font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>แผนกที่รอรับปรึกษา</h3>
+                  <div className="grid grid-cols-1 @xl:grid-cols-2 gap-4 pb-4">
+                    {Object.keys(selectedCase.departments)
+                      .filter(dept => selectedCase.departments[dept].status === "pending")
+                      .map((dept, idx) => (
+                        <ConsultCard
+                          key={dept}
+                          caseData={selectedCase}
+                          caseId={selectedCase.id}
+                          departmentName={dept}
+                          darkMode={darkMode}
+                          animationDelay={idx * 50}
+                        />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center opacity-50 animate-fade-in p-8 text-center">
+                <svg className={`w-16 h-16 mb-4 ${darkMode ? "text-gray-600" : "text-[#C7CFDA]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3 className={`text-lg font-bold ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>โปรดเลือกเคสจากรายชื่อด้านซ้าย</h3>
+                <p className={`text-sm mt-2 max-w-sm ${darkMode ? "text-gray-500" : "text-[#014167]/60"}`}>เลือกเคสผู้ป่วยเพื่อดูรายละเอียดการปรึกษา ประวัติ และอัปเดตสถานะการรับเคส</p>
               </div>
             )}
+          </div>
         </div>
       </div>
-
-      <ConfirmModal
-        isOpen={showConfirm}
-        title="ปิดเคส"
-        message={`คุณแน่ใจหรือไม่ที่จะปิดเคส HN: ${caseData.hn}${fullName ? ` (${fullName})` : ""} แผนก: ${deptName}?`}
-        confirmText="ยืนยันปิดเคส"
-        cancelText="ยกเลิก"
-        variant="danger"
-        onConfirm={onComplete}
-        onCancel={() => setShowConfirm(false)}
-      />
-
-      <ConfirmModal
-        isOpen={showCancelConfirm}
-        title="ยกเลิกปรึกษา"
-        message={`คุณต้องการยกเลิกการปรึกษา HN: ${caseData.hn}${fullName ? ` (${fullName})` : ""} แผนก: ${deptName}?`}
-        confirmText="ยืนยันยกเลิก"
-        cancelText="ไม่ยกเลิก"
-        variant="warning"
-        onConfirm={onCancel}
-        onCancel={() => setShowCancelConfirm(false)}
-      />
-    </>
+    </div>
   );
 }
