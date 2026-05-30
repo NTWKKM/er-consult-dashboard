@@ -35,7 +35,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const isResusRoom = /\bresus\b/.test(normalizedRoom) && !/\bnon[-\s]?resus\b/.test(normalizedRoom);
   const problem = caseData.problem || "-";
   const isUrgent = caseData.isUrgent || false;
-  const dept = caseData.departments[departmentName];
+  const dept = Reflect.get(caseData.departments, departmentName);
   const isTerminal = dept?.status === "completed" || dept?.status === "cancelled";
   const isAccepted = dept?.acceptedAt;
   const completedTime = dept?.completedAt
@@ -45,7 +45,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     ? new Date(caseData.createdAt).toLocaleString("th-TH")
     : "-";
 
-  const actionStatus = caseData.departments[departmentName]?.actionStatus || "";
+  const actionStatus = Reflect.get(Reflect.get(caseData.departments, departmentName) ?? {}, "actionStatus") || "";
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
 
   const {
@@ -156,9 +156,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               )}
             </button>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 mb-1">
                 <h3 className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
-                  HN: {hn}
+                  {"HN: "}
+                  {hn}
                 </h3>
                 {isUrgent && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-[#E55143] text-white shadow-md">
@@ -173,7 +174,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               )}
               <div className="flex items-center gap-1.5 text-xs flex-wrap">
                 <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{departmentName}</span>
-                <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>→</span>
+                <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>{"→"}</span>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[11px] ${
                   isResusRoom
                     ? darkMode ? "bg-[#E55143]/15 text-[#ff7063] border border-[#E55143]/20" : "bg-[#E55143]/10 text-[#c23a2e] border border-[#E55143]/15"
@@ -190,13 +191,13 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 />
               </div>
               {Object.keys(caseData.departments).filter(
-                (d) => d !== departmentName && caseData.departments[d].status === "pending"
+                (d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending"
               ).length > 0 && (
                 <div className="flex items-center gap-1 text-xs mt-1">
-                  <span className={`font-medium ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>แผนกอื่น:</span>
+                  <span className={`font-medium ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>{"แผนกอื่น:"}</span>
                   <span className={`font-semibold underline ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                     {Object.keys(caseData.departments)
-                      .filter((d) => d !== departmentName && caseData.departments[d].status === "pending")
+                      .filter((d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending")
                       .join(", ")}
                   </span>
                 </div>
