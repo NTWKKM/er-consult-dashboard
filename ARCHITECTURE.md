@@ -27,7 +27,7 @@ To ensure the app feels instantaneous under intermittent hospital Wi-Fi, apply t
 
 ## 5. UI/UX & Language Standards
 - **Professionalism:** All user-facing strings (Labels, Modals, Toasts) MUST use **Professional Medical English** (e.g., "Awaiting Specialty Evaluation").
-- **UI Architecture:** The dashboard utilizes a Split-Screen Spatial UI with Container Queries. For full styling, animation, and glassmorphism standards, refer to `DESIGN.md`. Do not deviate from these rules without explicit prior approval.
+- **UI Architecture:** The dashboard utilizes a globally visible Whiteboard-style layout (Grid/Table Toggle). For full styling, animation, and glassmorphism standards, refer to `DESIGN.md`. Do not deviate from these rules without explicit prior approval.
 
 ## 6. Strict Development Workflow for AI Agent
 - **Thorough Context Review:** BEFORE proposing any changes, you must meticulously analyze the original code of the target file AND review the entire repository context to understand dependencies.
