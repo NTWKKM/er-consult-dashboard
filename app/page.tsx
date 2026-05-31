@@ -574,15 +574,7 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
 
   const confirmToggleUrgency = async () => {
     setShowUrgencyConfirm(false);
-    const toggleFunc = async () => {
-      await handleToggleUrgency(caseData.isUrgent);
-    };
-
-    if (document.startViewTransition) {
-      document.startViewTransition(toggleFunc);
-    } else {
-      await toggleFunc();
-    }
+    await handleToggleUrgency(caseData.isUrgent);
   };
 
   return (
@@ -692,15 +684,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
 
   const confirmToggleUrgency = async () => {
     setShowUrgencyConfirm(false);
-    const toggleFunc = async () => {
-      await handleToggleUrgency(caseData.isUrgent);
-    };
-
-    if (document.startViewTransition) {
-      document.startViewTransition(toggleFunc);
-    } else {
-      await toggleFunc();
-    }
+    await handleToggleUrgency(caseData.isUrgent);
   };
 
   return (

@@ -262,7 +262,7 @@ export default function CompletedPage() {
               const time = data[key] as string | undefined;
               if (!time) return null;
               if (excludeStatus && data.status === excludeStatus) return null;
-              return `${dept}: ${new Date(time).toLocaleString("th-TH")}`;
+              return `${dept}: ${new Date(time).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`;
             })
             .filter(Boolean)
             .join("\n");
@@ -274,7 +274,7 @@ export default function CompletedPage() {
             .map(([dept, data]) => {
               const time = data[key] as string | undefined;
               if (!time || data.status !== "cancelled") return null;
-              return `${dept}: ${new Date(time).toLocaleString("th-TH")}`;
+              return `${dept}: ${new Date(time).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`;
             })
             .filter(Boolean)
             .join("\n");
@@ -287,7 +287,7 @@ export default function CompletedPage() {
           ห้อง: c.room || "-",
           Dx: c.problem || "-",
           แผนก: depts,
-          วันที่ส่ง: c.createdAt ? new Date(c.createdAt).toLocaleString("th-TH") : "-",
+          วันที่ส่ง: c.createdAt ? new Date(c.createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "-",
           รับเคส: getTimesFor("acceptedAt") || "-",
           Admit: getTimesFor("admittedAt") || "-",
           "คืน ER": getTimesFor("returnedAt") || "-",
@@ -628,6 +628,7 @@ export default function CompletedPage() {
                       <td className={`px-4 py-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
                         {caseData.createdAt
                           ? new Date(caseData.createdAt).toLocaleDateString("th-TH", {
+                              timeZone: "Asia/Bangkok",
                               year: "numeric",
                               month: "short",
                               day: "numeric",
@@ -658,25 +659,25 @@ export default function CompletedPage() {
                                 {data.acceptedAt && (
                                   <div>
                                     <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รับ:</span>{" "}
-                                    {new Date(data.acceptedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                                    {new Date(data.acceptedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.admittedAt && (
                                   <div>
                                     <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>Admit:</span>{" "}
-                                    {new Date(data.admittedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                                    {new Date(data.admittedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.returnedAt && (
                                   <div>
                                     <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>คืน ER:</span>{" "}
-                                    {new Date(data.returnedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                                    {new Date(data.returnedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.dischargedAt && (
                                   <div>
                                     <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>D/C:</span>{" "}
-                                    {new Date(data.dischargedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                                    {new Date(data.dischargedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.completedAt && (
@@ -684,7 +685,7 @@ export default function CompletedPage() {
                                     <span className={data.status === "cancelled" ? "text-red-500 font-semibold" : "text-[#E55143] font-semibold"}>
                                       {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
                                     </span>{" "}
-                                    {new Date(data.completedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                                    {new Date(data.completedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                               </div>
@@ -776,25 +777,25 @@ export default function CompletedPage() {
                           {data.acceptedAt && (
                             <div>
                               <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รับ:</span>{" "}
-                              {new Date(data.acceptedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(data.acceptedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.admittedAt && (
                             <div>
                               <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>Admit:</span>{" "}
-                              {new Date(data.admittedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(data.admittedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.returnedAt && (
                             <div>
                               <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>คืน ER:</span>{" "}
-                              {new Date(data.returnedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(data.returnedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.dischargedAt && (
                             <div>
                               <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>D/C:</span>{" "}
-                              {new Date(data.dischargedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(data.dischargedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.completedAt && (
@@ -802,7 +803,7 @@ export default function CompletedPage() {
                               <span className={data.status === "cancelled" ? "text-red-500 font-semibold" : "text-[#E55143] font-semibold"}>
                                 {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
                               </span>{" "}
-                              {new Date(data.completedAt).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(data.completedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                         </div>
@@ -812,6 +813,7 @@ export default function CompletedPage() {
                   <div className={`text-[11px] ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
                     {caseData.createdAt
                       ? new Date(caseData.createdAt).toLocaleDateString("th-TH", {
+                          timeZone: "Asia/Bangkok",
                           year: "numeric",
                           month: "short",
                           day: "numeric",

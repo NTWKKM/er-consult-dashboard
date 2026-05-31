@@ -14,6 +14,8 @@ interface ConsultCardProps {
   caseId: string;
   departmentName: string;
   darkMode?: boolean;
+  // Defensive programming: If you pass onUpdate, ensure it is wrapped in useCallback 
+  // to prevent breaking the React.memo optimization of ConsultCard.
   onUpdate?: () => void;
   animationDelay?: number;
 }
@@ -39,10 +41,10 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const isTerminal = dept?.status === "completed" || dept?.status === "cancelled";
   const isAccepted = dept?.acceptedAt;
   const completedTime = dept?.completedAt
-    ? new Date(dept.completedAt).toLocaleString("th-TH")
+    ? new Date(dept.completedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })
     : null;
   const timeAgo = caseData.createdAt
-    ? new Date(caseData.createdAt).toLocaleString("th-TH")
+    ? new Date(caseData.createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })
     : "-";
 
   const actionStatus = Reflect.get(Reflect.get(caseData.departments, departmentName) ?? {}, "actionStatus") || "";
@@ -65,30 +67,20 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
 
   const confirmToggleUrgency = useCallback(async () => {
     setShowUrgencyConfirm(false);
-    const toggleFunc = async () => {
-      await handleToggleUrgency(isUrgent);
-    };
-
-    if (document.startViewTransition) {
-      document.startViewTransition(toggleFunc);
-    } else {
-      await toggleFunc();
-    }
+    await handleToggleUrgency(isUrgent);
   }, [isUrgent, handleToggleUrgency]);
 
   const handleAcceptCase = useCallback(async () => {
-    if (document.startViewTransition) {
-      document.startViewTransition(async () => {
-        if (await handleAccept()) {
+    const success = await handleAccept();
+    if (success) {
+      if (document.startViewTransition) {
+        document.startViewTransition(() => {
           setFlashSuccess(true);
-          setTimeout(() => setFlashSuccess(false), 700);
-        }
-      });
-    } else {
-      if (await handleAccept()) {
+        });
+      } else {
         setFlashSuccess(true);
-        setTimeout(() => setFlashSuccess(false), 700);
       }
+      setTimeout(() => setFlashSuccess(false), 700);
     }
   }, [handleAccept]);
 

@@ -124,7 +124,7 @@ Medical staff can dynamically toggle the urgency of an active case (Fast Track v
 
 - The client invokes `handleToggleUrgency` (via `useConsultActions`), which calls `updateConsult` with `awaitRemote: false` for an instantaneous Optimistic UI update.
 - This immediately updates the `isUrgent` boolean field on the Firestore document.
-- The UI applies the View Transitions API (`document.startViewTransition`) to ensure the transition between the Fast Track status and normal status is fluid and avoids jarring layout shifts.
+- The UI applies the View Transitions API (`document.startViewTransition`) to ensure the transition between the Fast Track status and normal status is fluid and avoids jarring layout shifts. **CRITICAL:** Network requests (`await handleToggleUrgency`) must resolve BEFORE calling `startViewTransition`. Placing asynchronous calls inside the transition callback causes DOM freezing.
 
 ## 14. Re-consulting Mechanism
 
@@ -150,7 +150,7 @@ When a doctor triggers a Re-consult on a case from `/completed`:
 
 - **Export Trigger:** Triggered in `/completed` using date ranges `exportStartDate` and `exportEndDate`.
 - **Bandwidth Safeguard:** The frontend validates that the date range is at most 31 days. Ranges exceeding 31 days are rejected to protect against daily read quota exhaustions.
-- **Data Generation:** Dynamically imports the `xlsx` package. Map milestones for each department (e.g. Admit time, D/C time, Accept time, Cancel time) and formats them in local Thai Time (`toLocaleString("th-TH")`) before exporting.
+- **Data Generation:** Dynamically imports the `xlsx` package. Map milestones for each department (e.g. Admit time, D/C time, Accept time, Cancel time) and formats them in local Thai Time strictly enforced to the server-side timezone (`toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })`) before exporting to prevent device-specific discrepancies.
 
 ## Core Components
 1. Whiteboard Dashboard (`app/page.tsx`) — Real-time display of active cases — Dependencies: `useConsults`, `useConsultActions`

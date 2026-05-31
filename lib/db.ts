@@ -45,8 +45,13 @@ function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     try {
         const parsed = ConsultSchema.parse({ ...data, id });
         return parsed as Consult;
-    } catch (e) {
-        console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, e);
+    } catch (e: any) {
+        if (e.issues) {
+            const safeIssues = e.issues.map((i: any) => ({ path: i.path, message: i.message }));
+            console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, safeIssues);
+        } else {
+            console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, e.message || "Unknown error");
+        }
         return null; // Ignore malformed documents to prevent app crashes
     }
 }
