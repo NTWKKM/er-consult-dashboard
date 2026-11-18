@@ -152,11 +152,9 @@ export default function CompletedPage() {
   }, [currentPage, searchHN, filterDate]);
 
   const reconsultAttemptRef = useRef(0);
-  const reconsultFailedDraftRef = useRef<{
-    caseId: string;
-    problem: string;
-    selectedDepartments: string[];
-  } | null>(null);
+  const reconsultFailedDraftsRef = useRef<
+    Map<string, { problem: string; selectedDepartments: string[] }>
+  >(new Map());
 
   const handleReConsult = async () => {
     if (!selectedCase || !newProblem.trim()) {
@@ -232,30 +230,27 @@ export default function CompletedPage() {
       setSelectedCase(null);
       addToast({ type: "success", message: "✓ ส่งปรึกษาใหม่สำเร็จ!" });
 
-      // Keep reason and departments while background sync is in flight so they remain available
-      // for reconciliation if the remote write rejects.
+      // Keep reason and departments per case while background sync is in flight so they remain
+      // available for reconciliation if the remote write rejects.
       if (result.backgroundPromise) {
-          reconsultFailedDraftRef.current = {
-              caseId,
+          reconsultFailedDraftsRef.current.set(caseId, {
               problem: submittedProblem,
               selectedDepartments: submittedDepartments,
-          };
+          });
           void result.backgroundPromise.then(
               () => {
-                  if (reconsultFailedDraftRef.current?.caseId === caseId) {
-                      reconsultFailedDraftRef.current = null;
-                  }
+                  reconsultFailedDraftsRef.current.delete(caseId);
                   if (reconsultAttemptRef.current === attemptId) {
                       setNewProblem("");
                       setSelectedDepartments([]);
                   }
               },
               () => {
-                  // Retained in state and reconsultFailedDraftRef; onBackgroundError already notifies user.
+                  // Retained in state and reconsultFailedDraftsRef for this caseId; onBackgroundError notifies user.
               }
           );
       } else {
-          reconsultFailedDraftRef.current = null;
+          reconsultFailedDraftsRef.current.delete(caseId);
           setNewProblem("");
           setSelectedDepartments([]);
       }
@@ -272,9 +267,10 @@ export default function CompletedPage() {
     reconsultPrevFocusedRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSelectedCase(caseData);
-    if (reconsultFailedDraftRef.current?.caseId === caseData.id) {
-      setNewProblem(reconsultFailedDraftRef.current.problem);
-      setSelectedDepartments(reconsultFailedDraftRef.current.selectedDepartments);
+    const savedDraft = reconsultFailedDraftsRef.current.get(caseData.id);
+    if (savedDraft) {
+      setNewProblem(savedDraft.problem);
+      setSelectedDepartments(savedDraft.selectedDepartments);
     } else {
       setNewProblem("");
       setSelectedDepartments(Object.keys(caseData.departments));

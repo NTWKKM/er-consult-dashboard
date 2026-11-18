@@ -628,7 +628,65 @@ describe("RoomTransferButton", () => {
       });
     });
 
-    it("uses scrollable clientWidth excluding scrollbar and intersects nested clipping ancestors", () => {
+    it("uses scrollable clientWidth excluding scrollbar so right-0 wins when menu would overflow into scrollbar", () => {
+      const originalInnerWidth = window.innerWidth;
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 1024,
+      });
+
+      const { container } = render(
+        <div className="overflow-x-auto">
+          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" darkMode={false} />
+        </div>
+      );
+
+      const innerScroll = container.firstElementChild as HTMLElement;
+      const wrapper = innerScroll.firstElementChild as HTMLElement;
+
+      // Scroll container rect spans x=200..510, while clientWidth=290 limits scrollport to x=200..490 (20px scrollbar).
+      // At trigger x=335..365 (menuWidth=160, requiredWidth=168):
+      // - Ignoring clientWidth ([200, 510]) fails right margin (365-168=197 < 200) and picks left-0 (335+168=503 <= 510).
+      // - Using clientWidth ([200, 490]) rejects left-0 (335+160=495 > 490) and picks right-0 (365-160=205 >= 200).
+      vi.spyOn(innerScroll, "getBoundingClientRect").mockImplementation(() => ({
+        x: 200,
+        y: 0,
+        width: 310,
+        height: 400,
+        top: 0,
+        right: 510,
+        bottom: 400,
+        left: 200,
+        toJSON: () => ({}),
+      }));
+      Object.defineProperty(innerScroll, "clientWidth", {
+        configurable: true,
+        value: 290,
+      });
+      vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
+        x: 335,
+        y: 0,
+        width: 30,
+        height: 30,
+        top: 0,
+        right: 365,
+        bottom: 30,
+        left: 335,
+        toJSON: () => ({}),
+      }));
+
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      expect(screen.getByRole("listbox").className).toContain("right-0");
+
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: originalInnerWidth,
+      });
+    });
+
+    it("intersects nested clipping ancestors when outer container narrows effective bounds", () => {
       const originalInnerWidth = window.innerWidth;
       Object.defineProperty(window, "innerWidth", {
         writable: true,
@@ -648,46 +706,45 @@ describe("RoomTransferButton", () => {
       const innerScroll = outerContainer.firstElementChild as HTMLElement;
       const wrapper = innerScroll.firstElementChild as HTMLElement;
 
-      // Outer clips x=100..500; inner scrollable has rect x=200..700 and clientWidth=483 (17px scrollbar).
+      // Inner clips x=232..700 (clientWidth=468); outer narrows right edge to x=100..400 -> shared interval [232, 400].
+      // At trigger x=365..395 (menuWidth=160, requiredWidth=168):
+      // - Ignoring outer ([232, 700]) fails right margin (395-168=227 < 232) and picks left-0 (365+168=533 <= 700).
+      // - Intersecting outer ([232, 400]) rejects left-0 (365+160=525 > 400) and picks right-0 (395-160=235 >= 232).
       vi.spyOn(outerContainer, "getBoundingClientRect").mockImplementation(() => ({
         x: 100,
         y: 0,
-        width: 400,
+        width: 300,
         height: 400,
         top: 0,
-        right: 500,
+        right: 400,
         bottom: 400,
         left: 100,
         toJSON: () => ({}),
       }));
       vi.spyOn(innerScroll, "getBoundingClientRect").mockImplementation(() => ({
-        x: 200,
+        x: 232,
         y: 0,
-        width: 500,
+        width: 468,
         height: 400,
         top: 0,
         right: 700,
         bottom: 400,
-        left: 200,
+        left: 232,
         toJSON: () => ({}),
       }));
       Object.defineProperty(innerScroll, "clientWidth", {
         configurable: true,
-        value: 290, // clientRight = 200 + 290 = 490 < outer right (500)
+        value: 468,
       });
-
-      // Trigger spans x=360..390:
-      // - left-0 (360..520) overflows scrollport right (490)
-      // - right-0 (230..390) fits within intersected [200, 490]
       vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
-        x: 360,
+        x: 365,
         y: 0,
         width: 30,
         height: 30,
         top: 0,
-        right: 390,
+        right: 395,
         bottom: 30,
-        left: 360,
+        left: 365,
         toJSON: () => ({}),
       }));
 
