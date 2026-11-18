@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Host_Grotesk, Noto_Sans_Thai } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import { SettingsProvider } from "./contexts/SettingsContext";
@@ -9,9 +8,10 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import ClientLayoutWrapper from "./components/ClientLayoutWrapper";
 import OfflineIndicator from "./components/OfflineIndicator";
 
-const hostGrotesk = Host_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const hostGrotesk = localFont({
+  src: "./fonts/HostGrotesk-Variable.woff2",
+  weight: "300 800",
+  style: "normal",
   variable: "--font-host",
   display: "swap",
 });
@@ -25,9 +25,10 @@ const atkinsonMono = localFont({
   adjustFontFallback: false,
 });
 
-const notoSansThai = Noto_Sans_Thai({
-  subsets: ["thai"],
-  weight: ["400", "500", "600", "700"],
+const notoSansThai = localFont({
+  src: "./fonts/NotoSansThai-Variable.woff2",
+  weight: "100 900",
+  style: "normal",
   variable: "--font-thai",
   display: "swap",
 });
