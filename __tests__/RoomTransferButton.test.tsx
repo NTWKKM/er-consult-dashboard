@@ -440,4 +440,51 @@ describe("RoomTransferButton", () => {
       expect(screen.getByRole("listbox")).toBeInTheDocument();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Responsive resize alignment
+  // -------------------------------------------------------------------------
+  describe("responsive resize alignment", () => {
+    it("recomputes listbox alignment on window resize while open", () => {
+      const originalInnerWidth = window.innerWidth;
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 800,
+      });
+
+      const { container } = renderButton();
+      const wrapper = container.firstElementChild as HTMLElement;
+      let mockRight = 300;
+      let mockLeft = 270;
+      vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
+        x: mockLeft,
+        y: 0,
+        width: 30,
+        height: 30,
+        top: 0,
+        right: mockRight,
+        bottom: 30,
+        left: mockLeft,
+        toJSON: () => ({}),
+      }));
+
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      expect(screen.getByRole("listbox").className).toContain("right-0");
+
+      // Simulate viewport/anchor shift so right-0 would clip off the left edge
+      mockRight = 50;
+      mockLeft = 20;
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(screen.getByRole("listbox").className).toContain("left-0");
+
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: originalInnerWidth,
+      });
+    });
+  });
 });

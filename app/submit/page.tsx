@@ -392,7 +392,7 @@ export default function SubmitPage() {
                     >
                       {isLoading ? (
                         <>
-                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin motion-reduce:animate-none"></div>
                           <span>กำลังส่ง…</span>
                         </>
                       ) : (
@@ -421,7 +421,7 @@ export default function SubmitPage() {
                     >
                       {isLoading ? (
                         <>
-                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin motion-reduce:animate-none"></div>
                           <span>กำลังส่ง…</span>
                         </>
                       ) : (

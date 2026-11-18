@@ -33,7 +33,7 @@ export default function OfflineIndicator() {
         }`}
       >
         <span className="relative flex h-2.5 w-2.5">
-          {!isOnline && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-bad opacity-75"></span>}
+          {!isOnline && <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-bad opacity-75"></span>}
           <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? "bg-ok" : "bg-bad"}`}></span>
         </span>
         <span className="text-xs font-medium">

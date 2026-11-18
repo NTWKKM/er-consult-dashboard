@@ -45,7 +45,7 @@ export default function Navbar() {
               </svg>
             </div>
             <div className="flex flex-col min-w-0">
-              <div className="text-xs sm:text-base font-medium text-ink flex items-center gap-1 sm:gap-2">
+              <div className="text-xs sm:text-base font-medium text-ink flex items-center gap-1 sm:gap-2 min-w-0">
                 <span className="whitespace-nowrap shrink-0">ER Consult</span>
                 <ConnectionStatus />
               </div>
@@ -62,6 +62,7 @@ export default function Navbar() {
 
             <Link
               href="/"
+              aria-label="หน้าแรก"
               className={`hidden sm:flex ${navLinkBase} ${isHome ? navLinkActive : navLinkInactive}`}
               aria-current={isHome ? "page" : undefined}
             >
@@ -77,6 +78,7 @@ export default function Navbar() {
             </Link>
             <Link
               href="/completed"
+              aria-label="จัดการเคส"
               className={`flex ${navLinkBase} ${isCompleted ? navLinkActive : navLinkInactive}`}
               aria-current={isCompleted ? "page" : undefined}
             >
@@ -103,7 +105,8 @@ export default function Navbar() {
             </Link>
             <Link
               href="/submit"
-              className={`relative bg-accent hover:opacity-90 text-accent-ink font-medium p-1.5 sm:py-2 sm:px-3.5 rounded-[6px] transition-opacity flex items-center justify-center gap-1.5 text-sm whitespace-nowrap ${
+              aria-label="ส่งเคสปรึกษา"
+              className={`relative bg-accent hover:opacity-90 text-accent-ink font-medium p-1.5 sm:py-2 sm:px-3.5 rounded-[6px] transition-opacity flex items-center justify-center gap-1.5 text-sm whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink ${
                 isSubmit ? "ring-2 ring-focus ring-offset-2 ring-offset-paper-2" : ""
               }`}
               aria-current={isSubmit ? "page" : undefined}

@@ -24,21 +24,95 @@ export default function ConfirmModal({
   onCancel,
 }: ConfirmModalProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const prevFocusedRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
   const titleId = useId();
   const descriptionId = useId();
 
   useEffect(() => {
     if (isOpen) {
+      wasOpenRef.current = true;
+      prevFocusedRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
       // Focus the cancel button by default (safer UX for destructive actions)
-      setTimeout(() => cancelRef.current?.focus(), 100);
+      const timer = setTimeout(() => cancelRef.current?.focus(), 100);
+
+      // Mark background siblings inert while modal is open
+      const inertApplied: HTMLElement[] = [];
+      let current: HTMLElement | null = backdropRef.current;
+      while (current && current.parentElement && current !== document.body) {
+        const parent = current.parentElement;
+        Array.from(parent.children).forEach((sibling) => {
+          if (
+            sibling instanceof HTMLElement &&
+            sibling !== current &&
+            !sibling.hasAttribute("inert")
+          ) {
+            sibling.setAttribute("inert", "");
+            inertApplied.push(sibling);
+          }
+        });
+        current = parent;
+      }
+
+      return () => {
+        clearTimeout(timer);
+        inertApplied.forEach((el) => el.removeAttribute("inert"));
+      };
+    }
+
+    if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      const restoreTarget = prevFocusedRef.current;
+      prevFocusedRef.current = null;
+      if (
+        restoreTarget &&
+        restoreTarget.isConnected &&
+        !restoreTarget.hasAttribute("disabled")
+      ) {
+        restoreTarget.focus();
+      } else {
+        const fallback =
+          document.querySelector<HTMLElement>(
+            'main button:not([disabled]), main a[href], main input:not([disabled]), main select:not([disabled]), [role="main"] button:not([disabled]), nav a[href], button:not([disabled])'
+          ) ?? document.body;
+        fallback?.focus();
+      }
     }
   }, [isOpen]);
 
-  // Close on Escape key
+  // Close on Escape key and contain Tab / Shift+Tab focus inside open dialog
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") {
+        onCancel();
+        return;
+      }
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusable = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+          )
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (!active || !dialogRef.current.contains(active)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        } else if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
@@ -80,17 +154,19 @@ export default function ConfirmModal({
 
   return (
     <div
+      ref={backdropRef}
       data-testid="modal-backdrop"
       className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
       onClick={onCancel}
     >
       <div
+        ref={dialogRef}
         data-testid="modal-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="bg-paper-2 border border-rule rounded-[10px] max-w-md w-full p-6 animate-scale-in overscroll-contain"
+        className="bg-paper-2 border border-rule rounded-[10px] max-w-md w-full p-6 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 sm:gap-4 mb-4">

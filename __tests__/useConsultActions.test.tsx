@@ -396,8 +396,8 @@ describe("useConsultActions", () => {
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
       expect(updated).not.toBeNull();
       expect(updated![`departments.Gen Sx.admittedAt`]).toBeDefined();
-      expect(updated![`departments.Gen Sx.returnedAt`]).toBeUndefined();
-      expect(updated![`departments.Gen Sx.dischargedAt`]).toBeUndefined();
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.returnedAt")).toBe(false);
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.dischargedAt")).toBe(false);
     });
 
     it("updater sets returnedAt when status is คืน ER", async () => {
@@ -414,8 +414,8 @@ describe("useConsultActions", () => {
       const snapshot = makePendingConsult();
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
       expect(updated![`departments.Gen Sx.returnedAt`]).toBeDefined();
-      expect(updated![`departments.Gen Sx.admittedAt`]).toBeUndefined();
-      expect(updated![`departments.Gen Sx.dischargedAt`]).toBeUndefined();
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.admittedAt")).toBe(false);
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.dischargedAt")).toBe(false);
     });
 
     it("updater sets dischargedAt when status is D/C", async () => {
@@ -432,8 +432,8 @@ describe("useConsultActions", () => {
       const snapshot = makePendingConsult();
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
       expect(updated![`departments.Gen Sx.dischargedAt`]).toBeDefined();
-      expect(updated![`departments.Gen Sx.admittedAt`]).toBeUndefined();
-      expect(updated![`departments.Gen Sx.returnedAt`]).toBeUndefined();
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.admittedAt")).toBe(false);
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.returnedAt")).toBe(false);
     });
 
     it("preserves previous action timestamps when changing status", async () => {
@@ -459,7 +459,7 @@ describe("useConsultActions", () => {
       });
 
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
-      expect(updated![`departments.Gen Sx.admittedAt`]).toBeUndefined();
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.admittedAt")).toBe(false);
       expect(updated![`departments.Gen Sx.returnedAt`]).toBeDefined();
     });
 

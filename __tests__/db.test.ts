@@ -814,6 +814,89 @@ describe("fetchAllCompletedConsultsForExport", () => {
     expect(mockGetDocs).toHaveBeenCalledTimes(batches + 1);
   });
 
+  it("stops reading at the scan budget when invalid documents keep valid rows below MAX_RESULTS", async () => {
+    const BATCH_SIZE = 1000;
+    const VALID_PER_BATCH = 900;
+    const TOTAL_BATCHES = 55; // 55 * 900 = 49,500 valid rows (< 50,000)
+
+    const mixedBatches = Array.from({ length: TOTAL_BATCHES }, (_, batchIdx) =>
+      Array.from({ length: BATCH_SIZE }, (_, docIdx) => {
+        const id = `b${batchIdx}-c${docIdx}`;
+        if (docIdx < VALID_PER_BATCH) {
+          return makeDocSnapshot(id, makeConsultData(`${batchIdx * BATCH_SIZE + docIdx}`, "2024-01-01T00:00:00.000Z"));
+        }
+        return makeDocSnapshot(id, {
+          firstName: "",
+          lastName: "",
+          room: "NT",
+          problem: "P",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          status: "completed",
+          isUrgent: false,
+          departments: {},
+        });
+      })
+    );
+
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      if (callIndex >= mixedBatches.length) {
+        return makeQuerySnapshot([]);
+      }
+      const docs = mixedBatches[callIndex];
+      callIndex += 1;
+      return makeQuerySnapshot(docs);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.truncated).toBe(true);
+    expect(result.consults).toHaveLength(51 * VALID_PER_BATCH);
+    // 51 full batches (51,000 scanned) + 1 bounded lookahead read = 52 total reads
+    expect(mockGetDocs).toHaveBeenCalledTimes(52);
+  });
+
+  it("does not mark an exhausted query as truncated when lookahead at scan limit is empty", async () => {
+    const BATCH_SIZE = 1000;
+    const VALID_PER_BATCH = 900;
+    const EXACT_LIMIT_BATCHES = 51; // 51 * 1000 = 51,000 scanned, 45,900 valid rows
+
+    const mixedBatches = Array.from({ length: EXACT_LIMIT_BATCHES }, (_, batchIdx) =>
+      Array.from({ length: BATCH_SIZE }, (_, docIdx) => {
+        const id = `b${batchIdx}-c${docIdx}`;
+        if (docIdx < VALID_PER_BATCH) {
+          return makeDocSnapshot(id, makeConsultData(`${batchIdx * BATCH_SIZE + docIdx}`, "2024-01-01T00:00:00.000Z"));
+        }
+        return makeDocSnapshot(id, {
+          firstName: "",
+          lastName: "",
+          room: "NT",
+          problem: "P",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          status: "completed",
+          isUrgent: false,
+          departments: {},
+        });
+      })
+    );
+
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      if (callIndex >= mixedBatches.length) {
+        return makeQuerySnapshot([]);
+      }
+      const docs = mixedBatches[callIndex];
+      callIndex += 1;
+      return makeQuerySnapshot(docs);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.truncated).toBe(false);
+    expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
+    expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
+  });
+
   it("filters out documents without hn in each batch", async () => {
     const validDoc = makeDocSnapshot("c1", makeConsultData("1", "2024-01-01T00:00:00.000Z"));
     const noHnDoc = makeDocSnapshot("c2", {

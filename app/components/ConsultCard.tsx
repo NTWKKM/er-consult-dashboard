@@ -27,6 +27,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
   const [flashSuccess, setFlashSuccess] = useState(false);
+  const [isRoomMenuOpen, setIsRoomMenuOpen] = useState(false);
 
   const hn = caseData.hn || "-";
   const firstName = caseData.firstName || "";
@@ -99,6 +100,8 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     <>
       <div
         className={`transition-colors duration-200 rounded-[10px] p-3 animate-stagger-in relative bg-paper border border-rule border-l-4 ${
+          isRoomMenuOpen ? "z-30" : ""
+        } has-[[role=listbox]]:z-30 ${
           flashSuccess ? "animate-success-flash" : ""
         } ${
           isUrgent ? "border-l-bad" : "border-l-ok"
@@ -146,8 +149,8 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-0.5">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h3 className="text-base font-medium measured text-ink whitespace-nowrap">
+              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                <h3 className="text-base font-medium measured text-ink break-all">
                   {"HN: "}
                   {hn}
                 </h3>
@@ -204,6 +207,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
               consultId={caseId}
               currentRoom={room}
               darkMode={darkMode}
+              onOpenChange={setIsRoomMenuOpen}
               disabled={isUpdating}
             />
           </div>
@@ -336,7 +340,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                       aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                       onChange={(e) => handleStatusChange(e.target.value as PostAcceptStatus)}
-                      className={`w-full h-full px-2 py-1.5 rounded-[6px] font-medium text-xs transition-colors duration-200 appearance-none text-center cursor-pointer border ${
+                      className={`w-full h-full pl-2 pr-7 py-1.5 rounded-[6px] font-medium text-xs transition-colors duration-200 appearance-none text-center cursor-pointer border ${
                         actionStatus && actionStatus !== ACCEPT_STATUS
                           ? "bg-accent-soft text-accent border-accent"
                           : "bg-paper-3 text-ink border-rule-2"

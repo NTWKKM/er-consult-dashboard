@@ -246,11 +246,11 @@ export default function Dashboard() {
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
               {/* Layout Toggle */}
               <div className="flex items-center p-0.5 rounded-[6px] border border-rule bg-paper-3">
-                <button type="button" aria-pressed={displayMode === "card"} onClick={() => handleSetDisplayMode("card")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback whitespace-nowrap ${displayMode === "card" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
+                <button type="button" aria-label="Card" aria-pressed={displayMode === "card"} onClick={() => handleSetDisplayMode("card")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback whitespace-nowrap ${displayMode === "card" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
                   <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                   <span className="hidden sm:inline">{"Card"}</span>
                 </button>
-                <button type="button" aria-pressed={displayMode === "table"} onClick={() => handleSetDisplayMode("table")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback whitespace-nowrap ${displayMode === "table" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
+                <button type="button" aria-label="Table" aria-pressed={displayMode === "table"} onClick={() => handleSetDisplayMode("table")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback whitespace-nowrap ${displayMode === "table" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
                   <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
                   <span className="hidden sm:inline">{"Table"}</span>
                 </button>
@@ -337,7 +337,7 @@ export default function Dashboard() {
           <>
             {/* Desktop Table View */}
             <div className="hidden md:block rounded-[10px] border border-rule bg-paper-2 overflow-hidden transition-colors duration-200 slide-in">
-              <div className="overflow-x-auto relative w-full table-container">
+              <div className="overflow-auto max-h-[70vh] relative w-full table-container">
                 <table className="w-full text-left border-collapse min-w-[900px]">
                   <thead className="sticky top-0 z-10 text-xs bg-paper-3 text-muted border-b border-rule">
                     <tr>
@@ -561,8 +561,8 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
       {/* Header: HN & Fast Track */}
       <div className="flex justify-between items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-lg font-medium measured text-ink whitespace-nowrap">{caseData.hn}</span>
+          <div className="flex items-center gap-2 mb-1 flex-wrap min-w-0">
+            <span className="text-lg font-medium measured text-ink break-all">{caseData.hn}</span>
             <button
               type="button"
               onClick={onToggleUrgencyClick}

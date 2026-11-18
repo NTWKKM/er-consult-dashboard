@@ -11,8 +11,8 @@
 ## 2. Technical Stack Standards
 
 - **Framework:** Next.js (App Router) with TypeScript.
-- **Database:** Firebase Firestore (`er-consult-mnrh-2026`, `asia-southeast1`, real-time sync initialized via `lib/firebase.ts` with secrets from `.env.local`, GitHub Actions Secrets, or Vercel Environment Variables).
-- **CI/CD:** `.github/workflows/ci.yml` runs Vitest unit tests, production Next.js builds, and conditional Firestore Rules & Index deployment using repository secrets.
+- **Database:** Firebase Firestore (`er-consult-mnrh-2026`, `asia-southeast1`, real-time sync initialized via `lib/firebase.ts` with secrets from `.env.local`, GitHub Actions Secrets, or Vercel Environment Variables). This project binding identifies the target database only and is **not** an access control; staff authorization is enforced in `firestore.rules` and Firebase Authentication settings.
+- **CI/CD:** `.github/workflows/ci.yml` runs Vitest unit tests, production Next.js builds, and conditional Firestore Rules, Indexes & Auth provider deployment (`firestore:rules,firestore:indexes,auth`) using repository secrets.
 - **UI:** Tailwind CSS v4 with Hallmark **Console** OKLCH design tokens (`app/tokens.css`) and high-contrast accessible components.
 - **State Management:** React Hooks + Context API for global settings.
 
@@ -49,9 +49,9 @@ To ensure the app feels instantaneous under intermittent hospital Wi-Fi, apply t
 
 ## 7. Security & Patient Privacy (PHI)
 
-- **Authentication:** All access requires Firebase Authentication via `AuthContext`.
+- **Authentication & Staff Authorization:** All access requires Firebase Authentication via `AuthContext`, and `firestore.rules` enforces `isAuthorizedStaff()` (requiring either a `staff == true` custom claim or an administratively provisioned `@mnrh.com` staff account). A signed-in non-staff account alone cannot read or write patient consults. Before connecting patient data on `er-consult-mnrh-2026` or any new project, deploy Auth and Firestore rules (`firebase deploy --only firestore:rules,firestore:indexes,auth`), verify in Firebase Console > Authentication > Settings > User actions that **end-user account creation (self-sign-up) is disabled** and staff accounts are provisioned administratively, and confirm the effective deployed rules (if `auth` config deployment is unavailable in a new project, manually enable the Email/Password provider in Firebase Console > Authentication > Sign-in method).
 - **Secrets Management:** Secrets and config parameters are loaded from `.env.local` for local development. This file contains Firebase Web App API keys and credentials, which must NEVER be committed to the public Git repository. In production, these parameters are managed securely via Vercel Environment Variables.
-- **Infrastructure as Code:** `firestore.rules` must be strictly maintained in the repository to block unauthenticated access.
+- **Infrastructure as Code:** `firestore.rules` must be strictly maintained in the repository to block unauthenticated and non-staff access.
 - **No Sensitive Logging:** Under absolutely NO circumstances should Patient Identifiable Information (PII/PHI) such as Patient Names, Hospital Numbers (HN), or specific medical diagnoses be logged to `console.log()`, external error trackers, or any unencrypted analytics service.
 - **Data Minimization:** Fetch and display only the data strictly necessary for the immediate clinical workflow.
 

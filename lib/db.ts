@@ -262,16 +262,30 @@ export async function fetchAllCompletedConsultsForExport(
             truncated = true;
             break;
         }
-        if (totalScanned >= MAX_RESULTS + BATCH_SIZE) {
-            console.warn(`Export scan limit reached at ${totalScanned} documents`);
-            truncated = true;
-            break;
-        }
 
         // If we fetched fewer than batch size, we've reached the end
         if (snapshot.docs.length < BATCH_SIZE) break;
 
         lastDoc = snapshot.docs[snapshot.docs.length - 1];
+
+        if (totalScanned >= MAX_RESULTS + BATCH_SIZE) {
+            const lookaheadQuery = query(
+                collection(db, COLLECTION_NAME),
+                where("status", "==", "completed"),
+                where("createdAt", ">=", start),
+                where("createdAt", "<", endExclusive),
+                orderBy("createdAt", "desc"),
+                startAfter(lastDoc),
+                limit(1)
+            );
+            const lookaheadSnapshot = await getDocs(lookaheadQuery);
+            totalScanned += lookaheadSnapshot.docs.length;
+            if (!lookaheadSnapshot.empty) {
+                console.warn(`Export scan limit reached at ${totalScanned} documents`);
+                truncated = true;
+            }
+            break;
+        }
     }
 
     return {

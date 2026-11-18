@@ -56,8 +56,6 @@ export function useToast() {
 // — Toast UI —
 
 function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) {
-  if (toasts.length === 0) return null;
-
   return (
     <div className="fixed bottom-20 lg:bottom-6 right-3 left-3 sm:left-auto sm:right-4 z-[100] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none">
       {toasts.map((toast) => (
@@ -121,7 +119,14 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
       }`}
     >
       {iconMap[toast.type]}
-      <span className="flex-1 min-w-0 break-words">{toast.message}</span>
+      <span
+        role={toast.type === "error" || toast.type === "warning" ? "alert" : "status"}
+        aria-live={toast.type === "error" || toast.type === "warning" ? "assertive" : "polite"}
+        aria-atomic="true"
+        className="flex-1 min-w-0 break-words"
+      >
+        {toast.message}
+      </span>
       {toast.undoAction && (
         <button
           type="button"

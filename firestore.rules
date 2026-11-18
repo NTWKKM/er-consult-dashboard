@@ -1,9 +1,25 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAuthorizedStaff() {
+      return request.auth != null
+        && (
+          request.auth.token.get('staff', false) == true
+          || (
+            request.auth.token.email is string
+            && request.auth.token.email.matches('^[^@]+@mnrh\\.com$')
+          )
+        );
+    }
+
+    function isIsoTimestamp(value) {
+      return value is string
+        && value.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$');
+    }
+
     match /consults/{consultId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
+      allow read: if isAuthorizedStaff();
+      allow create: if isAuthorizedStaff()
         && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
         && request.resource.data.id is string
         && request.resource.data.id == consultId
@@ -14,10 +30,11 @@ service cloud.firestore {
         && request.resource.data.room is string
         && request.resource.data.problem is string
         && request.resource.data.createdAt is string
+        && isIsoTimestamp(request.resource.data.createdAt)
         && request.resource.data.status == "pending"
         && request.resource.data.isUrgent is bool
         && request.resource.data.departments is map;
-      allow update: if request.auth != null
+      allow update: if isAuthorizedStaff()
         && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
         && request.resource.data.id is string
         && request.resource.data.id == consultId
@@ -33,6 +50,7 @@ service cloud.firestore {
           || (
             resource.data.status in ["completed", "cancelled"]
             && request.resource.data.status == "pending"
+            && isIsoTimestamp(request.resource.data.createdAt)
           )
         )
         && request.resource.data.status in ["pending", "completed", "cancelled"]

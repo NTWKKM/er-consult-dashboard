@@ -20,17 +20,28 @@ if (typeof window !== "undefined" && !firebaseConfig.apiKey) {
   );
 }
 
-// Initialize Firebase only if it hasn't been initialized already (important for Next.js hot-reloading)
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const hasFirebaseConfig = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 
-// Initialize Firebase Auth
-const auth = getAuth(app);
+// Initialize Firebase only if client config is present and it hasn't been initialized already (important for Next.js hot-reloading)
+const app = hasFirebaseConfig
+  ? getApps().length > 0
+    ? getApp()
+    : initializeApp(firebaseConfig)
+  : null;
+
+// Initialize Firebase Auth only when client configuration is present
+// (allows Next.js production builds in fork PRs without Firebase secrets)
+const auth = app
+  ? getAuth(app)
+  : (null as unknown as ReturnType<typeof getAuth>);
 
 // Initialize Firestore with persistent local cache for offline support.
 // ER environments may have unstable WiFi — this lets doctors view cached data
 // and queued writes auto-sync when connectivity returns.
 let db: Firestore;
-if (typeof window === "undefined") {
+if (!app) {
+  db = null as unknown as Firestore;
+} else if (typeof window === "undefined") {
   // Server-side: skip persistence APIs (IndexedDB not available)
   db = getFirestore(app);
 } else {

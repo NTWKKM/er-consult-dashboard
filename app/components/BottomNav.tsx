@@ -109,7 +109,7 @@ export default function BottomNav() {
           </div>
           <span
             className={`text-xs font-medium transition-colors duration-200 whitespace-nowrap ${
-              isSubmit ? "text-ok" : "text-ok/80 group-hover:text-ok"
+              isSubmit ? "text-ok" : "text-ok group-hover:text-ok"
             }`}
           >
             ส่งเคส

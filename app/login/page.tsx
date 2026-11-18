@@ -25,6 +25,10 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
+      if (!auth) {
+        throw new Error("Firebase Auth is not configured");
+      }
+
       const email = `${passcode}@mnrh.com`;
       // By standard, we use the passcode itself or a fixed pattern as password to reduce friction
       const password = passcode; 

@@ -11,6 +11,7 @@ interface RoomTransferButtonProps {
   darkMode: boolean;
   onTransferStart?: () => void;
   onTransferEnd?: (success?: boolean) => void;
+  onOpenChange?: (isOpen: boolean) => void;
   disabled?: boolean;
 }
 
@@ -20,6 +21,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   darkMode,
   onTransferStart,
   onTransferEnd,
+  onOpenChange,
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -137,6 +139,22 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   }, [focusedIndex]);
 
 
+
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const updateAlign = () => {
+      if (!dropdownRef.current || typeof window === "undefined") return;
+      const rect = dropdownRef.current.getBoundingClientRect();
+      // Listbox is w-40 (160px); anchor left-0 when right-0 would clip past the left viewport edge
+      setAlignLeft(rect.right < 168 && rect.left + 168 <= window.innerWidth);
+    };
+    window.addEventListener("resize", updateAlign);
+    return () => window.removeEventListener("resize", updateAlign);
+  }, [isOpen]);
 
   const handleToggle = useCallback(() => {
     if (!isOpen && dropdownRef.current && typeof window !== "undefined") {

@@ -214,4 +214,86 @@ describe("ConfirmModal", () => {
       expect(screen.queryByText("Confirm Action")).not.toBeInTheDocument();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Focus restoration, fallback, and Tab containment
+  // -------------------------------------------------------------------------
+  describe("focus restoration and containment", () => {
+    it("restores focus to the previously focused opener when closed", () => {
+      const { rerender } = render(
+        <div>
+          <button type="button">Opener</button>
+          <ConfirmModal {...defaultProps({ isOpen: false })} />
+        </div>
+      );
+      const opener = screen.getByRole("button", { name: "Opener" });
+      opener.focus();
+      expect(document.activeElement).toBe(opener);
+
+      rerender(
+        <div>
+          <button type="button">Opener</button>
+          <ConfirmModal {...defaultProps({ isOpen: true })} />
+        </div>
+      );
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(document.activeElement).toBe(screen.getByText("ยกเลิก"));
+
+      rerender(
+        <div>
+          <button type="button">Opener</button>
+          <ConfirmModal {...defaultProps({ isOpen: false })} />
+        </div>
+      );
+      expect(document.activeElement).toBe(opener);
+    });
+
+    it("moves focus to a logical fallback if the opener is removed when closed", () => {
+      const { rerender } = render(
+        <main>
+          <button key="opener" type="button">Opener</button>
+          <button key="fallback" type="button">Fallback Button</button>
+          <ConfirmModal key="modal" {...defaultProps({ isOpen: false })} />
+        </main>
+      );
+      const opener = screen.getByRole("button", { name: "Opener" });
+      opener.focus();
+
+      rerender(
+        <main>
+          <button key="opener" type="button">Opener</button>
+          <button key="fallback" type="button">Fallback Button</button>
+          <ConfirmModal key="modal" {...defaultProps({ isOpen: true })} />
+        </main>
+      );
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+
+      rerender(
+        <main>
+          <button key="fallback" type="button">Fallback Button</button>
+          <ConfirmModal key="modal" {...defaultProps({ isOpen: false })} />
+        </main>
+      );
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Fallback Button" })
+      );
+    });
+
+    it("traps Tab and Shift+Tab focus within the open dialog", () => {
+      render(<ConfirmModal {...defaultProps()} />);
+      const cancelBtn = screen.getByRole("button", { name: "ยกเลิก" });
+      const confirmBtn = screen.getByRole("button", { name: "ยืนยัน" });
+
+      confirmBtn.focus();
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(document.activeElement).toBe(cancelBtn);
+
+      fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(confirmBtn);
+    });
+  });
 });

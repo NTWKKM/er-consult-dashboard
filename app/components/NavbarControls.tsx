@@ -16,7 +16,7 @@ export default function NavbarControls() {
         }`}
         onClick={toggleSound}
         aria-pressed={soundEnabled}
-        aria-label={soundEnabled ? "ปิดเสียงแจ้งเตือน" : "เปิดเสียงแจ้งเตือน"}
+        aria-label="เสียงแจ้งเตือน"
         title={soundEnabled ? "ปิดเสียงแจ้งเตือน" : "เปิดเสียงแจ้งเตือน"}
       >
         {soundEnabled ? (
@@ -38,7 +38,7 @@ export default function NavbarControls() {
         }`}
         onClick={toggleDarkMode}
         aria-pressed={darkMode}
-        aria-label={darkMode ? "โหมดกลางวัน" : "โหมดกลางคืน"}
+        aria-label="โหมดกลางคืน"
         title={darkMode ? "โหมดกลางวัน" : "โหมดกลางคืน"}
       >
         {darkMode ? (

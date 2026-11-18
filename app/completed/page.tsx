@@ -236,16 +236,21 @@ export default function CompletedPage() {
         exportEndDate
       );
       
-      if (exportList.length === 0) {
+      if (truncated) {
+        if (exportList.length === 0) {
+          addToast({
+            type: "warning",
+            message: "ข้อมูลในช่วงเวลานี้มีจำนวนมากเกินขีดจำกัดการค้นหา (Export ได้ 0 รายการ) กรุณาเลือกช่วงวันที่ให้แคบลง",
+          });
+          return;
+        }
+        addToast({
+          type: "warning",
+          message: `ข้อมูลมีจำนวนมากเกินขีดจำกัด ระบบ Export ได้ ${exportList.length.toLocaleString()} รายการ กรุณาเลือกช่วงวันที่ให้แคบลง`,
+        });
+      } else if (exportList.length === 0) {
         addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
         return;
-      }
-
-      if (truncated) {
-        addToast({ 
-          type: "warning", 
-          message: "ข้อมูลมีจำนวนมากเกินไป ระบบจะ Export เฉพาะ 50,000 รายการแรกเท่านั้น" 
-        });
       }
 
       // Dynamic import to reduce bundle size
@@ -354,6 +359,75 @@ export default function CompletedPage() {
     };
   }, [searchHN, filterDate]);
 
+  // Focus management for Re-consult Modal
+  const reconsultModalRef = useRef<HTMLDivElement>(null);
+  const reconsultPrevFocusedRef = useRef<HTMLElement | null>(null);
+  const reconsultWasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (showModal) {
+      reconsultWasOpenRef.current = true;
+      reconsultPrevFocusedRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+      const initialTarget =
+        reconsultModalRef.current?.querySelector<HTMLElement>("#reconsult-problem") ??
+        reconsultModalRef.current?.querySelector<HTMLElement>(
+          'button:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+        );
+      initialTarget?.focus();
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowModal(false);
+          return;
+        }
+        if (e.key === "Tab" && reconsultModalRef.current) {
+          const focusable = Array.from(
+            reconsultModalRef.current.querySelectorAll<HTMLElement>(
+              'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+            )
+          );
+          if (focusable.length === 0) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          const active = document.activeElement as HTMLElement | null;
+
+          if (!active || !reconsultModalRef.current.contains(active)) {
+            e.preventDefault();
+            (e.shiftKey ? last : first).focus();
+          } else if (e.shiftKey && active === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && active === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      };
+
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    }
+
+    if (reconsultWasOpenRef.current) {
+      reconsultWasOpenRef.current = false;
+      const target = reconsultPrevFocusedRef.current;
+      reconsultPrevFocusedRef.current = null;
+      if (target && target.isConnected && !target.hasAttribute("disabled")) {
+        target.focus();
+      } else {
+        document
+          .querySelector<HTMLElement>(
+            '#search-hn, main button:not([disabled]), button:not([disabled])'
+          )
+          ?.focus();
+      }
+    }
+  }, [showModal]);
+
   // Focus management for Export Modal
   const exportModalRef = useRef<HTMLDivElement>(null);
   const prevFocusedElement = useRef<HTMLElement | null>(null);
@@ -428,7 +502,10 @@ export default function CompletedPage() {
 
   return (
     <div className="min-h-[calc(100dvh-3.5rem)] pb-24 lg:pb-8 bg-paper transition-colors duration-200">
-      <div className="max-w-[1800px] mx-auto p-3 sm:p-4">
+      <div
+        className="max-w-[1800px] mx-auto p-3 sm:p-4"
+        inert={showModal || showExportModal ? true : undefined}
+      >
         <div className="mb-5">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -543,7 +620,7 @@ export default function CompletedPage() {
         {/* Desktop table / Mobile cards */}
         <div className="rounded-[10px] overflow-hidden border border-rule bg-paper-2">
           {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto table-container">
+          <div className="hidden md:block overflow-auto max-h-[70vh] table-container">
             <table className="w-full min-w-[960px] border-collapse">
               <thead className="sticky top-0 z-10 text-muted bg-paper-3 border-b border-rule">
                 <tr>
@@ -699,7 +776,7 @@ export default function CompletedPage() {
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="min-w-0 flex-1">
-                      <span className="text-sm font-medium measured text-ink whitespace-nowrap">
+                      <span className="text-sm font-medium measured text-ink break-all">
                         HN: {caseData.hn}
                       </span>
                       {(caseData.firstName || caseData.lastName) && (
@@ -868,7 +945,10 @@ export default function CompletedPage() {
           aria-modal="true"
           aria-labelledby="reconsult-modal-title"
         >
-          <div className="rounded-[10px] max-w-2xl w-full p-5 sm:p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto">
+          <div
+            ref={reconsultModalRef}
+            className="rounded-[10px] max-w-2xl w-full p-5 sm:p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto"
+          >
             <div className="flex items-start justify-between gap-2 mb-4 pb-3 border-b border-rule">
               <h2 id="reconsult-modal-title" className="text-lg font-medium text-ink min-w-0 break-words">
                 Re-consult เคส <span className="measured whitespace-nowrap">HN: {selectedCase?.hn}</span>
@@ -902,6 +982,7 @@ export default function CompletedPage() {
                   <button
                     key={dept}
                     type="button"
+                    aria-pressed={selectedDepartments.includes(dept)}
                     onClick={() => toggleDepartment(dept)}
                     className={`px-3 py-2 rounded-[6px] font-medium text-sm transition-colors duration-200 border whitespace-nowrap ${
                       selectedDepartments.includes(dept)
@@ -982,7 +1063,7 @@ export default function CompletedPage() {
         >
           <div
             ref={exportModalRef}
-            className="rounded-[10px] max-w-md w-full p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain"
+            className="rounded-[10px] max-w-md w-full p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-rule">
               <h2 id="export-modal-title" className="text-lg font-medium text-ink">

@@ -8,7 +8,7 @@ export default function LoadingSpinner({ message = "กำลังโหลด�
   return (
     <div className="min-h-screen flex items-center justify-center bg-paper">
       <div className="text-center">
-        <div className="inline-block w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin mb-4"></div>
+        <div className="inline-block w-12 h-12 border-4 border-accent border-t-transparent rounded-full motion-safe:animate-spin mb-4"></div>
         <p className="text-base text-ink-2 font-medium">{message}</p>
       </div>
     </div>

@@ -40,7 +40,10 @@ jobs:
   deploy-firestore:
     name: Deploy Firestore Rules & Indexes
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.FIREBASE_SERVICE_ACCOUNT != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: deploy-firestore-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -50,12 +53,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Deploy Firestore Rules & Indexes
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'er-consult-mnrh-2026' }}
         run: |
+          if [ -z "$GOOGLE_APPLICATION_CREDENTIALS_JSON" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT is not configured; skipping Firebase deploy."
+            exit 0
+          fi
+
+          git fetch origin main --depth=1
+          LATEST_MAIN_SHA=$(git rev-parse origin/main)
+          if [ "${GITHUB_SHA}" != "${LATEST_MAIN_SHA}" ]; then
+            echo "Commit ${GITHUB_SHA} is stale (latest main is ${LATEST_MAIN_SHA}); skipping Firebase deploy."
+            exit 0
+          fi
+
+          trap 'rm -f "$RUNNER_TEMP/firebase-sa.json"' EXIT
           echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > "$RUNNER_TEMP/firebase-sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
-          npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project "${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'er-consult-mnrh-2026' }}"
-          rm -f "$RUNNER_TEMP/firebase-sa.json"
+          npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes,auth --project "$FIREBASE_PROJECT_ID"
