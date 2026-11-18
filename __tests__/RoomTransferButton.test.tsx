@@ -486,5 +486,50 @@ describe("RoomTransferButton", () => {
         value: originalInnerWidth,
       });
     });
+
+    it("prefers left-0 when only left-0 fits menuWidth without the 8px margin, and keeps right-0 when both fit", () => {
+      const originalInnerWidth = window.innerWidth;
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 200,
+      });
+
+      const { container } = renderButton();
+      const wrapper = container.firstElementChild as HTMLElement;
+      // Fallback menuWidth is 160px (requiredWidth = 168px).
+      // When right = 150 (< 160) and left = 36 (36 + 160 = 196 <= 200, even though 36 + 168 = 204 > 200),
+      // only left-0 fits the menu itself so left-0 should be selected.
+      let mockRight = 150;
+      let mockLeft = 36;
+      vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
+        x: mockLeft,
+        y: 0,
+        width: 114,
+        height: 30,
+        top: 0,
+        right: mockRight,
+        bottom: 30,
+        left: mockLeft,
+        toJSON: () => ({}),
+      }));
+
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      expect(screen.getByRole("listbox").className).toContain("left-0");
+
+      // When both anchors fit menuWidth and requiredWidth, right-0 is kept.
+      mockRight = 180;
+      mockLeft = 10;
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(screen.getByRole("listbox").className).toContain("right-0");
+
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: originalInnerWidth,
+      });
+    });
   });
 });

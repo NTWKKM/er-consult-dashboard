@@ -156,8 +156,19 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       (parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16) * 10;
     const menuWidth = renderedWidth > 0 ? renderedWidth : fallbackWidth;
     const requiredWidth = menuWidth + 8;
-    // Anchor right-0 when the menu fits to the trigger's left/right; otherwise anchor left-0 if it fits.
-    return rect.right < requiredWidth && rect.left + requiredWidth <= window.innerWidth;
+    const fitsRight = rect.right >= menuWidth;
+    const fitsLeft = rect.left + menuWidth <= window.innerWidth;
+
+    if (fitsRight !== fitsLeft) {
+      return fitsLeft;
+    }
+    if (!fitsRight && !fitsLeft) {
+      return false;
+    }
+
+    const fitsRightWithMargin = rect.right >= requiredWidth;
+    const fitsLeftWithMargin = rect.left + requiredWidth <= window.innerWidth;
+    return !fitsRightWithMargin && fitsLeftWithMargin;
   }, []);
 
   useEffect(() => {

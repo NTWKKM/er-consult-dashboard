@@ -93,11 +93,10 @@ describe("ConfirmModal", () => {
       expect(document.activeElement).not.toBe(confirmButton);
     });
 
-    it("does not focus cancel before the 100ms timeout", () => {
+    it("focuses cancel immediately on open without waiting for a timeout", () => {
       render(<ConfirmModal {...defaultProps()} />);
       const cancelButton = screen.getByText("ยกเลิก");
-      // Before timer fires, cancel is not focused
-      expect(document.activeElement).not.toBe(cancelButton);
+      expect(document.activeElement).toBe(cancelButton);
     });
   });
 
@@ -320,6 +319,9 @@ describe("ConfirmModal", () => {
       act(() => {
         vi.advanceTimersByTime(100);
       });
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "ยกเลิก" })
+      );
       expect(appShell).toHaveAttribute("inert");
 
       // Unmount modal while open (e.g. parent card removed by subscription)

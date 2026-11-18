@@ -232,6 +232,8 @@ export async function searchCompletedConsults(
     return [];
 }
 
+export type ExportTruncationReason = "limit_exceeded" | "unconfirmed_completeness";
+
 /**
  * Fetch all completed cases within a date range (for exporting).
  * Uses cursor-based pagination internally to fetch the entire result set.
@@ -239,7 +241,7 @@ export async function searchCompletedConsults(
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
     endDate: string
-): Promise<{ consults: Consult[]; truncated: boolean }> {
+): Promise<{ consults: Consult[]; truncated: boolean; truncationReason?: ExportTruncationReason }> {
     const database = requireDb();
     const { start } = getUtcRangeForLocalDate(startDate);
     const { endExclusive } = getUtcRangeForLocalDate(endDate);
@@ -247,6 +249,7 @@ export async function fetchAllCompletedConsultsForExport(
     let allConsults: Consult[] = [];
     let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
     let truncated = false;
+    let truncationReason: ExportTruncationReason | undefined;
     let totalScanned = 0;
     const BATCH_SIZE = 1000;
     const MAX_RESULTS = 50000;
@@ -265,7 +268,26 @@ export async function fetchAllCompletedConsultsForExport(
             q = query(q, startAfter(lastDoc));
         }
 
-        const snapshot = await getDocs(q);
+        let snapshot;
+        try {
+            snapshot = await getDocs(q);
+        } catch (err) {
+            if (lastDoc !== null) {
+                console.warn("Export batch fetch failed; retaining server-confirmed rows:", err);
+                truncated = true;
+                truncationReason = "unconfirmed_completeness";
+                break;
+            }
+            throw err;
+        }
+
+        if (snapshot.metadata?.fromCache !== false) {
+            console.warn("Export completeness could not be confirmed from cached batch snapshot");
+            truncated = true;
+            truncationReason = "unconfirmed_completeness";
+            break;
+        }
+
         if (snapshot.empty) break;
 
         totalScanned += snapshot.docs.length;
@@ -281,6 +303,7 @@ export async function fetchAllCompletedConsultsForExport(
             allConsults = allConsults.slice(0, MAX_RESULTS);
             console.warn(`Export truncated at ${MAX_RESULTS} results`);
             truncated = true;
+            truncationReason = "limit_exceeded";
             break;
         }
 
@@ -301,17 +324,22 @@ export async function fetchAllCompletedConsultsForExport(
             );
             try {
                 const lookaheadSnapshot = await getDocs(lookaheadQuery);
-                totalScanned += lookaheadSnapshot.docs.length;
-                if (!lookaheadSnapshot.empty) {
-                    console.warn(`Export scan limit reached at ${totalScanned} documents`);
-                    truncated = true;
-                } else if (lookaheadSnapshot.metadata?.fromCache !== false) {
+                if (lookaheadSnapshot.metadata?.fromCache !== false) {
                     console.warn("Export completeness could not be confirmed from cached lookahead snapshot");
                     truncated = true;
+                    truncationReason = "unconfirmed_completeness";
+                } else {
+                    totalScanned += lookaheadSnapshot.docs.length;
+                    if (!lookaheadSnapshot.empty) {
+                        console.warn(`Export scan limit reached at ${totalScanned} documents`);
+                        truncated = true;
+                        truncationReason = "limit_exceeded";
+                    }
                 }
             } catch (err) {
-                console.warn("Export lookahead probe failed; marking export as truncated:", err);
+                console.warn("Export lookahead probe failed; marking export as unconfirmed:", err);
                 truncated = true;
+                truncationReason = "unconfirmed_completeness";
             }
             break;
         }
@@ -319,7 +347,8 @@ export async function fetchAllCompletedConsultsForExport(
 
     return {
         consults: allConsults,
-        truncated
+        truncated,
+        ...(truncationReason ? { truncationReason } : {}),
     };
 }
 

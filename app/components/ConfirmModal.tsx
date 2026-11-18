@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useId, useCallback } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useId, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 interface ConfirmModalProps {
@@ -52,15 +52,15 @@ export default function ConfirmModal({
     fallback?.focus();
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isOpen) return;
 
     wasOpenRef.current = true;
     prevFocusedRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-    // Focus the cancel button by default (safer UX for destructive actions)
-    const timer = setTimeout(() => cancelRef.current?.focus(), 100);
+    // Focus the cancel button immediately by default (safer UX for destructive actions)
+    cancelRef.current?.focus();
 
     // Mark stable app shell (or surrounding sibling containers in isolated tests) inert
     // so existing and newly added background controls remain non-interactive while open.
@@ -87,7 +87,6 @@ export default function ConfirmModal({
     }
 
     return () => {
-      clearTimeout(timer);
       inertApplied.forEach((el) => el.removeAttribute("inert"));
       if (wasOpenRef.current) {
         wasOpenRef.current = false;

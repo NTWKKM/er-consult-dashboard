@@ -35,7 +35,18 @@ export default function CompletedPage() {
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
-  const [exportStatusWarning, setExportStatusWarning] = useState<string | null>(null);
+  const [exportStatusWarning, setExportStatusWarning] = useState<{
+    message: string;
+    tone: "warning" | "error";
+    startDate: string;
+    endDate: string;
+  } | null>(null);
+  const exportSessionIdRef = useRef(0);
+  const isExportModalOpenRef = useRef(false);
+  const exportDatesRef = useRef({ start: "", end: "" });
+  const exportModalRef = useRef<HTMLDivElement>(null);
+  const prevFocusedElement = useRef<HTMLElement | null>(null);
+  const exportWasOpenRef = useRef(false);
 
   const { darkMode } = useSettings();
   const { addToast } = useToast();
@@ -226,42 +237,102 @@ export default function CompletedPage() {
     setShowModal(true);
   };
 
+  const openExportModal = useCallback(() => {
+    prevFocusedElement.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    exportSessionIdRef.current += 1;
+    isExportModalOpenRef.current = true;
+    exportDatesRef.current = { start: "", end: "" };
+    setIsExporting(false);
+    setExportStatusWarning(null);
+    setExportStartDate("");
+    setExportEndDate("");
+    setShowExportModal(true);
+  }, []);
+
+  const closeExportModal = useCallback(() => {
+    exportSessionIdRef.current += 1;
+    isExportModalOpenRef.current = false;
+    setIsExporting(false);
+    setExportStatusWarning(null);
+    setShowExportModal(false);
+  }, []);
+
   const handleExportExcel = async () => {
-    if (!exportStartDate || !exportEndDate) {
-      addToast({ type: "error", message: "กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด" });
+    const sessionId = exportSessionIdRef.current;
+    const submittedStartDate = exportStartDate;
+    const submittedEndDate = exportEndDate;
+
+    const isActiveSession = () =>
+      isExportModalOpenRef.current && exportSessionIdRef.current === sessionId;
+    const isMatchingDates = () =>
+      exportDatesRef.current.start === submittedStartDate &&
+      exportDatesRef.current.end === submittedEndDate;
+    const setDialogFeedback = (message: string, tone: "warning" | "error") => {
+      if (isActiveSession() && isMatchingDates()) {
+        setExportStatusWarning({
+          message,
+          tone,
+          startDate: submittedStartDate,
+          endDate: submittedEndDate,
+        });
+      }
+    };
+
+    setExportStatusWarning(null);
+
+    if (!submittedStartDate || !submittedEndDate) {
+      setDialogFeedback("กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด", "error");
       return;
     }
-    if (exportStartDate > exportEndDate) {
-      addToast({ type: "error", message: "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด" });
+    if (submittedStartDate > submittedEndDate) {
+      setDialogFeedback("วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด", "error");
       return;
     }
     if (!isRangeValid) {
-      addToast({ type: "error", message: "Export date range exceeds the maximum limit of 31 days to preserve system bandwidth." });
+      setDialogFeedback(
+        "Export date range exceeds the maximum limit of 31 days to preserve system bandwidth.",
+        "error"
+      );
       return;
     }
 
-    setExportStatusWarning(null);
     setIsExporting(true);
     try {
-      const { consults: exportList, truncated } = await fetchAllCompletedConsultsForExport(
-        exportStartDate, 
-        exportEndDate
-      );
-      
+      const {
+        consults: exportList,
+        truncated,
+        truncationReason,
+      } = await fetchAllCompletedConsultsForExport(submittedStartDate, submittedEndDate);
+
+      if (!isActiveSession()) return;
+
       if (truncated && exportList.length === 0) {
-        setExportStatusWarning(
-          "ข้อมูลในช่วงเวลานี้มีจำนวนมากเกินขีดจำกัดการค้นหา (Export ได้ 0 รายการ) กรุณาเลือกช่วงวันที่ให้แคบลง"
-        );
+        if (truncationReason === "unconfirmed_completeness") {
+          setDialogFeedback(
+            "ไม่สามารถยืนยันความครบถ้วนของข้อมูลกับเซิร์ฟเวอร์ได้ (Export ได้ 0 รายการ) กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง",
+            "warning"
+          );
+        } else {
+          setDialogFeedback(
+            "ข้อมูลในช่วงเวลานี้มีจำนวนมากเกินขีดจำกัดการค้นหา (Export ได้ 0 รายการ) กรุณาเลือกช่วงวันที่ให้แคบลง",
+            "warning"
+          );
+        }
         return;
       }
 
       if (exportList.length === 0) {
-        addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
+        setDialogFeedback(
+          "ไม่พบข้อมูลในช่วงเวลาที่เลือก กรุณาเลือกช่วงวันที่ใหม่",
+          "error"
+        );
         return;
       }
 
       // Dynamic import to reduce bundle size
       const xlsxModule = await import("xlsx");
+      if (!isActiveSession()) return;
       const XLSX = xlsxModule.default ?? xlsxModule;
 
       const exportData = exportList.map((c) => {
@@ -312,21 +383,33 @@ export default function CompletedPage() {
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Cases");
-      XLSX.writeFile(workbook, `completed-cases-${exportStartDate}-to-${exportEndDate}.xlsx`);
+      if (!isActiveSession()) return;
+      XLSX.writeFile(workbook, `completed-cases-${submittedStartDate}-to-${submittedEndDate}.xlsx`);
+      if (!isActiveSession()) return;
+
       if (truncated) {
-        addToast({
-          type: "warning",
-          message: `ข้อมูลมีจำนวนมากเกินขีดจำกัด ระบบ Export ได้ ${exportList.length.toLocaleString()} รายการ กรุณาเลือกช่วงวันที่ให้แคบลง`,
-        });
+        if (truncationReason === "unconfirmed_completeness") {
+          addToast({
+            type: "warning",
+            message: `Export ได้ ${exportList.length.toLocaleString()} รายการ แต่ไม่สามารถยืนยันความครบถ้วนของข้อมูลทั้งหมดกับเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง`,
+          });
+        } else {
+          addToast({
+            type: "warning",
+            message: `ข้อมูลมีจำนวนมากเกินขีดจำกัด ระบบ Export ได้ ${exportList.length.toLocaleString()} รายการ กรุณาเลือกช่วงวันที่ให้แคบลง`,
+          });
+        }
       } else {
         addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
       }
-      setShowExportModal(false);
+      closeExportModal();
     } catch (error) {
       console.error("Export error:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการ Export" });
+      setDialogFeedback("เกิดข้อผิดพลาดในการ Export กรุณาลองใหม่อีกครั้ง", "error");
     } finally {
-      setIsExporting(false);
+      if (exportSessionIdRef.current === sessionId) {
+        setIsExporting(false);
+      }
     }
   };
 
@@ -373,9 +456,23 @@ export default function CompletedPage() {
     };
   }, [searchHN, filterDate]);
 
+  const isReconsultModalRendered = !loading && !error && showModal;
+  const isExportModalRendered = !loading && !error && showExportModal;
+  const isAnyModalOpen = isReconsultModalRendered || isExportModalRendered;
+
+  useEffect(() => {
+    if (!loading && !error) return;
+    if (showExportModal) {
+      closeExportModal();
+    }
+    if (showModal) {
+      setShowModal(false);
+      setSelectedCase(null);
+    }
+  }, [loading, error, showExportModal, showModal, closeExportModal]);
+
   // Mark shared layout shell (Navbar + main + BottomNav) inert while any modal is open
   useEffect(() => {
-    const isAnyModalOpen = showModal || showExportModal;
     if (!isAnyModalOpen) return;
     const appShell = document.getElementById("app-shell-root");
     if (!appShell || appShell.hasAttribute("inert")) return;
@@ -383,7 +480,7 @@ export default function CompletedPage() {
     return () => {
       appShell.removeAttribute("inert");
     };
-  }, [showModal, showExportModal]);
+  }, [isAnyModalOpen]);
 
   // Focus management for Re-consult Modal
   const reconsultModalRef = useRef<HTMLDivElement>(null);
@@ -463,10 +560,6 @@ export default function CompletedPage() {
   }, [showModal]);
 
   // Focus management for Export Modal
-  const exportModalRef = useRef<HTMLDivElement>(null);
-  const prevFocusedElement = useRef<HTMLElement | null>(null);
-  const exportWasOpenRef = useRef(false);
-
   useEffect(() => {
     if (showExportModal) {
       exportWasOpenRef.current = true;
@@ -485,19 +578,29 @@ export default function CompletedPage() {
 
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === "Escape") {
-          setShowExportModal(false);
+          e.preventDefault();
+          e.stopPropagation();
+          closeExportModal();
+          return;
         }
         if (e.key === "Tab" && exportModalRef.current) {
-          const focusable = exportModalRef.current.querySelectorAll(
-            'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+          const focusable = Array.from(
+            exportModalRef.current.querySelectorAll<HTMLElement>(
+              'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+            )
           );
-          const first = focusable[0] as HTMLElement;
-          const last = focusable[focusable.length - 1] as HTMLElement;
+          if (focusable.length === 0) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          const active = document.activeElement as HTMLElement | null;
 
-          if (e.shiftKey && document.activeElement === first) {
+          if (!active || !exportModalRef.current.contains(active)) {
+            first.focus();
+            e.preventDefault();
+          } else if (e.shiftKey && active === first) {
             last.focus();
             e.preventDefault();
-          } else if (!e.shiftKey && document.activeElement === last) {
+          } else if (!e.shiftKey && active === last) {
             first.focus();
             e.preventDefault();
           }
@@ -513,7 +616,7 @@ export default function CompletedPage() {
         target.focus();
       }
     }
-  }, [showExportModal]);
+  }, [showExportModal, closeExportModal]);
 
   if (loading) {
     return (
@@ -551,7 +654,7 @@ export default function CompletedPage() {
     <div className="min-h-[calc(100dvh-3.5rem)] pb-24 lg:pb-8 bg-paper transition-colors duration-200">
       <div
         className="max-w-[1800px] mx-auto p-3 sm:p-4"
-        inert={showModal || showExportModal ? true : undefined}
+        inert={isAnyModalOpen ? true : undefined}
       >
         <div className="mb-5">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -580,14 +683,7 @@ export default function CompletedPage() {
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  prevFocusedElement.current =
-                    document.activeElement instanceof HTMLElement ? document.activeElement : null;
-                  setExportStatusWarning(null);
-                  setExportStartDate("");
-                  setExportEndDate("");
-                  setShowExportModal(true);
-                }}
+                onClick={openExportModal}
                 className="inline-flex items-center gap-2 bg-ok hover:opacity-90 text-paper px-4 py-2 rounded-[6px] font-medium text-sm transition-opacity tap-feedback whitespace-nowrap"
               >
                 <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1112,6 +1208,12 @@ export default function CompletedPage() {
       {/* Export Options Modal */}
       {showExportModal &&
         (() => {
+          const visibleExportWarning =
+            exportStatusWarning &&
+            exportStatusWarning.startDate === exportStartDate &&
+            exportStatusWarning.endDate === exportEndDate
+              ? exportStatusWarning
+              : null;
           const exportModalNode = (
             <div 
               className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
@@ -1130,7 +1232,7 @@ export default function CompletedPage() {
               <button
                 type="button"
                 aria-label="ปิดหน้าต่าง Export"
-                onClick={() => setShowExportModal(false)}
+                onClick={closeExportModal}
                 className="transition-colors text-muted hover:text-bad"
               >
                 <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1151,16 +1253,6 @@ export default function CompletedPage() {
                   <span>Export range is restricted to a maximum of 31 days to preserve database bandwidth.</span>
                 </div>
               )}
-              <div role="status" aria-live="polite" aria-atomic="true">
-                {exportStatusWarning && (
-                  <div className="bg-accent-soft border border-accent/40 rounded-[6px] p-3 text-xs text-accent font-medium animate-fade-in flex items-start gap-2">
-                    <svg aria-hidden="true" className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>{exportStatusWarning}</span>
-                  </div>
-                )}
-              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="exportStartDate" className="text-xs font-medium mb-1 block text-ink-2">
@@ -1169,12 +1261,15 @@ export default function CompletedPage() {
                   <input
                     id="exportStartDate"
                     type="date"
+                    disabled={isExporting}
                     value={exportStartDate}
                     onChange={(e) => {
+                      const nextStart = e.target.value;
+                      exportDatesRef.current = { ...exportDatesRef.current, start: nextStart };
                       setExportStatusWarning(null);
-                      setExportStartDate(e.target.value);
+                      setExportStartDate(nextStart);
                     }}
-                    className="w-full px-3 py-2 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors"
+                    className="w-full px-3 py-2 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div>
@@ -1184,21 +1279,40 @@ export default function CompletedPage() {
                   <input
                     id="exportEndDate"
                     type="date"
+                    disabled={isExporting}
                     value={exportEndDate}
                     onChange={(e) => {
+                      const nextEnd = e.target.value;
+                      exportDatesRef.current = { ...exportDatesRef.current, end: nextEnd };
                       setExportStatusWarning(null);
-                      setExportEndDate(e.target.value);
+                      setExportEndDate(nextEnd);
                     }}
-                    className="w-full px-3 py-2 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors"
+                    className="w-full px-3 py-2 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
+              </div>
+              <div role="status" aria-live="polite" aria-atomic="true">
+                {visibleExportWarning && (
+                  <div
+                    className={`${
+                      visibleExportWarning.tone === "error"
+                        ? "bg-bad-soft border-bad/40 text-bad"
+                        : "bg-accent-soft border-accent/40 text-accent"
+                    } border rounded-[6px] p-3 text-xs font-medium animate-fade-in flex items-start gap-2`}
+                  >
+                    <svg aria-hidden="true" className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{visibleExportWarning.message}</span>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="flex flex-wrap gap-3 justify-end">
               <button
                 type="button"
-                onClick={() => setShowExportModal(false)}
+                onClick={closeExportModal}
                 className="px-4 py-2 rounded-[6px] font-medium transition-colors text-sm bg-paper-3 text-ink border border-rule-2 hover:border-ink-2 whitespace-nowrap"
               >
                 ยกเลิก

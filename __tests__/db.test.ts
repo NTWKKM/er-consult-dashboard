@@ -857,10 +857,12 @@ describe("fetchAllCompletedConsultsForExport", () => {
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
     expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("limit_exceeded");
     expect(result.consults).toHaveLength(51 * VALID_PER_BATCH);
     // 51 full batches (51,000 scanned) + 1 bounded lookahead read = 52 total reads
     expect(mockGetDocs).toHaveBeenCalledTimes(52);
     expect(mockLimit).toHaveBeenNthCalledWith(52, 1);
+    expect(mockStartAfter).toHaveBeenLastCalledWith(mixedBatches[50][BATCH_SIZE - 1]);
   });
 
   it("marks export as truncated when empty lookahead snapshot comes from cache", async () => {
@@ -900,6 +902,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
     expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
     expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
     expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
   });
@@ -941,8 +944,32 @@ describe("fetchAllCompletedConsultsForExport", () => {
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
     expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
     expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
     expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
+  });
+
+  it("retains server-confirmed rows and stops without advancing cursor when an ordinary batch comes from cache", async () => {
+    const BATCH_SIZE = 1000;
+    const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, "2024-01-01T00:00:00.000Z"))
+    );
+    const cachedSecondBatch = [
+      makeDocSnapshot("cached-1", makeConsultData("9999", "2024-01-02T00:00:00.000Z")),
+    ];
+
+    mockGetDocs
+      .mockResolvedValueOnce(makeQuerySnapshot(firstBatch, false))
+      .mockResolvedValueOnce(makeQuerySnapshot(cachedSecondBatch, true));
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(2);
+    expect(mockStartAfter).toHaveBeenCalledTimes(1);
+    expect(mockStartAfter).toHaveBeenCalledWith(firstBatch[BATCH_SIZE - 1]);
+    expect(result.consults).toHaveLength(BATCH_SIZE);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
   });
 
   it("does not mark an exhausted query as truncated when lookahead at scan limit is empty", async () => {
