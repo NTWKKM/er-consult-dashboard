@@ -7,7 +7,7 @@ const mockFetchCompletedConsultsPage = vi.fn();
 const mockUpdateConsult = vi.fn();
 const mockSearchCompletedConsults = vi.fn();
 const mockFetchAllCompletedConsultsForExport = vi.fn();
-const mockIsPermissionDeniedError = vi.fn(() => false);
+const mockIsPermissionDeniedError = vi.fn<(...args: unknown[]) => boolean>(() => false);
 const mockAddToast = vi.fn();
 
 vi.mock("@/lib/db", () => ({
