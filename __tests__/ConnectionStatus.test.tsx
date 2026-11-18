@@ -58,8 +58,9 @@ describe("ConnectionStatus", () => {
 
     it("shows the green dot indicator", () => {
       const { container } = render(<ConnectionStatus />);
-      const dot = container.querySelector(".bg-ok");
+      const dot = container.querySelector(".relative.inline-flex.rounded-full.h-2.w-2");
       expect(dot).toBeInTheDocument();
+      expect(dot).toHaveClass("bg-ok");
     });
 
     it("shows the ping animation span", () => {

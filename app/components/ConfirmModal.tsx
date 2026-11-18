@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useId } from "react";
+import React, { useEffect, useRef, useId, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -31,58 +32,69 @@ export default function ConfirmModal({
   const titleId = useId();
   const descriptionId = useId();
 
+  const restoreFocus = useCallback(() => {
+    const restoreTarget = prevFocusedRef.current;
+    prevFocusedRef.current = null;
+    if (
+      restoreTarget &&
+      restoreTarget.isConnected &&
+      !restoreTarget.hasAttribute("disabled")
+    ) {
+      restoreTarget.focus();
+      if (document.activeElement === restoreTarget) {
+        return;
+      }
+    }
+    const fallback =
+      document.querySelector<HTMLElement>(
+        'main button:not([disabled]), main a[href], main input:not([disabled]), main select:not([disabled]), [role="main"] button:not([disabled]), nav a[href], button:not([disabled])'
+      ) ?? document.body;
+    fallback?.focus();
+  }, []);
+
   useEffect(() => {
-    if (isOpen) {
-      wasOpenRef.current = true;
-      prevFocusedRef.current =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!isOpen) return;
 
-      // Focus the cancel button by default (safer UX for destructive actions)
-      const timer = setTimeout(() => cancelRef.current?.focus(), 100);
+    wasOpenRef.current = true;
+    prevFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-      // Mark background siblings inert while modal is open
-      const inertApplied: HTMLElement[] = [];
-      let current: HTMLElement | null = backdropRef.current;
-      while (current && current.parentElement && current !== document.body) {
-        const parent = current.parentElement;
-        Array.from(parent.children).forEach((sibling) => {
-          if (
-            sibling instanceof HTMLElement &&
-            sibling !== current &&
-            !sibling.hasAttribute("inert")
-          ) {
-            sibling.setAttribute("inert", "");
-            inertApplied.push(sibling);
-          }
-        });
-        current = parent;
+    // Focus the cancel button by default (safer UX for destructive actions)
+    const timer = setTimeout(() => cancelRef.current?.focus(), 100);
+
+    // Mark stable app shell (or surrounding sibling containers in isolated tests) inert
+    // so existing and newly added background controls remain non-interactive while open.
+    const inertApplied: HTMLElement[] = [];
+    const appShell = document.getElementById("app-shell-root");
+    if (appShell) {
+      if (!appShell.hasAttribute("inert")) {
+        appShell.setAttribute("inert", "");
+        inertApplied.push(appShell);
       }
-
-      return () => {
-        clearTimeout(timer);
-        inertApplied.forEach((el) => el.removeAttribute("inert"));
-      };
+    } else if (backdropRef.current?.parentElement) {
+      Array.from(backdropRef.current.parentElement.children).forEach((sibling) => {
+        if (
+          sibling instanceof HTMLElement &&
+          sibling !== backdropRef.current &&
+          !sibling.hasAttribute("inert") &&
+          !sibling.hasAttribute("aria-live") &&
+          !sibling.querySelector("[aria-live]")
+        ) {
+          sibling.setAttribute("inert", "");
+          inertApplied.push(sibling);
+        }
+      });
     }
 
-    if (wasOpenRef.current) {
-      wasOpenRef.current = false;
-      const restoreTarget = prevFocusedRef.current;
-      prevFocusedRef.current = null;
-      if (
-        restoreTarget &&
-        restoreTarget.isConnected &&
-        !restoreTarget.hasAttribute("disabled")
-      ) {
-        restoreTarget.focus();
-      } else {
-        const fallback =
-          document.querySelector<HTMLElement>(
-            'main button:not([disabled]), main a[href], main input:not([disabled]), main select:not([disabled]), [role="main"] button:not([disabled]), nav a[href], button:not([disabled])'
-          ) ?? document.body;
-        fallback?.focus();
+    return () => {
+      clearTimeout(timer);
+      inertApplied.forEach((el) => el.removeAttribute("inert"));
+      if (wasOpenRef.current) {
+        wasOpenRef.current = false;
+        restoreFocus();
       }
-    }
-  }, [isOpen]);
+    };
+  }, [isOpen, restoreFocus]);
 
   // Close on Escape key and contain Tab / Shift+Tab focus inside open dialog
   useEffect(() => {
@@ -152,7 +164,7 @@ export default function ConfirmModal({
 
   const style = variantStyles[variant];
 
-  return (
+  const modalContent = (
     <div
       ref={backdropRef}
       data-testid="modal-backdrop"
@@ -197,4 +209,8 @@ export default function ConfirmModal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined"
+    ? createPortal(modalContent, document.body)
+    : modalContent;
 }

@@ -295,5 +295,43 @@ describe("ConfirmModal", () => {
       fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
       expect(document.activeElement).toBe(confirmBtn);
     });
+
+    it("restores focus and clears inert when an open ConfirmModal unmounts", () => {
+      const { rerender } = render(
+        <div id="app-shell-root">
+          <main>
+            <button key="opener" type="button">Opener</button>
+            <ConfirmModal key="modal" {...defaultProps({ isOpen: false })} />
+          </main>
+        </div>
+      );
+      const appShell = document.getElementById("app-shell-root")!;
+      const opener = screen.getByRole("button", { name: "Opener" });
+      opener.focus();
+
+      rerender(
+        <div id="app-shell-root">
+          <main>
+            <button key="opener" type="button">Opener</button>
+            <ConfirmModal key="modal" {...defaultProps({ isOpen: true })} />
+          </main>
+        </div>
+      );
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(appShell).toHaveAttribute("inert");
+
+      // Unmount modal while open (e.g. parent card removed by subscription)
+      rerender(
+        <div id="app-shell-root">
+          <main>
+            <button key="opener" type="button">Opener</button>
+          </main>
+        </div>
+      );
+      expect(appShell).not.toHaveAttribute("inert");
+      expect(document.activeElement).toBe(opener);
+    });
   });
 });

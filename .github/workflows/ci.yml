@@ -44,6 +44,7 @@ jobs:
     concurrency:
       group: deploy-firestore-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -75,4 +76,4 @@ jobs:
           trap 'rm -f "$RUNNER_TEMP/firebase-sa.json"' EXIT
           echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > "$RUNNER_TEMP/firebase-sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
-          npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes,auth --project "$FIREBASE_PROJECT_ID"
+          npx -y firebase-tools@15.36.0 deploy --only firestore:rules,firestore:indexes,auth --project "$FIREBASE_PROJECT_ID"

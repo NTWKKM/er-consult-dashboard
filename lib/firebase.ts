@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, type Firestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { getAuth, type Auth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -12,15 +12,15 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
+const hasFirebaseConfig = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+
 // [NEW] Runtime validation for environment variables to prevent silent failures
-if (typeof window !== "undefined" && !firebaseConfig.apiKey) {
+if (typeof window !== "undefined" && !hasFirebaseConfig) {
   console.error(
-    "🚨 Firebase Configuration Error: 'NEXT_PUBLIC_FIREBASE_API_KEY' is missing. " +
+    "🚨 Firebase Configuration Error: 'NEXT_PUBLIC_FIREBASE_API_KEY' or 'NEXT_PUBLIC_FIREBASE_PROJECT_ID' is missing. " +
     "Please check your environment variables (.env.local) to ensure the dashboard functions correctly."
   );
 }
-
-const hasFirebaseConfig = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 
 // Initialize Firebase only if client config is present and it hasn't been initialized already (important for Next.js hot-reloading)
 const app = hasFirebaseConfig
@@ -31,16 +31,14 @@ const app = hasFirebaseConfig
 
 // Initialize Firebase Auth only when client configuration is present
 // (allows Next.js production builds in fork PRs without Firebase secrets)
-const auth = app
-  ? getAuth(app)
-  : (null as unknown as ReturnType<typeof getAuth>);
+const auth: Auth | null = app ? getAuth(app) : null;
 
 // Initialize Firestore with persistent local cache for offline support.
 // ER environments may have unstable WiFi — this lets doctors view cached data
 // and queued writes auto-sync when connectivity returns.
-let db: Firestore;
+let db: Firestore | null;
 if (!app) {
-  db = null as unknown as Firestore;
+  db = null;
 } else if (typeof window === "undefined") {
   // Server-side: skip persistence APIs (IndexedDB not available)
   db = getFirestore(app);

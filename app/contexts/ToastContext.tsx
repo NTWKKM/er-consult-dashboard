@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from "react";
 
 export interface Toast {
   id: string;
@@ -24,6 +24,11 @@ const ToastContext = createContext<ToastContextType>({
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [assertiveAnnouncement, setAssertiveAnnouncement] = useState("");
+  const [politeAnnouncement, setPoliteAnnouncement] = useState("");
+  const pendingAssertiveRef = useRef<string[]>([]);
+  const pendingPoliteRef = useRef<string[]>([]);
+  const flushScheduledRef = useRef(false);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -33,6 +38,28 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (toast: Omit<Toast, "id">) => {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setToasts((prev) => [...prev, { ...toast, id }]);
+
+      if (toast.type === "error" || toast.type === "warning") {
+        pendingAssertiveRef.current.push(toast.message);
+      } else {
+        pendingPoliteRef.current.push(toast.message);
+      }
+
+      if (!flushScheduledRef.current) {
+        flushScheduledRef.current = true;
+        queueMicrotask(() => {
+          flushScheduledRef.current = false;
+          if (pendingAssertiveRef.current.length > 0) {
+            const batch = pendingAssertiveRef.current.splice(0);
+            setAssertiveAnnouncement(batch.join(" "));
+          }
+          if (pendingPoliteRef.current.length > 0) {
+            const batch = pendingPoliteRef.current.splice(0);
+            setPoliteAnnouncement(batch.join(" "));
+          }
+        });
+      }
+
       const duration = toast.duration ?? 4000;
       if (duration > 0) {
         setTimeout(() => removeToast(id), duration);
@@ -44,7 +71,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
       {children}
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ToastContainer
+        toasts={toasts}
+        onRemove={removeToast}
+        assertiveAnnouncement={assertiveAnnouncement}
+        politeAnnouncement={politeAnnouncement}
+      />
     </ToastContext.Provider>
   );
 }
@@ -55,23 +87,24 @@ export function useToast() {
 
 // — Toast UI —
 
-function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) {
-  const alertMessages = toasts
-    .filter((t) => t.type === "error" || t.type === "warning")
-    .map((t) => t.message)
-    .join(" ");
-  const statusMessages = toasts
-    .filter((t) => t.type === "success" || t.type === "info")
-    .map((t) => t.message)
-    .join(" ");
-
+function ToastContainer({
+  toasts,
+  onRemove,
+  assertiveAnnouncement,
+  politeAnnouncement,
+}: {
+  toasts: Toast[];
+  onRemove: (id: string) => void;
+  assertiveAnnouncement: string;
+  politeAnnouncement: string;
+}) {
   return (
     <>
       <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">
-        {alertMessages}
+        {assertiveAnnouncement}
       </div>
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {statusMessages}
+        {politeAnnouncement}
       </div>
       <div className="fixed bottom-20 lg:bottom-6 right-3 left-3 sm:left-auto sm:right-4 z-[100] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none">
         {toasts.map((toast) => (
@@ -129,6 +162,8 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
     ),
   };
 
+  const messageId = `toast-msg-${toast.id}`;
+
   return (
     <div
       className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-[6px] border border-l-4 text-sm font-medium transition-opacity duration-200 ${colorMap[toast.type]} ${
@@ -136,12 +171,13 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
       }`}
     >
       {iconMap[toast.type]}
-      <span aria-hidden="true" className="flex-1 min-w-0 break-words">
+      <span id={messageId} className="flex-1 min-w-0 break-words">
         {toast.message}
       </span>
       {toast.undoAction && (
         <button
           type="button"
+          aria-describedby={messageId}
           onClick={() => {
             toast.undoAction?.();
             handleRemove();

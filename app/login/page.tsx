@@ -24,11 +24,16 @@ export default function LoginPage() {
     setError("");
     setIsLoading(true);
 
-    try {
-      if (!auth) {
-        throw new Error("Firebase Auth is not configured");
-      }
+    if (!auth) {
+      console.error(
+        "Sign-in unavailable: missing NEXT_PUBLIC_FIREBASE_API_KEY or NEXT_PUBLIC_FIREBASE_PROJECT_ID."
+      );
+      setError("ระบบยืนยันตัวตนยังไม่พร้อมใช้งาน กรุณาตรวจสอบการตั้งค่าระบบ");
+      setIsLoading(false);
+      return;
+    }
 
+    try {
       const email = `${passcode}@mnrh.com`;
       // By standard, we use the passcode itself or a fixed pattern as password to reduce friction
       const password = passcode; 

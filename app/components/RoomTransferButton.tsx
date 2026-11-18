@@ -30,6 +30,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const { addToast } = useToast();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const listboxRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const transferInFlightRef = useRef(false);
 
@@ -144,26 +145,37 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     onOpenChange?.(isOpen);
   }, [isOpen, onOpenChange]);
 
+  const computeAlignLeft = useCallback(() => {
+    if (!dropdownRef.current || typeof window === "undefined") return false;
+    const rect = dropdownRef.current.getBoundingClientRect();
+    const renderedWidth =
+      listboxRef.current?.getBoundingClientRect().width ||
+      listboxRef.current?.offsetWidth ||
+      0;
+    const fallbackWidth =
+      (parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16) * 10;
+    const menuWidth = renderedWidth > 0 ? renderedWidth : fallbackWidth;
+    const requiredWidth = menuWidth + 8;
+    // Anchor right-0 when the menu fits to the trigger's left/right; otherwise anchor left-0 if it fits.
+    return rect.right < requiredWidth && rect.left + requiredWidth <= window.innerWidth;
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
     const updateAlign = () => {
-      if (!dropdownRef.current || typeof window === "undefined") return;
-      const rect = dropdownRef.current.getBoundingClientRect();
-      // Listbox is w-40 (160px); anchor left-0 when right-0 would clip past the left viewport edge
-      setAlignLeft(rect.right < 168 && rect.left + 168 <= window.innerWidth);
+      setAlignLeft(computeAlignLeft());
     };
+    updateAlign();
     window.addEventListener("resize", updateAlign);
     return () => window.removeEventListener("resize", updateAlign);
-  }, [isOpen]);
+  }, [isOpen, computeAlignLeft]);
 
   const handleToggle = useCallback(() => {
-    if (!isOpen && dropdownRef.current && typeof window !== "undefined") {
-      const rect = dropdownRef.current.getBoundingClientRect();
-      // Listbox is w-40 (160px); anchor left-0 when right-0 would clip past the left viewport edge
-      setAlignLeft(rect.right < 168 && rect.left + 168 <= window.innerWidth);
+    if (!isOpen) {
+      setAlignLeft(computeAlignLeft());
     }
     setIsOpen((prev) => !prev);
-  }, [isOpen]);
+  }, [isOpen, computeAlignLeft]);
 
   return (
     <div className="relative inline-block ml-1" ref={dropdownRef}>
@@ -195,6 +207,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 
       {isOpen && (
         <div
+          ref={listboxRef}
           role="listbox"
           className={`absolute z-50 mt-1 ${alignLeft ? "left-0" : "right-0"} w-40 rounded-[6px] border border-rule bg-paper-2 overflow-hidden animate-fade-in`}
         >

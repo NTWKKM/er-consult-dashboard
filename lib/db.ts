@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type UpdateData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { ROOMS, RoomName } from "./constants";
@@ -35,6 +35,15 @@ export interface Consult {
 }
 
 const COLLECTION_NAME = "consults";
+
+function requireDb(): Firestore {
+    if (!db) {
+        throw new Error(
+            "Firestore is not configured: missing NEXT_PUBLIC_FIREBASE_API_KEY or NEXT_PUBLIC_FIREBASE_PROJECT_ID."
+        );
+    }
+    return db;
+}
 
 /**
  * Sanitizes and validates raw Firestore data into a Consult object using Zod.
@@ -72,6 +81,15 @@ export function subscribeToConsultsByStatus(
     onError?: (error: Error) => void,
     maxResults?: number
 ): () => void {
+    if (!db) {
+        const configError = new Error(
+            "Firestore is not configured: missing NEXT_PUBLIC_FIREBASE_API_KEY or NEXT_PUBLIC_FIREBASE_PROJECT_ID."
+        );
+        if (onError) onError(configError);
+        else console.error(configError.message);
+        return () => {};
+    }
+
     let q = query(
         collection(db, COLLECTION_NAME),
         where("status", "==", status),
@@ -108,6 +126,7 @@ export async function fetchCompletedConsultsPage(
     pageSize: number,
     lastDoc?: QueryDocumentSnapshot<DocumentData>
 ): Promise<{ consults: Consult[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
+    const database = requireDb();
     // Track both valid consults and their corresponding Firestore docs.
     // validDocs[i] is the snapshot for validConsults[i], enabling correct cursor tracking.
     const validConsults: Consult[] = [];
@@ -118,7 +137,7 @@ export async function fetchCompletedConsultsPage(
     // ดึงข้อมูลไปเรื่อยๆ จนกว่าจะได้เอกสารที่ถูกต้องครบ pageSize + 1 (เพื่อเช็ค hasMore)
     while (validConsults.length <= pageSize) {
         let q = query(
-            collection(db, COLLECTION_NAME),
+            collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             orderBy("createdAt", "desc"),
             limit(pageSize + 1 - validConsults.length)
@@ -163,6 +182,7 @@ export async function searchCompletedConsults(
     searchHN?: string,
     filterDate?: string
 ): Promise<Consult[]> {
+    const database = requireDb();
     let consults: Consult[] = [];
 
     // If searching by HN, query by exact HN with server-side status filter.
@@ -170,7 +190,7 @@ export async function searchCompletedConsults(
     // or additional where clauses beyond status filtering.
     if (searchHN) {
         const q = query(
-            collection(db, COLLECTION_NAME),
+            collection(database, COLLECTION_NAME),
             where("hn", ">=", searchHN),
             where("hn", "<", searchHN + "\uf8ff"),
             where("status", "==", "completed")
@@ -195,7 +215,7 @@ export async function searchCompletedConsults(
         const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
         
         const q = query(
-            collection(db, COLLECTION_NAME),
+            collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             where("createdAt", ">=", start),
             where("createdAt", "<", endExclusive),
@@ -220,6 +240,7 @@ export async function fetchAllCompletedConsultsForExport(
     startDate: string,
     endDate: string
 ): Promise<{ consults: Consult[]; truncated: boolean }> {
+    const database = requireDb();
     const { start } = getUtcRangeForLocalDate(startDate);
     const { endExclusive } = getUtcRangeForLocalDate(endDate);
 
@@ -232,7 +253,7 @@ export async function fetchAllCompletedConsultsForExport(
 
     while (true) {
         let q = query(
-            collection(db, COLLECTION_NAME),
+            collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             where("createdAt", ">=", start),
             where("createdAt", "<", endExclusive),
@@ -270,7 +291,7 @@ export async function fetchAllCompletedConsultsForExport(
 
         if (totalScanned >= MAX_RESULTS + BATCH_SIZE) {
             const lookaheadQuery = query(
-                collection(db, COLLECTION_NAME),
+                collection(database, COLLECTION_NAME),
                 where("status", "==", "completed"),
                 where("createdAt", ">=", start),
                 where("createdAt", "<", endExclusive),
@@ -278,10 +299,18 @@ export async function fetchAllCompletedConsultsForExport(
                 startAfter(lastDoc),
                 limit(1)
             );
-            const lookaheadSnapshot = await getDocs(lookaheadQuery);
-            totalScanned += lookaheadSnapshot.docs.length;
-            if (!lookaheadSnapshot.empty) {
-                console.warn(`Export scan limit reached at ${totalScanned} documents`);
+            try {
+                const lookaheadSnapshot = await getDocs(lookaheadQuery);
+                totalScanned += lookaheadSnapshot.docs.length;
+                if (!lookaheadSnapshot.empty) {
+                    console.warn(`Export scan limit reached at ${totalScanned} documents`);
+                    truncated = true;
+                } else if (lookaheadSnapshot.metadata?.fromCache !== false) {
+                    console.warn("Export completeness could not be confirmed from cached lookahead snapshot");
+                    truncated = true;
+                }
+            } catch (err) {
+                console.warn("Export lookahead probe failed; marking export as truncated:", err);
                 truncated = true;
             }
             break;
@@ -295,7 +324,8 @@ export async function fetchAllCompletedConsultsForExport(
 }
 
 export async function getConsultById(id: string): Promise<Consult | undefined> {
-    const docRef = doc(db, COLLECTION_NAME, id);
+    const database = requireDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
         return mapRawToConsult(docSnap.id, docSnap.data()) ?? undefined;
@@ -304,8 +334,9 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
 }
 
 export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promise<Consult> {
+    const database = requireDb();
     // Generate an ID for the new document using Firestore native doc()
-    const newDocRef = doc(collection(db, COLLECTION_NAME));
+    const newDocRef = doc(collection(database, COLLECTION_NAME));
     const newConsult: Consult = {
         ...data,
         id: newDocRef.id,
@@ -336,7 +367,8 @@ export async function updateConsult(
     updater: ConsultUpdater | ConsultUpdate,
     options: UpdateConsultOptions = {}
 ): Promise<UpdateResults> {
-    const docRef = doc(db, COLLECTION_NAME, id);
+    const database = requireDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
     const { awaitRemote = true } = options;
 
     if (typeof updater === "function") {
@@ -460,7 +492,8 @@ export async function transactionalUpdateConsult(
     updater: ConsultUpdater,
     options: UpdateConsultOptions = {}
 ): Promise<UpdateResults> {
-    const docRef = doc(db, COLLECTION_NAME, id);
+    const database = requireDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
     const { awaitRemote = true } = options;
 
     // For Optimistic UI: read local cache first for immediate UI response
@@ -485,7 +518,7 @@ export async function transactionalUpdateConsult(
     }
 
     const transactionWork = async (): Promise<{ applied: boolean; consult: Consult | null }> => {
-        return runTransaction(db, async (transaction) => {
+        return runTransaction(database, async (transaction) => {
             const docSnap = await transaction.get(docRef);
             if (!docSnap.exists()) {
                 throw new Error(`Consult not found: ${id}`);

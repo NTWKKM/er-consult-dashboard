@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport } from "@/lib/db";
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS } from "@/lib/constants";
@@ -34,6 +35,7 @@ export default function CompletedPage() {
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [exportStatusWarning, setExportStatusWarning] = useState<string | null>(null);
 
   const { darkMode } = useSettings();
   const { addToast } = useToast();
@@ -53,6 +55,7 @@ export default function CompletedPage() {
 
   // Store Firestore cursor snapshots for each page boundary
   const cursorMapRef = useRef<Map<number, QueryDocumentSnapshot<DocumentData>>>(new Map());
+  const historyTableContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch a specific page of completed cases using Firestore cursors
   const fetchPage = useCallback(async (page: number) => {
@@ -65,6 +68,9 @@ export default function CompletedPage() {
       setCases(result.consults);
       setHasMore(result.hasMore);
       setError(null);
+      if (historyTableContainerRef.current) {
+        historyTableContainerRef.current.scrollTop = 0;
+      }
 
       // Store the lastDoc as cursor for the next page
       if (result.lastDoc) {
@@ -88,6 +94,9 @@ export default function CompletedPage() {
   // Navigate to a specific page
   const goToPage = useCallback((page: number) => {
     setCurrentPage(page);
+    if (historyTableContainerRef.current) {
+      historyTableContainerRef.current.scrollTop = 0;
+    }
     void fetchPage(page).catch(() => {});
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [fetchPage]);
@@ -231,6 +240,7 @@ export default function CompletedPage() {
       return;
     }
 
+    setExportStatusWarning(null);
     setIsExporting(true);
     try {
       const { consults: exportList, truncated } = await fetchAllCompletedConsultsForExport(
@@ -238,19 +248,14 @@ export default function CompletedPage() {
         exportEndDate
       );
       
-      if (truncated) {
-        if (exportList.length === 0) {
-          addToast({
-            type: "warning",
-            message: "ข้อมูลในช่วงเวลานี้มีจำนวนมากเกินขีดจำกัดการค้นหา (Export ได้ 0 รายการ) กรุณาเลือกช่วงวันที่ให้แคบลง",
-          });
-          return;
-        }
-        addToast({
-          type: "warning",
-          message: `ข้อมูลมีจำนวนมากเกินขีดจำกัด ระบบ Export ได้ ${exportList.length.toLocaleString()} รายการ กรุณาเลือกช่วงวันที่ให้แคบลง`,
-        });
-      } else if (exportList.length === 0) {
+      if (truncated && exportList.length === 0) {
+        setExportStatusWarning(
+          "ข้อมูลในช่วงเวลานี้มีจำนวนมากเกินขีดจำกัดการค้นหา (Export ได้ 0 รายการ) กรุณาเลือกช่วงวันที่ให้แคบลง"
+        );
+        return;
+      }
+
+      if (exportList.length === 0) {
         addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
         return;
       }
@@ -308,7 +313,14 @@ export default function CompletedPage() {
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Cases");
       XLSX.writeFile(workbook, `completed-cases-${exportStartDate}-to-${exportEndDate}.xlsx`);
-      addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
+      if (truncated) {
+        addToast({
+          type: "warning",
+          message: `ข้อมูลมีจำนวนมากเกินขีดจำกัด ระบบ Export ได้ ${exportList.length.toLocaleString()} รายการ กรุณาเลือกช่วงวันที่ให้แคบลง`,
+        });
+      } else {
+        addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
+      }
       setShowExportModal(false);
     } catch (error) {
       console.error("Export error:", error);
@@ -360,6 +372,18 @@ export default function CompletedPage() {
       clearTimeout(timer);
     };
   }, [searchHN, filterDate]);
+
+  // Mark shared layout shell (Navbar + main + BottomNav) inert while any modal is open
+  useEffect(() => {
+    const isAnyModalOpen = showModal || showExportModal;
+    if (!isAnyModalOpen) return;
+    const appShell = document.getElementById("app-shell-root");
+    if (!appShell || appShell.hasAttribute("inert")) return;
+    appShell.setAttribute("inert", "");
+    return () => {
+      appShell.removeAttribute("inert");
+    };
+  }, [showModal, showExportModal]);
 
   // Focus management for Re-consult Modal
   const reconsultModalRef = useRef<HTMLDivElement>(null);
@@ -423,9 +447,12 @@ export default function CompletedPage() {
       reconsultWasOpenRef.current = false;
       const target = reconsultPrevFocusedRef.current;
       reconsultPrevFocusedRef.current = null;
+      let focused = false;
       if (target && target.isConnected && !target.hasAttribute("disabled")) {
         target.focus();
-      } else {
+        focused = document.activeElement === target;
+      }
+      if (!focused) {
         document
           .querySelector<HTMLElement>(
             '#search-hn, main button:not([disabled]), button:not([disabled])'
@@ -556,6 +583,7 @@ export default function CompletedPage() {
                 onClick={() => {
                   prevFocusedElement.current =
                     document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                  setExportStatusWarning(null);
                   setExportStartDate("");
                   setExportEndDate("");
                   setShowExportModal(true);
@@ -642,7 +670,7 @@ export default function CompletedPage() {
         {/* Desktop table / Mobile cards */}
         <div className="rounded-[10px] overflow-hidden border border-rule bg-paper-2">
           {/* Desktop table */}
-          <div className="hidden md:block overflow-auto max-h-[70vh] table-container">
+          <div ref={historyTableContainerRef} className="hidden md:block overflow-auto max-h-[70vh] table-container">
             <table className="w-full min-w-[960px] border-collapse">
               <thead className="sticky top-0 z-10 text-muted bg-paper-3 border-b border-rule">
                 <tr>
@@ -960,13 +988,15 @@ export default function CompletedPage() {
       </div>
 
       {/* Re-consult Modal */}
-      {showModal && (
-        <div
-          className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="reconsult-modal-title"
-        >
+      {showModal &&
+        (() => {
+          const modalNode = (
+            <div
+              className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reconsult-modal-title"
+            >
           <div
             ref={reconsultModalRef}
             className="rounded-[10px] max-w-2xl w-full p-5 sm:p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto"
@@ -1073,16 +1103,22 @@ export default function CompletedPage() {
             </div>
           </div>
         </div>
-      )}
+          );
+          return typeof document !== "undefined"
+            ? createPortal(modalNode, document.body)
+            : modalNode;
+        })()}
 
       {/* Export Options Modal */}
-      {showExportModal && (
-        <div 
-          className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="export-modal-title"
-        >
+      {showExportModal &&
+        (() => {
+          const exportModalNode = (
+            <div 
+              className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="export-modal-title"
+            >
           <div
             ref={exportModalRef}
             className="rounded-[10px] max-w-md w-full p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto"
@@ -1115,6 +1151,16 @@ export default function CompletedPage() {
                   <span>Export range is restricted to a maximum of 31 days to preserve database bandwidth.</span>
                 </div>
               )}
+              <div role="status" aria-live="polite" aria-atomic="true">
+                {exportStatusWarning && (
+                  <div className="bg-accent-soft border border-accent/40 rounded-[6px] p-3 text-xs text-accent font-medium animate-fade-in flex items-start gap-2">
+                    <svg aria-hidden="true" className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{exportStatusWarning}</span>
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="exportStartDate" className="text-xs font-medium mb-1 block text-ink-2">
@@ -1124,7 +1170,10 @@ export default function CompletedPage() {
                     id="exportStartDate"
                     type="date"
                     value={exportStartDate}
-                    onChange={(e) => setExportStartDate(e.target.value)}
+                    onChange={(e) => {
+                      setExportStatusWarning(null);
+                      setExportStartDate(e.target.value);
+                    }}
                     className="w-full px-3 py-2 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors"
                   />
                 </div>
@@ -1136,7 +1185,10 @@ export default function CompletedPage() {
                     id="exportEndDate"
                     type="date"
                     value={exportEndDate}
-                    onChange={(e) => setExportEndDate(e.target.value)}
+                    onChange={(e) => {
+                      setExportStatusWarning(null);
+                      setExportEndDate(e.target.value);
+                    }}
                     className="w-full px-3 py-2 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors"
                   />
                 </div>
@@ -1179,7 +1231,11 @@ export default function CompletedPage() {
             </div>
           </div>
         </div>
-      )}
+          );
+          return typeof document !== "undefined"
+            ? createPortal(exportModalNode, document.body)
+            : exportModalNode;
+        })()}
     </div>
   );
 }

@@ -88,6 +88,33 @@ export default function Dashboard() {
   const isInitialLoadRef = useRef(true);
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const tableHeadRef = useRef<HTMLTableSectionElement>(null);
+
+  useEffect(() => {
+    if (displayMode !== "table") return;
+    const container = tableContainerRef.current;
+    const thead = tableHeadRef.current;
+    if (!container || !thead) return;
+
+    const syncScrollPadding = () => {
+      const height = thead.getBoundingClientRect().height || thead.offsetHeight;
+      if (height > 0) {
+        container.style.scrollPaddingTop = `${Math.ceil(height)}px`;
+      }
+    };
+
+    syncScrollPadding();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(syncScrollPadding);
+      observer.observe(thead);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", syncScrollPadding);
+    return () => window.removeEventListener("resize", syncScrollPadding);
+  }, [displayMode]);
 
   const scrollToDepartment = (deptName: string) => {
     Reflect.get(deptRefs.current, deptName)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -337,9 +364,13 @@ export default function Dashboard() {
           <>
             {/* Desktop Table View */}
             <div className="hidden md:block rounded-[10px] border border-rule bg-paper-2 overflow-hidden transition-colors duration-200 slide-in">
-              <div className="overflow-auto max-h-[70vh] relative w-full table-container">
+              <div
+                ref={tableContainerRef}
+                style={{ scrollPaddingTop: "2.75rem" }}
+                className="overflow-auto max-h-[70vh] relative w-full table-container"
+              >
                 <table className="w-full text-left border-collapse min-w-[900px]">
-                  <thead className="sticky top-0 z-10 text-xs bg-paper-3 text-muted border-b border-rule">
+                  <thead ref={tableHeadRef} className="sticky top-0 z-10 text-xs bg-paper-3 text-muted border-b border-rule">
                     <tr>
                       <th className="p-3 w-[20%] font-medium">{"Patient"}</th>
                       <th className="p-3 w-[10%] font-medium">{"Room"}</th>

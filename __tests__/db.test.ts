@@ -33,7 +33,7 @@ const {
   mockQuery: vi.fn((...args: unknown[]) => args[0]),
   mockWhere: vi.fn(() => ({ type: "where" })),
   mockOrderBy: vi.fn(() => ({ type: "orderBy" })),
-  mockLimit: vi.fn(() => ({ type: "limit" })),
+  mockLimit: vi.fn((n?: number) => ({ type: "limit", n })),
   mockStartAfter: vi.fn(() => ({ type: "startAfter" })),
 }));
 
@@ -82,10 +82,11 @@ function makeDocSnapshot(id: string, data: Record<string, unknown> | null, exist
   };
 }
 
-function makeQuerySnapshot(docs: ReturnType<typeof makeDocSnapshot>[]) {
+function makeQuerySnapshot(docs: ReturnType<typeof makeDocSnapshot>[], fromCache = false) {
   return {
     empty: docs.length === 0,
     docs,
+    metadata: { fromCache },
     forEach: (cb: (doc: ReturnType<typeof makeDocSnapshot>) => void) => docs.forEach(cb),
   };
 }
@@ -840,6 +841,11 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     let callIndex = 0;
     mockGetDocs.mockImplementation(async () => {
+      if (callIndex === 51) {
+        callIndex += 1;
+        // 52nd call is the bounded limit(1) lookahead probe
+        return makeQuerySnapshot([mixedBatches[51][0]]);
+      }
       if (callIndex >= mixedBatches.length) {
         return makeQuerySnapshot([]);
       }
@@ -854,6 +860,89 @@ describe("fetchAllCompletedConsultsForExport", () => {
     expect(result.consults).toHaveLength(51 * VALID_PER_BATCH);
     // 51 full batches (51,000 scanned) + 1 bounded lookahead read = 52 total reads
     expect(mockGetDocs).toHaveBeenCalledTimes(52);
+    expect(mockLimit).toHaveBeenNthCalledWith(52, 1);
+  });
+
+  it("marks export as truncated when empty lookahead snapshot comes from cache", async () => {
+    const BATCH_SIZE = 1000;
+    const VALID_PER_BATCH = 900;
+    const EXACT_LIMIT_BATCHES = 51;
+
+    const mixedBatches = Array.from({ length: EXACT_LIMIT_BATCHES }, (_, batchIdx) =>
+      Array.from({ length: BATCH_SIZE }, (_, docIdx) => {
+        const id = `b${batchIdx}-c${docIdx}`;
+        if (docIdx < VALID_PER_BATCH) {
+          return makeDocSnapshot(id, makeConsultData(`${batchIdx * BATCH_SIZE + docIdx}`, "2024-01-01T00:00:00.000Z"));
+        }
+        return makeDocSnapshot(id, {
+          firstName: "",
+          lastName: "",
+          room: "NT",
+          problem: "P",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          status: "completed",
+          isUrgent: false,
+          departments: {},
+        });
+      })
+    );
+
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      if (callIndex >= mixedBatches.length) {
+        return makeQuerySnapshot([], true);
+      }
+      const docs = mixedBatches[callIndex];
+      callIndex += 1;
+      return makeQuerySnapshot(docs);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.truncated).toBe(true);
+    expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
+    expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
+  });
+
+  it("preserves collected rows and marks export as truncated if lookahead fails", async () => {
+    const BATCH_SIZE = 1000;
+    const VALID_PER_BATCH = 900;
+    const EXACT_LIMIT_BATCHES = 51;
+
+    const mixedBatches = Array.from({ length: EXACT_LIMIT_BATCHES }, (_, batchIdx) =>
+      Array.from({ length: BATCH_SIZE }, (_, docIdx) => {
+        const id = `b${batchIdx}-c${docIdx}`;
+        if (docIdx < VALID_PER_BATCH) {
+          return makeDocSnapshot(id, makeConsultData(`${batchIdx * BATCH_SIZE + docIdx}`, "2024-01-01T00:00:00.000Z"));
+        }
+        return makeDocSnapshot(id, {
+          firstName: "",
+          lastName: "",
+          room: "NT",
+          problem: "P",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          status: "completed",
+          isUrgent: false,
+          departments: {},
+        });
+      })
+    );
+
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      if (callIndex >= mixedBatches.length) {
+        throw new Error("Lookahead network error");
+      }
+      const docs = mixedBatches[callIndex];
+      callIndex += 1;
+      return makeQuerySnapshot(docs);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.truncated).toBe(true);
+    expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
+    expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
   });
 
   it("does not mark an exhausted query as truncated when lookahead at scan limit is empty", async () => {
