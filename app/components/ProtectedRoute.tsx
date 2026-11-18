@@ -18,8 +18,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   // If loading, show nothing or a spinner
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#014167] dark:bg-gray-900 flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-paper flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-rule border-t-accent rounded-full animate-spin"></div>
       </div>
     );
   }

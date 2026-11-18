@@ -760,7 +760,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
   it("returns all consults and truncated=false when under MAX_RESULTS", async () => {
     const docs = Array.from({ length: 3 }, (_, i) =>
-      makeDocSnapshot(`c${i}`, makeConsultData(`HN${i}`, `2024-01-0${i + 1}T00:00:00.000Z`))
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, `2024-01-0${i + 1}T00:00:00.000Z`))
     );
     mockGetDocs.mockResolvedValue(makeQuerySnapshot(docs));
 
@@ -775,10 +775,10 @@ describe("fetchAllCompletedConsultsForExport", () => {
     // First batch returns BATCH_SIZE (1000) docs
     const BATCH_SIZE = 1000;
     const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
-      makeDocSnapshot(`c${i}`, makeConsultData(`HN${i}`, `2024-01-01T00:00:00.000Z`))
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, `2024-01-01T00:00:00.000Z`))
     );
     const secondBatch = Array.from({ length: 2 }, (_, i) =>
-      makeDocSnapshot(`c${BATCH_SIZE + i}`, makeConsultData(`HN${BATCH_SIZE + i}`, `2024-01-02T00:00:00.000Z`))
+      makeDocSnapshot(`c${BATCH_SIZE + i}`, makeConsultData(`${BATCH_SIZE + i}`, `2024-01-02T00:00:00.000Z`))
     );
 
     mockGetDocs
@@ -800,7 +800,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     // Every batch is full, so it'll keep fetching until MAX_RESULTS reached
     const fullBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
-      makeDocSnapshot(`c${i}`, makeConsultData(`HN${i}`, `2024-01-01T00:00:00.000Z`))
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, `2024-01-01T00:00:00.000Z`))
     );
     // Mock the same batch repeatedly
     mockGetDocs.mockResolvedValue(makeQuerySnapshot(fullBatch));
@@ -815,7 +815,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
   });
 
   it("filters out documents without hn in each batch", async () => {
-    const validDoc = makeDocSnapshot("c1", makeConsultData("HN1", "2024-01-01T00:00:00.000Z"));
+    const validDoc = makeDocSnapshot("c1", makeConsultData("1", "2024-01-01T00:00:00.000Z"));
     const noHnDoc = makeDocSnapshot("c2", {
       firstName: "",
       lastName: "",
@@ -831,7 +831,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
     expect(result.consults).toHaveLength(1);
-    expect(result.consults[0].hn).toBe("HN1");
+    expect(result.consults[0].hn).toBe("1");
   });
 });
 

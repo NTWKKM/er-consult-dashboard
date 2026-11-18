@@ -226,6 +226,7 @@ export async function fetchAllCompletedConsultsForExport(
     let allConsults: Consult[] = [];
     let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
     let truncated = false;
+    let totalScanned = 0;
     const BATCH_SIZE = 1000;
     const MAX_RESULTS = 50000;
 
@@ -246,16 +247,23 @@ export async function fetchAllCompletedConsultsForExport(
         const snapshot = await getDocs(q);
         if (snapshot.empty) break;
 
+        totalScanned += snapshot.docs.length;
+
         const batch = snapshot.docs
             .map(mapDocToConsult)
             .filter((c): c is Consult => c !== null && Boolean(c.hn));
 
         allConsults.push(...batch);
 
-        // Safety limit to prevent unbounded memory growth
+        // Safety limit to prevent unbounded memory growth or infinite scans over invalid docs
         if (allConsults.length > MAX_RESULTS) {
             allConsults = allConsults.slice(0, MAX_RESULTS);
             console.warn(`Export truncated at ${MAX_RESULTS} results`);
+            truncated = true;
+            break;
+        }
+        if (totalScanned >= MAX_RESULTS + BATCH_SIZE) {
+            console.warn(`Export scan limit reached at ${totalScanned} documents`);
             truncated = true;
             break;
         }

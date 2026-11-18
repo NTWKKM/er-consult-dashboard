@@ -84,7 +84,6 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
           message: "ไม่สามารถย้ายห้องได้: เคสนี้ถูกอัปเดตหรือปิดไปแล้ว", 
           type: "error" 
         });
-        onTransferEnd?.(false);
       }
     } catch (error) {
       console.error("Transfer error:", error);
@@ -141,20 +140,21 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   return (
     <div className="relative inline-block ml-1" ref={dropdownRef}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         disabled={isTransferring || disabled}
-        title={disabled ? "กำลังดำเนินการงานอื่นอยู่..." : "เปลี่ยนห้อง"}
+        title={disabled ? "กำลังดำเนินการงานอื่นอยู่…" : "เปลี่ยนห้อง"}
         aria-label="เปลี่ยนห้อง"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        className={`p-1 rounded-full transition-all duration-200 ${
-          isTransferring ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-500/10 hover:rotate-180"
-        } ${darkMode ? "text-blue-400" : "text-blue-600"}`}
+        className={`p-1 rounded-[6px] transition-colors duration-200 text-cool ${
+          isTransferring ? "opacity-50 cursor-not-allowed" : "hover:bg-cool-soft"
+        }`}
       >
         {isTransferring ? (
           <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
         ) : (
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -168,43 +168,35 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       {isOpen && (
         <div
           role="listbox"
-          className={`absolute z-50 mt-1 right-0 w-40 rounded-lg shadow-xl border overflow-hidden animate-in fade-in zoom-in duration-200 ${
-            darkMode ? "bg-gray-800 border-gray-700 shadow-black/40" : "bg-white border-gray-200 shadow-gray-300/50"
-          }`}
+          className="absolute z-50 mt-1 right-0 w-40 rounded-[6px] border border-rule bg-paper-2 overflow-hidden animate-fade-in"
         >
-          <div className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider border-b ${
-            darkMode ? "text-gray-500 border-gray-700 bg-gray-900/50" : "text-gray-400 border-gray-100 bg-gray-50"
-          }`}>
+          <div className="px-3 py-2 text-xs font-medium border-b border-rule bg-paper-3 text-muted">
             ย้ายผู้ป่วยไปยัง...
           </div>
           <div className="max-h-48 overflow-y-auto">
             {sortedRooms.map((room, index) => (
               <button
                 key={room}
+                type="button"
                 ref={(el) => { itemRefs.current[index] = el; }}
                 onClick={() => handleTransfer(room)}
                 disabled={isTransferring || disabled}
                 tabIndex={focusedIndex === index ? 0 : -1}
                 role="option"
                 aria-selected={room === currentRoom}
-                className={`w-full text-left px-3 py-2 text-xs font-semibold transition-colors flex items-center justify-between outline-none group ${
-                  isTransferring || disabled ? "opacity-50 cursor-not-allowed" :
-                  room === currentRoom
-                    ? darkMode
-                      ? "bg-blue-900/40 text-blue-400"
-                      : "bg-blue-50 text-blue-700"
-                    : focusedIndex === index
-                    ? darkMode
-                      ? "bg-gray-700 text-white"
-                      : "bg-gray-100 text-[#014167]"
-                    : darkMode
-                    ? "text-gray-300 hover:bg-gray-700"
-                    : "text-gray-700 hover:bg-gray-50"
+                className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center justify-between outline-none ${
+                  isTransferring || disabled
+                    ? "opacity-50 cursor-not-allowed"
+                    : room === currentRoom
+                      ? "bg-cool-soft text-cool"
+                      : focusedIndex === index
+                        ? "bg-paper-3 text-ink"
+                        : "text-ink-2 hover:bg-paper-3"
                 }`}
               >
                 <span>{room}</span>
                 {room === currentRoom && (
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <svg aria-hidden="true" className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 )}

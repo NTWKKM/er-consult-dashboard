@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "er-consult-db-v2"
-  }
+    "default": "er-consult-mnrh-2026"
+  },
+  "targets": {},
+  "etags": {}
 }

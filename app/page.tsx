@@ -221,58 +221,54 @@ export default function Dashboard() {
   }
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : ""}`}>
+    <div className="min-h-screen bg-paper transition-colors duration-200">
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         {/* --- Toolbar --- */}
         <div className="mb-4 slide-in w-full flex justify-center">
-          <div className={`inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl shadow-sm border transition-colors glass-panel ${
-            darkMode ? "dark" : ""
-          }`}>
+          <div className="inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-[10px] border border-rule bg-paper-2 transition-colors">
             {/* Pending Count */}
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
-              darkMode ? "bg-gray-900/60" : "bg-[#014167]/5"
-            }`}>
-              <svg className="w-4 h-4 text-[#E55143] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span className={`text-xs font-bold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{"รอปรึกษา"}</span>
-              <span className={`text-base font-extrabold tabular-nums min-w-[28px] text-center px-2 py-0.5 rounded-full ${
-                totalPendingCases > 0 
-                  ? "bg-[#E55143] text-white shadow-sm" 
-                  : darkMode ? "bg-gray-700 text-gray-400" : "bg-gray-200 text-gray-400"
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-[6px] bg-paper-3 border border-rule">
+              <svg aria-hidden="true" className="w-4 h-4 text-bad shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span className="text-xs font-medium text-ink-2">{"รอปรึกษา"}</span>
+              <span className={`text-sm font-medium measured min-w-[28px] text-center px-2 py-0.5 rounded-[4px] ${
+                totalPendingCases > 0
+                  ? "bg-bad text-paper"
+                  : "bg-paper-2 text-muted border border-rule"
               }`}>
                 {totalPendingCases}
               </span>
             </div>
 
             {/* Divider */}
-            <div className={`hidden sm:block w-px h-7 ${darkMode ? "bg-gray-700" : "bg-[#C7CFDA]/40"}`} />
+            <div className="hidden sm:block w-px h-7 bg-rule" />
 
             {/* Control Groups */}
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
               {/* Layout Toggle */}
-              <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                <button aria-pressed={displayMode === "card"} onClick={() => handleSetDisplayMode("card")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 tap-feedback ${displayMode === "card" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+              <div className="flex items-center p-0.5 rounded-[6px] border border-rule bg-paper-3">
+                <button type="button" aria-pressed={displayMode === "card"} onClick={() => handleSetDisplayMode("card")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback ${displayMode === "card" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
+                  <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                   <span className="hidden sm:inline">{"Card"}</span>
                 </button>
-                <button aria-pressed={displayMode === "table"} onClick={() => handleSetDisplayMode("table")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs flex items-center gap-1 tap-feedback ${displayMode === "table" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                <button type="button" aria-pressed={displayMode === "table"} onClick={() => handleSetDisplayMode("table")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback ${displayMode === "table" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
+                  <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
                   <span className="hidden sm:inline">{"Table"}</span>
                 </button>
               </div>
 
               {/* Room Filter */}
-              <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                <button aria-pressed={roomFilter === "all"} onClick={() => handleSetRoomFilter("all")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${roomFilter === "all" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"All"}</button>
-                <button aria-pressed={roomFilter === "resus"} onClick={() => handleSetRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${roomFilter === "resus" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Resus"}</button>
-                <button aria-pressed={roomFilter === "non-resus"} onClick={() => handleSetRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${roomFilter === "non-resus" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Non-Resus"}</button>
+              <div className="flex items-center p-0.5 rounded-[6px] border border-rule bg-paper-3">
+                <button type="button" aria-pressed={roomFilter === "all"} onClick={() => handleSetRoomFilter("all")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${roomFilter === "all" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>{"All"}</button>
+                <button type="button" aria-pressed={roomFilter === "resus"} onClick={() => handleSetRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${roomFilter === "resus" ? "bg-bad text-paper" : "text-muted hover:text-ink"}`}>{"Resus"}</button>
+                <button type="button" aria-pressed={roomFilter === "non-resus"} onClick={() => handleSetRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${roomFilter === "non-resus" ? "bg-ok text-paper" : "text-muted hover:text-ink"}`}>{"Non-Resus"}</button>
               </div>
 
               {/* View Filter (Card View Only) */}
               {displayMode === "card" && (
-                <div className={`flex items-center p-0.5 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-gray-100 border-gray-200"}`}>
-                  <button aria-pressed={view === "both"} onClick={() => handleSetView("both")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${view === "both" ? (darkMode ? "bg-gray-700 text-white shadow-sm" : "bg-white text-[#014167] shadow-sm") : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Both"}</button>
-                  <button aria-pressed={view === "surgery"} onClick={() => handleSetView("surgery")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${view === "surgery" ? "bg-[#E55143] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Surgery"}</button>
-                  <button aria-pressed={view === "ortho"} onClick={() => handleSetView("ortho")} className={`px-2.5 py-1.5 rounded-md font-bold transition-all duration-200 text-xs tap-feedback ${view === "ortho" ? "bg-[#699D5D] text-white shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"}`}>{"Ortho"}</button>
+                <div className="flex items-center p-0.5 rounded-[6px] border border-rule bg-paper-3">
+                  <button type="button" aria-pressed={view === "both"} onClick={() => handleSetView("both")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${view === "both" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>{"Both"}</button>
+                  <button type="button" aria-pressed={view === "surgery"} onClick={() => handleSetView("surgery")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${view === "surgery" ? "bg-bad text-paper" : "text-muted hover:text-ink"}`}>{"Surgery"}</button>
+                  <button type="button" aria-pressed={view === "ortho"} onClick={() => handleSetView("ortho")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${view === "ortho" ? "bg-ok text-paper" : "text-muted hover:text-ink"}`}>{"Ortho"}</button>
                 </div>
               )}
             </div>
@@ -281,9 +277,7 @@ export default function Dashboard() {
 
         {/* Quick Navigation - Always visible in card mode */}
         {displayMode === "card" && (
-          <div className={`mb-4 rounded-xl overflow-hidden transition-colors glass-panel ${
-            darkMode ? "dark" : ""
-          }`}>
+          <div className="mb-4 rounded-[10px] overflow-hidden border border-rule bg-paper-2 transition-colors">
             <div className="flex overflow-x-auto lg:grid lg:grid-cols-9 gap-1.5 p-2 hide-scrollbar">
               {(
                 view === "surgery"
@@ -297,24 +291,25 @@ export default function Dashboard() {
                 const hasCases = cases.length > 0;
                 return (
                   <button
+                    type="button"
                     key={dept}
                     onClick={() => scrollToDepartment(dept)}
-                    className={`flex-shrink-0 w-[88px] lg:w-auto rounded-lg px-2 py-2 transition-all duration-200 group flex flex-col items-center justify-center border tap-feedback ${
+                    className={`flex-shrink-0 w-[88px] lg:w-auto rounded-[6px] px-2 py-2 transition-colors duration-200 group flex flex-col items-center justify-center border tap-feedback ${
                       hasCases
-                        ? darkMode
-                          ? `bg-gray-800 text-white ${isSurgery ? "border-[#E55143]/40 hover:bg-[#E55143]" : "border-[#699D5D]/40 hover:bg-[#699D5D]"} hover:text-white shadow-sm`
-                          : `bg-white text-[#014167] ${isSurgery ? "border-[#E55143]/30 hover:bg-[#E55143]" : "border-[#699D5D]/30 hover:bg-[#699D5D]"} hover:text-white shadow-sm`
-                        : darkMode
-                          ? "bg-gray-800/50 text-gray-500 border-gray-700/50 hover:bg-gray-700/50"
-                          : "bg-gray-50/50 text-gray-400 border-gray-200/50 hover:bg-gray-100"
+                        ? isSurgery
+                          ? "bg-paper text-ink border-bad/40 hover:bg-bad hover:text-paper"
+                          : "bg-paper text-ink border-ok/40 hover:bg-ok hover:text-paper"
+                        : "bg-paper-3 text-muted border-rule hover:border-rule-2"
                     }`}
                   >
-                    <div className="text-[11px] font-bold mb-0.5 w-full truncate text-center" title={dept}>{dept}</div>
+                    <div className="text-[11px] font-medium mb-0.5 w-full truncate text-center" title={dept}>{dept}</div>
                     <div
-                      className={`text-base font-extrabold leading-none tabular-nums ${
+                      className={`text-base font-medium leading-none measured ${
                         hasCases
-                          ? "text-[#E55143] group-hover:text-white"
-                          : darkMode ? "text-gray-600" : "text-gray-300"
+                          ? isSurgery
+                            ? "text-bad group-hover:text-paper"
+                            : "text-ok group-hover:text-paper"
+                          : "text-muted"
                       }`}
                     >
                       {cases.length}
@@ -333,21 +328,21 @@ export default function Dashboard() {
         {displayMode === "table" ? (
           <>
             {/* Desktop Table View */}
-            <div className={`hidden md:block rounded-xl shadow-lg border overflow-hidden transition-all duration-300 slide-in glass-panel ${darkMode ? "dark border-gray-700" : "border-[#C7CFDA]"}`}>
-              <div className="overflow-x-auto relative w-full">
+            <div className="hidden md:block rounded-[10px] border border-rule bg-paper-2 overflow-hidden transition-colors duration-200 slide-in">
+              <div className="overflow-x-auto relative w-full table-container">
                 <table className="w-full text-left border-collapse min-w-[900px]">
-                  <thead className={`text-sm ${darkMode ? "bg-gray-800 text-gray-200 border-b border-gray-700" : "bg-[#014167] text-white"}`}>
+                  <thead className="sticky top-0 z-10 text-xs bg-paper-3 text-muted border-b border-rule">
                     <tr>
-                      <th className="p-3 w-[20%] font-bold">{"PATIENT"}</th>
-                      <th className="p-3 w-[10%] font-bold">{"ROOM"}</th>
-                      <th className="p-3 w-[40%] font-bold">{"DX"}</th>
-                      <th className="p-3 w-[30%] font-bold">{"MANAGEMENT"}</th>
+                      <th className="p-3 w-[20%] font-medium">{"Patient"}</th>
+                      <th className="p-3 w-[10%] font-medium">{"Room"}</th>
+                      <th className="p-3 w-[40%] font-medium">{"Dx"}</th>
+                      <th className="p-3 w-[30%] font-medium">{"Management"}</th>
                     </tr>
                   </thead>
-                  <tbody className={`divide-y ${darkMode ? "divide-gray-800 bg-gray-900" : "divide-[#014167]/10 bg-[#f9fafc]"}`}>
+                  <tbody className="divide-y divide-rule bg-paper-2">
                     {visibleTableCases.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className={`p-8 text-center font-bold ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
+                        <td colSpan={4} className="p-8 text-center font-medium text-muted">
                           ไม่มีเคสรอปรึกษา
                         </td>
                       </tr>
@@ -364,7 +359,7 @@ export default function Dashboard() {
             {/* Mobile Stacked Card Layout */}
             <div className="md:hidden flex flex-col gap-3 slide-in">
               {visibleTableCases.length === 0 ? (
-                <div className={`text-center py-8 rounded-xl border font-bold ${darkMode ? "bg-gray-800 border-gray-700 text-gray-400" : "bg-white border-[#C7CFDA] text-[#014167]"}`}>
+                <div className="text-center py-8 rounded-[10px] border border-rule bg-paper-2 font-medium text-muted">
                   ไม่มีเคสรอปรึกษา
                 </div>
               ) : (
@@ -381,23 +376,20 @@ export default function Dashboard() {
               <div
                 className={`${
                   view === "both" ? "lg:flex-[3]" : "flex-1"
-                } rounded-xl shadow-lg border border-[#E55143]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in glass-panel ${
-                  darkMode ? "dark" : ""
-                }`}
+                } rounded-[10px] border border-rule bg-paper-2 overflow-hidden transition-colors duration-200 slide-in`}
               >
-                <div className="bg-[#E55143] text-white px-5 py-3 border-b border-[#E55143]/20">
-                  <h2 className="text-xl font-bold flex items-center gap-2">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="bg-bad text-paper px-5 py-3 border-b border-bad">
+                  <h2 className="text-lg font-medium flex items-center gap-2">
+                    <svg aria-hidden="true" className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                     </svg>
                     Surgery
-                    <span className="text-white/80 text-sm font-normal ml-1 hidden sm:inline">แผนกศัลยกรรม</span>
+                    <span className="text-paper/80 text-xs font-normal ml-1 hidden sm:inline">แผนกศัลยกรรม</span>
                   </h2>
                 </div>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {SURGERY_DEPTS.map((dept) => {
                     const cases = getCasesForDepartment(dept);
-                    const isSurgery = true; // Inside surgery map block
                     return (
                       <div
                         key={dept}
@@ -406,34 +398,22 @@ export default function Dashboard() {
                           if (el) Reflect.set(deptRefs.current, dept, el);
                         }}
                       >
-                        <div
-                          className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
-                            darkMode
-                              ? isSurgery ? "bg-[#E55143]/10 border-[#ff7063]/50" : "bg-[#699D5D]/10 border-[#8bc34a]/50"
-                              : "bg-[#012a47] border-[#E55143]/20"
-                          }`}
-                        >
-                          <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
+                        <div className="flex items-center justify-between px-3 py-2 rounded-[6px] border border-rule bg-paper-3">
+                          <h3 className="text-sm font-medium text-ink">{dept}</h3>
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-xs font-medium measured ${
                               cases.length > 0
-                                ? "bg-[#E55143]/20 text-[#E55143]"
-                                : "bg-[#699D5D]/20 text-[#699D5D]"
+                                ? "bg-bad-soft text-bad border border-bad/30"
+                                : "bg-ok-soft text-ok border border-ok/30"
                             }`}
                           >
                             {cases.length}
                           </span>
                         </div>
                         {cases.length === 0 ? (
-                          <div
-                            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border ${
-                              darkMode
-                                ? "bg-emerald-500/5 border-emerald-500/20"
-                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
-                            }`}
-                          >
-                            <svg className={`w-4 h-4 ${darkMode ? "text-emerald-400" : "text-[#699D5D]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400/80" : "text-[#699D5D]"}`}>
+                          <div className="flex items-center justify-center gap-2 py-3 px-4 rounded-[6px] border border-rule bg-paper">
+                            <svg aria-hidden="true" className="w-4 h-4 text-ok shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <p className="font-medium text-xs text-muted">
                               ไม่มีเคสค้าง
                             </p>
                           </div>
@@ -459,23 +439,20 @@ export default function Dashboard() {
               <div
                 className={`${
                   view === "both" ? "lg:flex-[1]" : "flex-1"
-                } rounded-xl shadow-lg border border-[#699D5D]/30 overflow-hidden transition-all duration-300 hover:shadow-2xl slide-in glass-panel ${
-                  darkMode ? "dark" : ""
-                }`}
+                } rounded-[10px] border border-rule bg-paper-2 overflow-hidden transition-colors duration-200 slide-in`}
               >
-                <div className="bg-[#699D5D] text-[#FDFCDF] px-5 py-3 border-b border-[#699D5D]/20">
-                  <h2 className="text-xl font-bold flex items-center gap-2">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="bg-ok text-paper px-5 py-3 border-b border-ok">
+                  <h2 className="text-lg font-medium flex items-center gap-2">
+                    <svg aria-hidden="true" className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5c-3.5 0-6 2.5-6 6v3c0 1.5-1 2.5-2 3.5-.5.5-.5 1 0 1.5.5.5 1 .5 1.5 0 1.5-1.5 2.5-3 2.5-5v-3c0-2 1.5-3.5 4-3.5s4 1.5 4 3.5v3c0 2 1 3.5 2.5 5 .5.5 1 .5 1.5 0s.5-1 0-1.5c-1-1-2-2-2-3.5v-3c0-3.5-2.5-6-6-6z" />
                     </svg>
                     Ortho
-                    <span className="text-[#C7CFDA] text-sm font-normal ml-1 hidden sm:inline">ศัลยกรรมกระดูก</span>
+                    <span className="text-paper/80 text-xs font-normal ml-1 hidden sm:inline">ศัลยกรรมกระดูก</span>
                   </h2>
                 </div>
                 <div className="p-4">
                   {ORTHO_DEPTS.map((dept) => {
                     const cases = getCasesForDepartment(dept);
-                    const isSurgery = false; // Inside ortho map block
                     return (
                       <div
                         key={dept}
@@ -484,34 +461,22 @@ export default function Dashboard() {
                           if (el) Reflect.set(deptRefs.current, dept, el);
                         }}
                       >
-                        <div
-                          className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
-                            darkMode
-                              ? isSurgery ? "bg-[#E55143]/10 border-[#ff7063]/50" : "bg-[#699D5D]/10 border-[#8bc34a]/50"
-                              : "bg-[#014a3d] border-[#699D5D]/20"
-                          }`}
-                        >
-                          <h3 className="text-sm font-bold text-[#FDFCDF]">{dept}</h3>
+                        <div className="flex items-center justify-between px-3 py-2 rounded-[6px] border border-rule bg-paper-3">
+                          <h3 className="text-sm font-medium text-ink">{dept}</h3>
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-xs font-medium measured ${
                               cases.length > 0
-                                ? "bg-[#E55143]/20 text-[#E55143]"
-                                : "bg-[#699D5D]/20 text-[#699D5D]"
+                                ? "bg-bad-soft text-bad border border-bad/30"
+                                : "bg-ok-soft text-ok border border-ok/30"
                             }`}
                           >
                             {cases.length}
                           </span>
                         </div>
                         {cases.length === 0 ? (
-                          <div
-                            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border ${
-                              darkMode
-                                ? "bg-emerald-500/5 border-emerald-500/20"
-                                : "bg-[#699D5D]/5 border-[#699D5D]/20"
-                            }`}
-                          >
-                            <svg className={`w-4 h-4 ${darkMode ? "text-emerald-400" : "text-[#699D5D]"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            <p className={`font-medium text-sm ${darkMode ? "text-emerald-400/80" : "text-[#699D5D]"}`}>
+                          <div className="flex items-center justify-center gap-2 py-3 px-4 rounded-[6px] border border-rule bg-paper">
+                            <svg aria-hidden="true" className="w-4 h-4 text-ok shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <p className="font-medium text-xs text-muted">
                               ไม่มีเคสค้าง
                             </p>
                           </div>
@@ -578,41 +543,39 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
   };
 
   return (
-    <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800/80 border-gray-700" : "bg-white border-[#C7CFDA] shadow-sm"} flex flex-col gap-3`}>
+    <div className="p-4 rounded-[10px] border border-rule bg-paper-2 flex flex-col gap-3">
       {/* Header: HN & Fast Track */}
       <div className="flex justify-between items-start">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>{caseData.hn}</span>
+            <span className="text-lg font-medium measured text-ink">{caseData.hn}</span>
             <button
               type="button"
               onClick={onToggleUrgencyClick}
               disabled={isUpdating}
               title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
               aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border ${
                 caseData.isUrgent
-                  ? "bg-[#E55143] text-white shadow-md border border-[#E55143]"
-                  : darkMode
-                    ? "bg-gray-700 border border-gray-600 text-gray-400 hover:text-[#ff7063] hover:border-[#E55143]/40"
-                    : "bg-gray-100 border border-gray-300 text-gray-500 hover:text-[#c23a2e] hover:border-[#E55143]/30"
+                  ? "bg-bad text-paper border-bad"
+                  : "bg-paper-3 border-rule-2 text-muted hover:text-bad hover:border-bad/40"
               }`}
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
               {caseData.isUrgent ? "FAST" : "NORMAL"}
             </button>
           </div>
           {fullName && (
-            <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+            <div className="text-sm font-medium text-ink-2">
               {fullName}
             </div>
           )}
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-1 whitespace-nowrap">
-            <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
+            <span className="px-2 py-1 rounded-[4px] text-xs font-medium bg-paper-3 border border-rule text-ink">
               {caseData.room}
             </span>
             <RoomTransferButton 
@@ -625,15 +588,15 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
       </div>
 
       {/* DX Section */}
-      <div className={`text-sm p-3 rounded-md ${darkMode ? "bg-gray-900/50 text-gray-300" : "bg-gray-50 text-[#014167]"}`}>
-        <div className={`text-xs font-semibold mb-1 opacity-70`}>{"Dx / Problem"}</div>
+      <div className="text-sm p-3 rounded-[6px] border border-rule bg-paper-3 text-ink">
+        <div className="text-xs font-medium mb-1 text-muted">{"Dx / Problem"}</div>
         <div className="whitespace-pre-wrap">{caseData.problem}</div>
       </div>
 
       {/* Time Info */}
-      <div className={`flex justify-between items-center text-[10px] font-medium ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+      <div className="flex justify-between items-center text-[11px] measured text-muted">
         <div className="flex items-center gap-1">
-           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+           <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
            </svg>
            {sentTimeFull}
@@ -688,38 +651,36 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
   };
 
   return (
-    <tr className={`transition-colors align-top ${darkMode ? "hover:bg-gray-800/50" : "hover:bg-[#014167]/5"}`}>
-      <td className={`p-3 align-top ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
+    <tr className="transition-colors align-top hover:bg-paper-3/60">
+      <td className="p-3 align-top text-ink">
         <div className="flex items-center gap-2 mb-1">
-          <span className="font-bold">{caseData.hn}</span>
+          <span className="font-medium measured">{caseData.hn}</span>
           <button
             type="button"
             onClick={onToggleUrgencyClick}
             disabled={isUpdating}
             title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
             aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
-            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border ${
               caseData.isUrgent
-                ? "bg-[#E55143] text-white shadow-md border border-[#E55143]"
-                : darkMode
-                  ? "bg-gray-700 border border-gray-600 text-gray-400 hover:text-[#ff7063] hover:border-[#E55143]/40"
-                  : "bg-gray-100 border border-gray-300 text-gray-500 hover:text-[#c23a2e] hover:border-[#E55143]/30"
+                ? "bg-bad text-paper border-bad"
+                : "bg-paper-3 border-rule-2 text-muted hover:text-bad hover:border-bad/40"
             }`}
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             {caseData.isUrgent ? "FAST" : "NORMAL"}
           </button>
         </div>
         {fullName && (
-          <div className={`text-sm font-medium mb-2 ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+          <div className="text-sm font-medium mb-2 text-ink-2">
             {fullName}
           </div>
         )}
-        <div className={`text-[10px] font-medium flex flex-col gap-1 ${darkMode ? "text-gray-500" : "text-[#014167]/60"}`}>
+        <div className="text-[11px] measured flex flex-col gap-1 text-muted">
           <div className="flex items-center gap-1">
-             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
              </svg>
              {sentTimeFull}
@@ -729,7 +690,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
       </td>
       <td className="p-3">
         <div className="flex items-center gap-1 whitespace-nowrap">
-          <span className={`px-2 py-1 rounded-md text-xs font-semibold ${darkMode ? "bg-gray-700 text-gray-200" : "bg-[#C7CFDA] text-[#014167]"}`}>
+          <span className="px-2 py-1 rounded-[4px] text-xs font-medium bg-paper-3 border border-rule text-ink">
             {caseData.room}
           </span>
           <RoomTransferButton 
@@ -739,7 +700,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           />
         </div>
       </td>
-      <td className={`p-3 text-sm whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+      <td className="p-3 text-sm whitespace-pre-wrap text-ink">
         {caseData.problem}
       </td>
       <td className="p-3">
@@ -763,7 +724,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
   );
 }
 
-function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Consult; deptName: string; darkMode: boolean }) {
+function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; deptName: string; darkMode: boolean }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
@@ -774,6 +735,12 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
 
   const milestones = getMilestones(dept, formatTime);
+
+  const getMilestoneTone = (label: string) => {
+    if (label === "รับ") return "text-ok";
+    if (label === "คืน ER") return "text-accent";
+    return "text-cool";
+  };
 
   const {
     isUpdating,
@@ -803,8 +770,8 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
 
   return (
     <>
-      <div className={`p-1.5 rounded-lg border flex flex-row items-start gap-2 transition-all ${darkMode ? "bg-gray-800 border-gray-700 shadow-sm" : "bg-white border-[#C7CFDA]/50 shadow-sm"}`}>
-        <span className={`font-bold text-xs min-w-[65px] truncate mt-1.5 ${darkMode ? "text-gray-300" : "text-[#014167]"}`} title={deptName}>
+      <div className="p-2 rounded-[6px] border border-rule bg-paper flex flex-row items-start gap-2 transition-colors">
+        <span className="font-medium text-xs min-w-[65px] truncate mt-1.5 text-ink" title={deptName}>
           {deptName}
         </span>
         
@@ -813,25 +780,24 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
             {!isAccepted ? (
               <>
                 <button
+                  type="button"
                   onClick={onAccept}
                   disabled={isUpdating}
-                  className={`flex-1 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm ${
+                  className={`flex-1 rounded-[6px] text-xs font-medium transition-opacity flex items-center justify-center gap-1 whitespace-nowrap ${
                     isUpdating
-                      ? "bg-gray-400 text-white cursor-not-allowed"
-                      : "bg-[#699D5D] text-white hover:bg-[#5a8a4f] hover:shadow-md transform hover:-translate-y-0.5"
+                      ? "bg-paper-3 text-muted cursor-not-allowed border border-rule"
+                      : "bg-ok text-paper hover:opacity-90"
                   }`}
                 >
-                  {isUpdating ? "..." : (
+                  {isUpdating ? "…" : (
                     <>
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      <svg aria-hidden="true" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                       รับเคส
                     </>
                   )}
                 </button>
-                <button disabled className={`flex-1 rounded-md text-xs font-bold flex items-center justify-center gap-1 cursor-not-allowed ${
-                  darkMode ? "bg-gray-800 border border-dashed border-gray-600 text-gray-500" : "bg-gray-50 border border-dashed border-gray-300 text-gray-400"
-                }`}>
-                  <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                <button type="button" disabled className="flex-1 rounded-[6px] text-xs font-medium flex items-center justify-center gap-1 cursor-not-allowed bg-paper-3 border border-dashed border-rule-2 text-muted whitespace-nowrap">
+                  <svg aria-hidden="true" className="w-3 h-3 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                   ปิดเคส
                 </button>
               </>
@@ -839,36 +805,36 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
               <>
                 <div className="flex-1 relative">
                   <select
+                    aria-label={`เลือกสถานะสำหรับ ${deptName}`}
                     value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                     onChange={(e) => onStatusChange(e.target.value as PostAcceptStatus)}
                     disabled={isUpdating}
-                    className={`w-full h-full rounded-md text-xs font-bold border appearance-none cursor-pointer pl-2 pr-6 focus:outline-none focus:ring-2 focus:ring-amber-500/50 shadow-sm transition-colors ${
+                    className={`w-full h-full rounded-[6px] text-xs font-medium border appearance-none cursor-pointer pl-2 pr-6 focus:outline-none focus:ring-2 focus:ring-focus transition-colors ${
                       actionStatus && actionStatus !== ACCEPT_STATUS
-                        ? (darkMode ? "bg-amber-500/20 text-amber-300 border-amber-500" : "bg-amber-50 text-amber-700 border-amber-400")
-                        : (darkMode ? "bg-gray-700 text-gray-300 border-gray-600" : "bg-white text-[#014167] border-[#C7CFDA]")
+                        ? "bg-accent-soft text-accent border-accent"
+                        : "bg-paper-3 text-ink border-rule-2"
                     }`}
                   >
                     <option value="" disabled>สถานะ</option>
                     {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
-                  <div className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 ${darkMode ? "text-gray-400" : "text-gray-500"}`}>
-                    <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 text-muted">
+                    <svg aria-hidden="true" className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowConfirm(true)}
                   disabled={isUpdating || !isStatusSelected}
-                  className={`flex-1 rounded-md text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-sm ${
+                  className={`flex-1 rounded-[6px] text-xs font-medium flex items-center justify-center gap-1 transition-opacity whitespace-nowrap ${
                     isUpdating || !isStatusSelected
-                      ? darkMode
-                        ? "bg-gray-800 text-gray-500 cursor-not-allowed border border-dashed border-gray-600"
-                        : "bg-gray-50 text-gray-400 cursor-not-allowed border border-dashed border-gray-300"
-                      : "bg-[#E55143] text-white hover:bg-[#d44639] hover:shadow-md transform hover:-translate-y-0.5"
+                      ? "bg-paper-3 text-muted cursor-not-allowed border border-dashed border-rule-2"
+                      : "bg-bad text-paper hover:opacity-90"
                   }`}
                 >
-                  {isUpdating ? "..." : (
+                  {isUpdating ? "…" : (
                     <>
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      <svg aria-hidden="true" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                       ปิดเคส
                     </>
                   )}
@@ -877,40 +843,39 @@ function DepartmentActionPanel({ caseData, deptName, darkMode }: { caseData: Con
             )}
 
             <button
+              type="button"
               onClick={() => setShowCancelConfirm(true)}
               disabled={isUpdating}
-              className={`w-7 h-8 flex items-center justify-center rounded-md transition-colors border shadow-sm ${
-                darkMode 
-                  ? "bg-gray-800 border-gray-700 text-gray-400 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30" 
-                  : "bg-white border-[#C7CFDA]/50 text-gray-400 hover:text-red-500 hover:bg-red-50 hover:border-red-200"
-              }`}
+              className="w-8 h-8 flex items-center justify-center rounded-[6px] transition-colors border border-rule bg-paper-3 text-muted hover:text-bad hover:bg-bad-soft hover:border-bad/40"
               title="ยกเลิก"
               aria-label="ยกเลิกการปรึกษา"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
 
             {milestones.length > 0 && (
-              <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 ${darkMode ? "text-gray-400" : "text-[#014167]/70"}`}>
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 measured">
                 {milestones.map((m, idx, arr) => (
                   <React.Fragment key={`${m.label}-${m.raw}`}>
                     <div className="flex items-center gap-1 text-[10px]">
                       {m.icon === "check" ? (
-                        <svg className="w-2.5 h-2.5 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg aria-hidden="true" className="w-2.5 h-2.5 text-ok shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                       ) : m.icon === "transfer" ? (
-                        <svg className="w-2.5 h-2.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg aria-hidden="true" className="w-2.5 h-2.5 text-cool shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                       ) : null}
-                      <span className={`font-semibold whitespace-nowrap ${darkMode ? m.colorDark : m.colorLight}`}>{m.label} {m.time}</span>
+                      <span className={`font-medium whitespace-nowrap ${getMilestoneTone(m.label)}`}>{m.label} {m.time}</span>
                     </div>
                     {idx < arr.length - 1 && (
-                      <span className={darkMode ? "text-gray-700" : "text-[#014167]/20"}>→</span>
+                      <svg aria-hidden="true" className="w-2.5 h-2.5 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
                     )}
                   </React.Fragment>
                 ))}

@@ -11,8 +11,9 @@
 ## 2. Technical Stack Standards
 
 - **Framework:** Next.js (App Router) with TypeScript.
-- **Database:** Firebase Firestore (Real-time sync, initialized via `lib/firebase.ts` with secrets from `.env.local` or Vercel Environment Variables).
-- **UI:** Tailwind CSS with a focus on high-contrast, accessible components.
+- **Database:** Firebase Firestore (`er-consult-mnrh-2026`, `asia-southeast1`, real-time sync initialized via `lib/firebase.ts` with secrets from `.env.local`, GitHub Actions Secrets, or Vercel Environment Variables).
+- **CI/CD:** `.github/workflows/ci.yml` runs Vitest unit tests, production Next.js builds, and conditional Firestore Rules & Index deployment using repository secrets.
+- **UI:** Tailwind CSS v4 with Hallmark **Console** OKLCH design tokens (`app/tokens.css`) and high-contrast accessible components.
 - **State Management:** React Hooks + Context API for global settings.
 
 ## 3. Optimistic UI Implementation Rules
@@ -144,7 +145,7 @@ When a doctor triggers a Re-consult on a case from `/completed`:
   *(Note: Stale milestone timestamps like acceptedAt/admittedAt/dischargedAt are completely cleared for the re-consulted departments).*
 - It updates the patient problem description by appending the new consultation reason:
   `problem: "${current.problem}\n\n[Re-consult]: ${newProblem}"`
-- It updates `createdAt = new Date().toISOString()`, sorting it back to the top of the whiteboard.
+- It updates `createdAt = new Date().toISOString()`, sorting it back to the top of the whiteboard. `firestore.rules` permits `createdAt` updates exclusively on transitions where `resource.data.status in ["completed", "cancelled"]` and `request.resource.data.status == "pending"`, keeping `createdAt` immutable for all other updates.
 
 ## 15. Excel Export Pipeline & Safeguards
 

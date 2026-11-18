@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Noto_Sans_Thai } from "next/font/google";
+import { Host_Grotesk, Atkinson_Hyperlegible_Mono, Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { ToastProvider } from "./contexts/ToastContext";
@@ -8,14 +8,23 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import ClientLayoutWrapper from "./components/ClientLayoutWrapper";
 import OfflineIndicator from "./components/OfflineIndicator";
 
-const inter = Inter({
+const hostGrotesk = Host_Grotesk({
   subsets: ["latin"],
-  variable: "--font-inter",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-host",
+  display: "swap",
+});
+
+const atkinsonMono = Atkinson_Hyperlegible_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-atkinson-mono",
   display: "swap",
 });
 
 const notoSansThai = Noto_Sans_Thai({
   subsets: ["thai"],
+  weight: ["400", "500", "600", "700"],
   variable: "--font-thai",
   display: "swap",
 });
@@ -31,8 +40,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" suppressHydrationWarning className={`${inter.variable} ${notoSansThai.variable}`}>
-      <body className="bg-[#014167] dark:bg-gray-900 min-h-screen transition-colors duration-300">
+    <html
+      lang="th"
+      suppressHydrationWarning
+      className={`${hostGrotesk.variable} ${atkinsonMono.variable} ${notoSansThai.variable}`}
+    >
+      <body className="bg-paper text-ink min-h-screen transition-colors duration-200">
         <AuthProvider>
           <SettingsProvider>
             <ToastProvider>
