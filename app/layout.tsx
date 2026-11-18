@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Host_Grotesk, Atkinson_Hyperlegible_Mono, Noto_Sans_Thai } from "next/font/google";
+import { Host_Grotesk, Noto_Sans_Thai } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { ToastProvider } from "./contexts/ToastContext";
@@ -15,11 +16,13 @@ const hostGrotesk = Host_Grotesk({
   display: "swap",
 });
 
-const atkinsonMono = Atkinson_Hyperlegible_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const atkinsonMono = localFont({
+  src: "./fonts/AtkinsonHyperlegibleMono-Variable.woff2",
+  weight: "200 800",
+  style: "normal",
   variable: "--font-atkinson-mono",
   display: "swap",
+  adjustFontFallback: false,
 });
 
 const notoSansThai = Noto_Sans_Thai({
