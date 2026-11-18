@@ -23,6 +23,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [alignLeft, setAlignLeft] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const { addToast } = useToast();
@@ -137,11 +138,20 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 
 
 
+  const handleToggle = useCallback(() => {
+    if (!isOpen && dropdownRef.current && typeof window !== "undefined") {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      // Listbox is w-40 (160px); anchor left-0 when right-0 would clip past the left viewport edge
+      setAlignLeft(rect.right < 168 && rect.left + 168 <= window.innerWidth);
+    }
+    setIsOpen((prev) => !prev);
+  }, [isOpen]);
+
   return (
     <div className="relative inline-block ml-1" ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggle}
         disabled={isTransferring || disabled}
         title={disabled ? "กำลังดำเนินการงานอื่นอยู่…" : "เปลี่ยนห้อง"}
         aria-label="เปลี่ยนห้อง"
@@ -168,7 +178,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       {isOpen && (
         <div
           role="listbox"
-          className="absolute z-50 mt-1 right-0 w-40 rounded-[6px] border border-rule bg-paper-2 overflow-hidden animate-fade-in"
+          className={`absolute z-50 mt-1 ${alignLeft ? "left-0" : "right-0"} w-40 rounded-[6px] border border-rule bg-paper-2 overflow-hidden animate-fade-in`}
         >
           <div className="px-3 py-2 text-xs font-medium border-b border-rule bg-paper-3 text-muted">
             ย้ายผู้ป่วยไปยัง...

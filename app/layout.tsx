@@ -43,9 +43,9 @@ export default function RootLayout({
     <html
       lang="th"
       suppressHydrationWarning
-      className={`${hostGrotesk.variable} ${atkinsonMono.variable} ${notoSansThai.variable}`}
+      className={`${hostGrotesk.variable} ${atkinsonMono.variable} ${notoSansThai.variable} overflow-x-clip`}
     >
-      <body className="bg-paper text-ink min-h-screen transition-colors duration-200">
+      <body suppressHydrationWarning className="bg-paper text-ink min-h-screen transition-colors duration-200 overflow-x-clip">
         <AuthProvider>
           <SettingsProvider>
             <ToastProvider>

@@ -123,104 +123,107 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             </svg>
           </button>
         )}
-        <div className="flex justify-between items-start mb-2 pr-7">
-          <div className="flex items-start gap-2.5 min-w-0">
-            <button
-              type="button"
-              onClick={handleToggleUrgencyClick}
-              disabled={isUpdating}
-              title={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
-              aria-label={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
-              className={`w-8 h-8 shrink-0 rounded-[6px] flex items-center justify-center transition-transform duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                isUrgent ? "bg-bad text-paper" : "bg-ok text-paper"
-              }`}
-            >
-              {isUrgent ? (
-                <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              ) : (
-                <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              )}
-            </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                <h3 className="text-base font-medium measured text-ink">
+        <div className="flex items-start gap-2.5 min-w-0 pr-7 mb-1.5">
+          <button
+            type="button"
+            onClick={handleToggleUrgencyClick}
+            disabled={isUpdating}
+            title={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+            aria-label={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+            className={`w-8 h-8 shrink-0 rounded-[6px] flex items-center justify-center transition-transform duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              isUrgent ? "bg-bad text-paper" : "bg-ok text-paper"
+            }`}
+          >
+            {isUrgent ? (
+              <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            ) : (
+              <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            )}
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className="text-base font-medium measured text-ink whitespace-nowrap">
                   {"HN: "}
                   {hn}
                 </h3>
                 {isUrgent && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-bad text-paper">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-bad text-paper shrink-0">
                     FAST
                   </span>
                 )}
               </div>
-              {fullName && (
-                <p className="text-xs font-medium text-ink-2 truncate">
-                  {fullName}
-                </p>
-              )}
-              <div className="flex items-center gap-1.5 text-xs flex-wrap mt-1">
-                <span className="font-medium text-ink">{departmentName}</span>
-                <svg aria-hidden="true" className="w-3 h-3 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] font-medium text-[11px] border ${
-                  isResusRoom
-                    ? "bg-bad-soft text-bad border-bad/30"
-                    : "bg-ok-soft text-ok border-ok/30"
-                }`}>
-                  <svg aria-hidden="true" focusable="false" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                  {room ?? "-"}
-                </span>
-                <RoomTransferButton 
-                  consultId={caseId}
-                  currentRoom={room}
-                  darkMode={darkMode}
-                  disabled={isUpdating}
-                />
-              </div>
-              {Object.keys(caseData.departments).filter(
-                (d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending"
-              ).length > 0 && (
-                <div className="flex items-center gap-1 text-xs mt-1">
-                  <span className="text-muted">{"แผนกอื่น:"}</span>
-                  <span className="font-medium underline text-ink-2">
-                    {Object.keys(caseData.departments)
-                      .filter((d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending")
-                      .join(", ")}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {isSyncing && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-cool font-medium whitespace-nowrap">
+                    <svg aria-hidden="true" className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Syncing…
                   </span>
-                </div>
-              )}
+                )}
+                {isTerminal && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-[4px] text-xs font-medium bg-ok-soft text-ok border border-ok/30">
+                    <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </span>
+                )}
+                {!isTerminal && caseData.createdAt && (
+                  <ElapsedTime createdAt={caseData.createdAt} />
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            {isSyncing && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-cool font-medium">
-                <svg aria-hidden="true" className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Syncing…
-              </span>
-            )}
-            {isTerminal && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-[4px] text-xs font-medium bg-ok-soft text-ok border border-ok/30">
-                <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </span>
-            )}
-            {!isTerminal && caseData.createdAt && (
-              <ElapsedTime createdAt={caseData.createdAt} />
+            {fullName && (
+              <p className="text-xs font-medium text-ink-2 break-words">
+                {fullName}
+              </p>
             )}
           </div>
         </div>
 
-        <div className="mb-2.5 p-2.5 rounded-[6px] border border-rule bg-paper-3">
+        <div className="mb-2 min-w-0">
+          <div className="flex items-center gap-1.5 text-xs flex-wrap">
+            <span className="font-medium text-ink whitespace-nowrap">{departmentName}</span>
+            <svg aria-hidden="true" className="w-3 h-3 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] font-medium text-[11px] border whitespace-nowrap ${
+              isResusRoom
+                ? "bg-bad-soft text-bad border-bad/30"
+                : "bg-ok-soft text-ok border-ok/30"
+            }`}>
+              <svg aria-hidden="true" focusable="false" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              {room ?? "-"}
+            </span>
+            <RoomTransferButton 
+              consultId={caseId}
+              currentRoom={room}
+              darkMode={darkMode}
+              disabled={isUpdating}
+            />
+          </div>
+          {Object.keys(caseData.departments).filter(
+            (d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending"
+          ).length > 0 && (
+            <div className="flex items-baseline gap-1 text-xs mt-1 min-w-0 flex-wrap">
+              <span className="text-muted whitespace-nowrap">{"แผนกอื่น:"}</span>
+              <span className="font-medium underline text-ink-2 break-words">
+                {Object.keys(caseData.departments)
+                  .filter((d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending")
+                  .join(", ")}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="mb-2.5 p-2.5 rounded-[6px] border border-rule bg-paper-3 min-w-0">
           <p className="text-xs font-medium mb-0.5 text-muted">Dx:</p>
-          <p className="text-sm leading-snug whitespace-pre-wrap text-ink">{problem}</p>
+          <p className="text-sm leading-snug whitespace-pre-wrap break-words text-ink">{problem}</p>
         </div>
 
         <div className="flex flex-col gap-2 text-xs">
@@ -328,7 +331,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 </>
               ) : (
                 <>
-                  <div className={`flex-1 relative ${isUpdating ? "opacity-50 pointer-events-none" : ""}`}>
+                  <div className={`flex-1 min-w-0 relative ${isUpdating ? "opacity-50 pointer-events-none" : ""}`}>
                     <select
                       aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}

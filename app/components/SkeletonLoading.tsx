@@ -54,7 +54,7 @@ export default function SkeletonLoading({ count = 3 }: SkeletonLoadingProps) {
           {/* Surgery column */}
           <div className="lg:flex-[3] rounded-[10px] border border-rule bg-paper-2 overflow-hidden">
             <div className="bg-bad-soft border-b border-rule h-12"></div>
-            <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {Array.from({ length: count }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-2">
                   <SkeletonDeptHeader />

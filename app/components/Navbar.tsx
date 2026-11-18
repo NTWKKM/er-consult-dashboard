@@ -13,7 +13,7 @@ export default function Navbar() {
   const isSubmit = pathname === "/submit";
 
   const navLinkBase =
-    "relative font-medium p-1.5 sm:py-2 sm:px-3 rounded-[6px] transition-colors duration-200 flex items-center justify-center gap-1.5 text-sm whitespace-nowrap";
+    "relative font-medium p-1.5 sm:py-2 sm:px-3 rounded-[6px] transition-colors duration-200 items-center justify-center gap-1.5 text-sm whitespace-nowrap";
 
   const navLinkActive = "bg-paper-3 text-ink border border-rule-2";
 
@@ -23,12 +23,12 @@ export default function Navbar() {
   return (
     <nav className="bg-paper-2 border-b border-rule sticky top-0 z-50 transition-colors duration-200">
       <div className="container mx-auto px-3">
-        <div className="flex justify-between items-center h-14">
+        <div className="flex justify-between items-center h-14 gap-2">
           <Link
             href="/"
-            className="flex items-center gap-2 hover:opacity-90 transition-opacity group min-w-0"
+            className="flex items-center gap-1.5 sm:gap-2 hover:opacity-90 transition-opacity group min-w-0"
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 bg-bad rounded-[6px] flex items-center justify-center border border-bad transition-transform group-hover:-translate-y-0.5">
+            <div className="w-7 h-7 sm:w-9 sm:h-9 shrink-0 bg-bad rounded-[6px] flex items-center justify-center border border-bad transition-transform group-hover:-translate-y-0.5">
               <svg
                 aria-hidden="true"
                 className="w-4 h-4 sm:w-5 sm:h-5 text-paper shrink-0"
@@ -45,7 +45,7 @@ export default function Navbar() {
               </svg>
             </div>
             <div className="flex flex-col min-w-0">
-              <div className="text-sm sm:text-base font-medium text-ink flex items-center gap-1 sm:gap-2">
+              <div className="text-xs sm:text-base font-medium text-ink flex items-center gap-1 sm:gap-2">
                 <span className="whitespace-nowrap shrink-0">ER Consult</span>
                 <ConnectionStatus />
               </div>
@@ -62,7 +62,7 @@ export default function Navbar() {
 
             <Link
               href="/"
-              className={`${navLinkBase} ${isHome ? navLinkActive : navLinkInactive}`}
+              className={`hidden sm:flex ${navLinkBase} ${isHome ? navLinkActive : navLinkInactive}`}
               aria-current={isHome ? "page" : undefined}
             >
               <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -77,7 +77,7 @@ export default function Navbar() {
             </Link>
             <Link
               href="/completed"
-              className={`${navLinkBase} ${isCompleted ? navLinkActive : navLinkInactive}`}
+              className={`flex ${navLinkBase} ${isCompleted ? navLinkActive : navLinkInactive}`}
               aria-current={isCompleted ? "page" : undefined}
             >
               <svg

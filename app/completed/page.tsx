@@ -427,8 +427,8 @@ export default function CompletedPage() {
   }
 
   return (
-    <div className="min-h-screen bg-paper transition-colors duration-200">
-      <div className="max-w-[1800px] mx-auto p-4">
+    <div className="min-h-[calc(100dvh-3.5rem)] pb-24 lg:pb-8 bg-paper transition-colors duration-200">
+      <div className="max-w-[1800px] mx-auto p-3 sm:p-4">
         <div className="mb-5">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -544,7 +544,7 @@ export default function CompletedPage() {
         <div className="rounded-[10px] overflow-hidden border border-rule bg-paper-2">
           {/* Desktop table */}
           <div className="hidden md:block overflow-x-auto table-container">
-            <table className="w-full border-collapse">
+            <table className="w-full min-w-[960px] border-collapse">
               <thead className="sticky top-0 z-10 text-muted bg-paper-3 border-b border-rule">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium w-[8%]">HN</th>
@@ -571,16 +571,16 @@ export default function CompletedPage() {
                       key={caseData.id}
                       className="transition-colors align-top hover:bg-paper-3/60"
                     >
-                      <td className="px-4 py-3 text-sm font-medium measured text-ink">
+                      <td className="px-4 py-3 text-sm font-medium measured text-ink whitespace-nowrap">
                         {caseData.hn}
                       </td>
-                      <td className="px-4 py-3 text-sm text-ink-2">
+                      <td className="px-4 py-3 text-sm text-ink-2 break-words max-w-[180px]">
                         {[caseData.firstName, caseData.lastName].filter(Boolean).join(" ") || "-"}
                       </td>
-                      <td className="px-4 py-3 text-sm text-ink-2">
+                      <td className="px-4 py-3 text-sm text-ink-2 whitespace-nowrap">
                         {caseData.room}
                       </td>
-                       <td className="px-4 py-3 text-sm whitespace-pre-wrap text-ink">
+                       <td className="px-4 py-3 text-sm whitespace-pre-wrap break-words max-w-xs text-ink">
                         {caseData.problem}
                       </td>
                       <td className="px-4 py-3 text-sm">
@@ -588,7 +588,7 @@ export default function CompletedPage() {
                           {Object.keys(caseData.departments).map((dept) => (
                             <span
                               key={dept}
-                              className="inline-block px-2 py-0.5 rounded-[4px] text-xs font-medium border bg-paper-3 text-ink-2 border-rule"
+                              className="inline-block px-2 py-0.5 rounded-[4px] text-xs font-medium border bg-paper-3 text-ink-2 border-rule whitespace-nowrap"
                             >
                               {dept}
                             </span>
@@ -623,33 +623,33 @@ export default function CompletedPage() {
                               >
                                 {dept} {data.status === "cancelled" && "(ยกเลิก)"}
                               </span>
-                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-muted measured">
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-muted measured">
                                 {data.acceptedAt && (
-                                  <div>
+                                  <div className="whitespace-nowrap">
                                     <span className="font-medium text-ok">รับ:</span>{" "}
                                     {new Date(data.acceptedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.admittedAt && (
-                                  <div>
+                                  <div className="whitespace-nowrap">
                                     <span className="font-medium text-cool">Admit:</span>{" "}
                                     {new Date(data.admittedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.returnedAt && (
-                                  <div>
+                                  <div className="whitespace-nowrap">
                                     <span className="font-medium text-accent">คืน ER:</span>{" "}
                                     {new Date(data.returnedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.dischargedAt && (
-                                  <div>
+                                  <div className="whitespace-nowrap">
                                     <span className="font-medium text-cool">D/C:</span>{" "}
                                     {new Date(data.dischargedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.completedAt && (
-                                  <div>
+                                  <div className="whitespace-nowrap">
                                     <span className={data.status === "cancelled" ? "text-bad font-medium" : "text-ink-2 font-medium"}>
                                       {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
                                     </span>{" "}
@@ -695,26 +695,26 @@ export default function CompletedPage() {
               currentCases.map((caseData) => (
                 <div
                   key={caseData.id}
-                  className="rounded-[6px] p-3 border border-rule bg-paper"
+                  className="rounded-[6px] p-3 border border-rule bg-paper min-w-0"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <span className="text-sm font-medium measured text-ink">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-sm font-medium measured text-ink whitespace-nowrap">
                         HN: {caseData.hn}
                       </span>
                       {(caseData.firstName || caseData.lastName) && (
-                        <p className="text-xs text-ink-2">
+                        <p className="text-xs text-ink-2 break-words">
                           {[caseData.firstName, caseData.lastName].filter(Boolean).join(" ")}
                         </p>
                       )}
                     </div>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-[4px] bg-paper-3 border border-rule text-ink">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-[4px] bg-paper-3 border border-rule text-ink whitespace-nowrap shrink-0">
                       {caseData.room}
                     </span>
                   </div>
-                   <div className="mb-2">
+                   <div className="mb-2 min-w-0">
                     <div className="text-xs font-medium mb-0.5 text-muted">Dx:</div>
-                    <p className="text-xs whitespace-pre-wrap text-ink">
+                    <p className="text-xs whitespace-pre-wrap break-words text-ink">
                       {caseData.problem}
                     </p>
                   </div>
@@ -730,33 +730,33 @@ export default function CompletedPage() {
                         >
                           {dept} {data.status === "cancelled" && "(ยกเลิก)"}
                         </span>
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-muted measured">
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted measured">
                           {data.acceptedAt && (
-                            <div>
+                            <div className="whitespace-nowrap">
                               <span className="font-medium text-ok">รับ:</span>{" "}
                               {new Date(data.acceptedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.admittedAt && (
-                            <div>
+                            <div className="whitespace-nowrap">
                               <span className="font-medium text-cool">Admit:</span>{" "}
                               {new Date(data.admittedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.returnedAt && (
-                            <div>
+                            <div className="whitespace-nowrap">
                               <span className="font-medium text-accent">คืน ER:</span>{" "}
                               {new Date(data.returnedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.dischargedAt && (
-                            <div>
+                            <div className="whitespace-nowrap">
                               <span className="font-medium text-cool">D/C:</span>{" "}
                               {new Date(data.dischargedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.completedAt && (
-                            <div>
+                            <div className="whitespace-nowrap">
                               <span className={data.status === "cancelled" ? "text-bad font-medium" : "text-ink-2 font-medium"}>
                                 {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
                               </span>{" "}
@@ -863,15 +863,15 @@ export default function CompletedPage() {
       {/* Re-consult Modal */}
       {showModal && (
         <div
-          className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-50 p-4 animate-fade-in overscroll-contain"
+          className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
           role="dialog"
           aria-modal="true"
           aria-labelledby="reconsult-modal-title"
         >
-          <div className="rounded-[10px] max-w-2xl w-full p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-rule">
-              <h2 id="reconsult-modal-title" className="text-lg font-medium text-ink">
-                Re-consult เคส <span className="measured">HN: {selectedCase?.hn}</span>
+          <div className="rounded-[10px] max-w-2xl w-full p-5 sm:p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-2 mb-4 pb-3 border-b border-rule">
+              <h2 id="reconsult-modal-title" className="text-lg font-medium text-ink min-w-0 break-words">
+                Re-consult เคส <span className="measured whitespace-nowrap">HN: {selectedCase?.hn}</span>
                 {selectedCase?.firstName && (
                   <span className="text-sm font-normal ml-2 text-muted">
                     ({[selectedCase.firstName, selectedCase.lastName].filter(Boolean).join(" ")})
@@ -882,16 +882,16 @@ export default function CompletedPage() {
                 type="button"
                 aria-label="ปิดหน้าต่าง Re-consult"
                 onClick={() => setShowModal(false)}
-                className="transition-colors text-muted hover:text-bad"
+                className="transition-colors text-muted hover:text-bad shrink-0"
               >
                 <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className="mb-4 p-3 rounded-[6px] border border-rule bg-paper-3">
+            <div className="mb-4 p-3 rounded-[6px] border border-rule bg-paper-3 min-w-0">
               <p className="text-xs font-medium mb-1 text-muted">ปัญหาเดิม:</p>
-              <p className="text-sm whitespace-pre-wrap text-ink">{selectedCase?.problem}</p>
+              <p className="text-sm whitespace-pre-wrap break-words text-ink">{selectedCase?.problem}</p>
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium mb-2 text-ink-2">
@@ -903,7 +903,7 @@ export default function CompletedPage() {
                     key={dept}
                     type="button"
                     onClick={() => toggleDepartment(dept)}
-                    className={`px-3 py-2 rounded-[6px] font-medium text-sm transition-colors duration-200 border ${
+                    className={`px-3 py-2 rounded-[6px] font-medium text-sm transition-colors duration-200 border whitespace-nowrap ${
                       selectedDepartments.includes(dept)
                         ? "bg-ok text-paper border-ok"
                         : "bg-paper-3 text-ink-2 hover:text-ink border-rule-2"
@@ -930,7 +930,7 @@ export default function CompletedPage() {
                 required
               />
             </div>
-            <div className="flex gap-3 justify-end">
+            <div className="flex flex-wrap gap-3 justify-end">
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -975,7 +975,7 @@ export default function CompletedPage() {
       {/* Export Options Modal */}
       {showExportModal && (
         <div 
-          className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-50 p-4 animate-fade-in overscroll-contain"
+          className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
           role="dialog"
           aria-modal="true"
           aria-labelledby="export-modal-title"
@@ -1012,7 +1012,7 @@ export default function CompletedPage() {
                   <span>Export range is restricted to a maximum of 31 days to preserve database bandwidth.</span>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="exportStartDate" className="text-xs font-medium mb-1 block text-ink-2">
                     ตั้งแต่วันที่
@@ -1040,7 +1040,7 @@ export default function CompletedPage() {
               </div>
             </div>
 
-            <div className="flex gap-3 justify-end">
+            <div className="flex flex-wrap gap-3 justify-end">
               <button
                 type="button"
                 onClick={() => setShowExportModal(false)}

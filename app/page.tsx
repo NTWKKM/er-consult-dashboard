@@ -221,15 +221,15 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-paper transition-colors duration-200">
+    <div className="min-h-[calc(100dvh-3.5rem)] pb-24 lg:pb-8 bg-paper transition-colors duration-200">
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
         {/* --- Toolbar --- */}
         <div className="mb-4 slide-in w-full flex justify-center">
-          <div className="inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-[10px] border border-rule bg-paper-2 transition-colors">
+          <div className="inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-[10px] border border-rule bg-paper-2 transition-colors max-w-full">
             {/* Pending Count */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-[6px] bg-paper-3 border border-rule">
               <svg aria-hidden="true" className="w-4 h-4 text-bad shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span className="text-xs font-medium text-ink-2">{"รอปรึกษา"}</span>
+              <span className="text-xs font-medium text-ink-2 whitespace-nowrap">{"รอปรึกษา"}</span>
               <span className={`text-sm font-medium measured min-w-[28px] text-center px-2 py-0.5 rounded-[4px] ${
                 totalPendingCases > 0
                   ? "bg-bad text-paper"
@@ -246,11 +246,11 @@ export default function Dashboard() {
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
               {/* Layout Toggle */}
               <div className="flex items-center p-0.5 rounded-[6px] border border-rule bg-paper-3">
-                <button type="button" aria-pressed={displayMode === "card"} onClick={() => handleSetDisplayMode("card")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback ${displayMode === "card" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
+                <button type="button" aria-pressed={displayMode === "card"} onClick={() => handleSetDisplayMode("card")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback whitespace-nowrap ${displayMode === "card" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
                   <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                   <span className="hidden sm:inline">{"Card"}</span>
                 </button>
-                <button type="button" aria-pressed={displayMode === "table"} onClick={() => handleSetDisplayMode("table")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback ${displayMode === "table" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
+                <button type="button" aria-pressed={displayMode === "table"} onClick={() => handleSetDisplayMode("table")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs flex items-center gap-1 tap-feedback whitespace-nowrap ${displayMode === "table" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>
                   <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
                   <span className="hidden sm:inline">{"Table"}</span>
                 </button>
@@ -258,17 +258,17 @@ export default function Dashboard() {
 
               {/* Room Filter */}
               <div className="flex items-center p-0.5 rounded-[6px] border border-rule bg-paper-3">
-                <button type="button" aria-pressed={roomFilter === "all"} onClick={() => handleSetRoomFilter("all")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${roomFilter === "all" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>{"All"}</button>
-                <button type="button" aria-pressed={roomFilter === "resus"} onClick={() => handleSetRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${roomFilter === "resus" ? "bg-bad text-paper" : "text-muted hover:text-ink"}`}>{"Resus"}</button>
-                <button type="button" aria-pressed={roomFilter === "non-resus"} onClick={() => handleSetRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${roomFilter === "non-resus" ? "bg-ok text-paper" : "text-muted hover:text-ink"}`}>{"Non-Resus"}</button>
+                <button type="button" aria-pressed={roomFilter === "all"} onClick={() => handleSetRoomFilter("all")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback whitespace-nowrap ${roomFilter === "all" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>{"All"}</button>
+                <button type="button" aria-pressed={roomFilter === "resus"} onClick={() => handleSetRoomFilter("resus")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback whitespace-nowrap ${roomFilter === "resus" ? "bg-bad text-paper" : "text-muted hover:text-ink"}`}>{"Resus"}</button>
+                <button type="button" aria-pressed={roomFilter === "non-resus"} onClick={() => handleSetRoomFilter("non-resus")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback whitespace-nowrap ${roomFilter === "non-resus" ? "bg-ok text-paper" : "text-muted hover:text-ink"}`}>{"Non-Resus"}</button>
               </div>
 
               {/* View Filter (Card View Only) */}
               {displayMode === "card" && (
                 <div className="flex items-center p-0.5 rounded-[6px] border border-rule bg-paper-3">
-                  <button type="button" aria-pressed={view === "both"} onClick={() => handleSetView("both")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${view === "both" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>{"Both"}</button>
-                  <button type="button" aria-pressed={view === "surgery"} onClick={() => handleSetView("surgery")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${view === "surgery" ? "bg-bad text-paper" : "text-muted hover:text-ink"}`}>{"Surgery"}</button>
-                  <button type="button" aria-pressed={view === "ortho"} onClick={() => handleSetView("ortho")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback ${view === "ortho" ? "bg-ok text-paper" : "text-muted hover:text-ink"}`}>{"Ortho"}</button>
+                  <button type="button" aria-pressed={view === "both"} onClick={() => handleSetView("both")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback whitespace-nowrap ${view === "both" ? "bg-paper text-ink border border-rule" : "text-muted hover:text-ink border border-transparent"}`}>{"Both"}</button>
+                  <button type="button" aria-pressed={view === "surgery"} onClick={() => handleSetView("surgery")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback whitespace-nowrap ${view === "surgery" ? "bg-bad text-paper" : "text-muted hover:text-ink"}`}>{"Surgery"}</button>
+                  <button type="button" aria-pressed={view === "ortho"} onClick={() => handleSetView("ortho")} className={`px-2.5 py-1.5 rounded-[4px] font-medium transition-colors duration-200 text-xs tap-feedback whitespace-nowrap ${view === "ortho" ? "bg-ok text-paper" : "text-muted hover:text-ink"}`}>{"Ortho"}</button>
                 </div>
               )}
             </div>
@@ -278,7 +278,15 @@ export default function Dashboard() {
         {/* Quick Navigation - Always visible in card mode */}
         {displayMode === "card" && (
           <div className="mb-4 rounded-[10px] overflow-hidden border border-rule bg-paper-2 transition-colors">
-            <div className="flex overflow-x-auto lg:grid lg:grid-cols-9 gap-1.5 p-2 hide-scrollbar">
+            <div
+              className={`flex overflow-x-auto lg:grid ${
+                view === "surgery"
+                  ? "lg:grid-cols-8"
+                  : view === "ortho"
+                    ? "lg:grid-cols-1"
+                    : "lg:grid-cols-9"
+              } gap-1.5 p-2 hide-scrollbar`}
+            >
               {(
                 view === "surgery"
                   ? SURGERY_DEPTS
@@ -294,7 +302,7 @@ export default function Dashboard() {
                     type="button"
                     key={dept}
                     onClick={() => scrollToDepartment(dept)}
-                    className={`flex-shrink-0 w-[88px] lg:w-auto rounded-[6px] px-2 py-2 transition-colors duration-200 group flex flex-col items-center justify-center border tap-feedback ${
+                    className={`flex-shrink-0 min-w-[96px] sm:min-w-[104px] lg:min-w-0 rounded-[6px] px-2.5 py-2 transition-colors duration-200 group flex flex-col items-center justify-center border tap-feedback ${
                       hasCases
                         ? isSurgery
                           ? "bg-paper text-ink border-bad/40 hover:bg-bad hover:text-paper"
@@ -302,7 +310,7 @@ export default function Dashboard() {
                         : "bg-paper-3 text-muted border-rule hover:border-rule-2"
                     }`}
                   >
-                    <div className="text-[11px] font-medium mb-0.5 w-full truncate text-center" title={dept}>{dept}</div>
+                    <div className="text-[11px] font-medium mb-0.5 w-full whitespace-nowrap text-center" title={dept}>{dept}</div>
                     <div
                       className={`text-base font-medium leading-none measured ${
                         hasCases
@@ -376,9 +384,9 @@ export default function Dashboard() {
               <div
                 className={`${
                   view === "both" ? "lg:flex-[3]" : "flex-1"
-                } rounded-[10px] border border-rule bg-paper-2 overflow-hidden transition-colors duration-200 slide-in`}
+                } rounded-[10px] border border-rule bg-paper-2 transition-colors duration-200 slide-in min-w-0`}
               >
-                <div className="bg-bad text-paper px-5 py-3 border-b border-bad">
+                <div className="bg-bad text-paper px-5 py-3 border-b border-bad rounded-t-[9px]">
                   <h2 className="text-lg font-medium flex items-center gap-2">
                     <svg aria-hidden="true" className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
@@ -387,13 +395,19 @@ export default function Dashboard() {
                     <span className="text-paper/80 text-xs font-normal ml-1 hidden sm:inline">แผนกศัลยกรรม</span>
                   </h2>
                 </div>
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div
+                  className={`p-4 grid gap-4 ${
+                    view === "both"
+                      ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
+                      : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                  }`}
+                >
                   {SURGERY_DEPTS.map((dept) => {
                     const cases = getCasesForDepartment(dept);
                     return (
                       <div
                         key={dept}
-                        className="flex flex-col gap-2"
+                        className="flex flex-col gap-2 scroll-mt-20 min-w-0"
                         ref={(el) => {
                           if (el) Reflect.set(deptRefs.current, dept, el);
                         }}
@@ -439,9 +453,9 @@ export default function Dashboard() {
               <div
                 className={`${
                   view === "both" ? "lg:flex-[1]" : "flex-1"
-                } rounded-[10px] border border-rule bg-paper-2 overflow-hidden transition-colors duration-200 slide-in`}
+                } rounded-[10px] border border-rule bg-paper-2 transition-colors duration-200 slide-in min-w-0`}
               >
-                <div className="bg-ok text-paper px-5 py-3 border-b border-ok">
+                <div className="bg-ok text-paper px-5 py-3 border-b border-ok rounded-t-[9px]">
                   <h2 className="text-lg font-medium flex items-center gap-2">
                     <svg aria-hidden="true" className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.5c-3.5 0-6 2.5-6 6v3c0 1.5-1 2.5-2 3.5-.5.5-.5 1 0 1.5.5.5 1 .5 1.5 0 1.5-1.5 2.5-3 2.5-5v-3c0-2 1.5-3.5 4-3.5s4 1.5 4 3.5v3c0 2 1 3.5 2.5 5 .5.5 1 .5 1.5 0s.5-1 0-1.5c-1-1-2-2-2-3.5v-3c0-3.5-2.5-6-6-6z" />
@@ -456,7 +470,7 @@ export default function Dashboard() {
                     return (
                       <div
                         key={dept}
-                        className="flex flex-col gap-2 max-w-full"
+                        className="flex flex-col gap-2 max-w-full scroll-mt-20 min-w-0"
                         ref={(el) => {
                           if (el) Reflect.set(deptRefs.current, dept, el);
                         }}
@@ -543,19 +557,19 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
   };
 
   return (
-    <div className="p-4 rounded-[10px] border border-rule bg-paper-2 flex flex-col gap-3">
+    <div className="p-4 rounded-[10px] border border-rule bg-paper-2 flex flex-col gap-3 min-w-0">
       {/* Header: HN & Fast Track */}
-      <div className="flex justify-between items-start">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-lg font-medium measured text-ink">{caseData.hn}</span>
+      <div className="flex justify-between items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-lg font-medium measured text-ink whitespace-nowrap">{caseData.hn}</span>
             <button
               type="button"
               onClick={onToggleUrgencyClick}
               disabled={isUpdating}
               title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
               aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border ${
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border shrink-0 ${
                 caseData.isUrgent
                   ? "bg-bad text-paper border-bad"
                   : "bg-paper-3 border-rule-2 text-muted hover:text-bad hover:border-bad/40"
@@ -568,12 +582,12 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
             </button>
           </div>
           {fullName && (
-            <div className="text-sm font-medium text-ink-2">
+            <div className="text-sm font-medium text-ink-2 break-words">
               {fullName}
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-1">
+        <div className="flex flex-col items-end gap-1 shrink-0">
           <div className="flex items-center gap-1 whitespace-nowrap">
             <span className="px-2 py-1 rounded-[4px] text-xs font-medium bg-paper-3 border border-rule text-ink">
               {caseData.room}
@@ -588,13 +602,13 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
       </div>
 
       {/* DX Section */}
-      <div className="text-sm p-3 rounded-[6px] border border-rule bg-paper-3 text-ink">
+      <div className="text-sm p-3 rounded-[6px] border border-rule bg-paper-3 text-ink min-w-0">
         <div className="text-xs font-medium mb-1 text-muted">{"Dx / Problem"}</div>
-        <div className="whitespace-pre-wrap">{caseData.problem}</div>
+        <div className="whitespace-pre-wrap break-words">{caseData.problem}</div>
       </div>
 
       {/* Time Info */}
-      <div className="flex justify-between items-center text-[11px] measured text-muted">
+      <div className="flex flex-wrap justify-between items-center gap-2 text-[11px] measured text-muted">
         <div className="flex items-center gap-1">
            <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -653,15 +667,15 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
   return (
     <tr className="transition-colors align-top hover:bg-paper-3/60">
       <td className="p-3 align-top text-ink">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-medium measured">{caseData.hn}</span>
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <span className="font-medium measured whitespace-nowrap">{caseData.hn}</span>
           <button
             type="button"
             onClick={onToggleUrgencyClick}
             disabled={isUpdating}
             title={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
             aria-label={caseData.isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
-            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border ${
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border shrink-0 ${
               caseData.isUrgent
                 ? "bg-bad text-paper border-bad"
                 : "bg-paper-3 border-rule-2 text-muted hover:text-bad hover:border-bad/40"
@@ -674,13 +688,13 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           </button>
         </div>
         {fullName && (
-          <div className="text-sm font-medium mb-2 text-ink-2">
+          <div className="text-sm font-medium mb-2 text-ink-2 break-words max-w-[180px]">
             {fullName}
           </div>
         )}
         <div className="text-[11px] measured flex flex-col gap-1 text-muted">
-          <div className="flex items-center gap-1">
-             <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-1 whitespace-nowrap">
+             <svg aria-hidden="true" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
              </svg>
              {sentTimeFull}
@@ -700,7 +714,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           />
         </div>
       </td>
-      <td className="p-3 text-sm whitespace-pre-wrap text-ink">
+      <td className="p-3 text-sm whitespace-pre-wrap break-words max-w-md text-ink">
         {caseData.problem}
       </td>
       <td className="p-3">
@@ -770,20 +784,20 @@ function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; dept
 
   return (
     <>
-      <div className="p-2 rounded-[6px] border border-rule bg-paper flex flex-row items-start gap-2 transition-colors">
-        <span className="font-medium text-xs min-w-[65px] truncate mt-1.5 text-ink" title={deptName}>
+      <div className="p-2 rounded-[6px] border border-rule bg-paper flex flex-col sm:flex-row sm:items-start gap-2 transition-colors min-w-0">
+        <span className="font-medium text-xs sm:min-w-[80px] whitespace-nowrap sm:mt-1.5 text-ink" title={deptName}>
           {deptName}
         </span>
         
-        <div className="flex-1 flex flex-col gap-1.5 w-full">
-          <div className="flex gap-2 items-stretch h-8">
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5 w-full">
+          <div className="flex gap-2 items-stretch min-h-8">
             {!isAccepted ? (
               <>
                 <button
                   type="button"
                   onClick={onAccept}
                   disabled={isUpdating}
-                  className={`flex-1 rounded-[6px] text-xs font-medium transition-opacity flex items-center justify-center gap-1 whitespace-nowrap ${
+                  className={`flex-1 min-w-0 px-2 rounded-[6px] text-xs font-medium transition-opacity flex items-center justify-center gap-1 whitespace-nowrap ${
                     isUpdating
                       ? "bg-paper-3 text-muted cursor-not-allowed border border-rule"
                       : "bg-ok text-paper hover:opacity-90"
@@ -796,14 +810,14 @@ function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; dept
                     </>
                   )}
                 </button>
-                <button type="button" disabled className="flex-1 rounded-[6px] text-xs font-medium flex items-center justify-center gap-1 cursor-not-allowed bg-paper-3 border border-dashed border-rule-2 text-muted whitespace-nowrap">
+                <button type="button" disabled className="flex-1 min-w-0 px-2 rounded-[6px] text-xs font-medium flex items-center justify-center gap-1 cursor-not-allowed bg-paper-3 border border-dashed border-rule-2 text-muted whitespace-nowrap">
                   <svg aria-hidden="true" className="w-3 h-3 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                   ปิดเคส
                 </button>
               </>
             ) : (
               <>
-                <div className="flex-1 relative">
+                <div className="flex-1 min-w-0 relative">
                   <select
                     aria-label={`เลือกสถานะสำหรับ ${deptName}`}
                     value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
@@ -826,7 +840,7 @@ function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; dept
                   type="button"
                   onClick={() => setShowConfirm(true)}
                   disabled={isUpdating || !isStatusSelected}
-                  className={`flex-1 rounded-[6px] text-xs font-medium flex items-center justify-center gap-1 transition-opacity whitespace-nowrap ${
+                  className={`flex-1 min-w-0 px-2 rounded-[6px] text-xs font-medium flex items-center justify-center gap-1 transition-opacity whitespace-nowrap ${
                     isUpdating || !isStatusSelected
                       ? "bg-paper-3 text-muted cursor-not-allowed border border-dashed border-rule-2"
                       : "bg-bad text-paper hover:opacity-90"

@@ -33,10 +33,10 @@ export default function BottomNav() {
       className="lg:hidden fixed bottom-0 left-0 right-0 bg-paper-2 border-t border-rule z-50 transition-colors duration-200"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      <div className="flex justify-around items-center h-16 px-2">
+      <div className="flex justify-around items-center h-16 px-2 gap-1">
         <Link
           href="/"
-          className={`flex flex-col items-center gap-1 px-5 py-2 rounded-[6px] transition-colors group relative ${
+          className={`flex flex-col items-center gap-1 px-3 sm:px-5 py-2 flex-1 max-w-[120px] rounded-[6px] transition-colors group relative ${
             isHome ? "bg-paper-3" : "hover:bg-paper-3/60"
           }`}
           aria-current={isHome ? "page" : undefined}
@@ -70,7 +70,7 @@ export default function BottomNav() {
             )}
           </div>
           <span
-            className={`text-xs font-medium transition-colors duration-200 ${
+            className={`text-xs font-medium transition-colors duration-200 whitespace-nowrap ${
               isHome ? "text-accent" : "text-muted group-hover:text-ink"
             }`}
           >
@@ -79,7 +79,7 @@ export default function BottomNav() {
         </Link>
         <Link
           href="/submit"
-          className={`flex flex-col items-center gap-1 px-5 py-2 rounded-[6px] transition-colors group relative ${
+          className={`flex flex-col items-center gap-1 px-3 sm:px-5 py-2 flex-1 max-w-[120px] rounded-[6px] transition-colors group relative ${
             isSubmit ? "bg-ok-soft" : "hover:bg-paper-3/60"
           }`}
           aria-current={isSubmit ? "page" : undefined}
@@ -108,7 +108,7 @@ export default function BottomNav() {
             </svg>
           </div>
           <span
-            className={`text-xs font-medium transition-colors duration-200 ${
+            className={`text-xs font-medium transition-colors duration-200 whitespace-nowrap ${
               isSubmit ? "text-ok" : "text-ok/80 group-hover:text-ok"
             }`}
           >
@@ -117,7 +117,7 @@ export default function BottomNav() {
         </Link>
         <Link
           href="/completed"
-          className={`flex flex-col items-center gap-1 px-5 py-2 rounded-[6px] transition-colors group relative ${
+          className={`flex flex-col items-center gap-1 px-3 sm:px-5 py-2 flex-1 max-w-[120px] rounded-[6px] transition-colors group relative ${
             isCompleted ? "bg-paper-3" : "hover:bg-paper-3/60"
           }`}
           aria-current={isCompleted ? "page" : undefined}
@@ -144,7 +144,7 @@ export default function BottomNav() {
             />
           </svg>
           <span
-            className={`text-xs font-medium transition-colors duration-200 ${
+            className={`text-xs font-medium transition-colors duration-200 whitespace-nowrap ${
               isCompleted ? "text-cool" : "text-muted group-hover:text-ink"
             }`}
           >

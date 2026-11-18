@@ -93,14 +93,14 @@ export default function ConfirmModal({
         className="bg-paper-2 border border-rule rounded-[10px] max-w-md w-full p-6 animate-scale-in overscroll-contain"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start gap-4 mb-4">
+        <div className="flex items-start gap-3 sm:gap-4 mb-4">
           <div className={`p-2 rounded-[6px] ${style.iconBg} shrink-0`}>{style.icon}</div>
-          <div>
-            <h3 id={titleId} className="text-lg font-medium text-ink">{title}</h3>
-            <p id={descriptionId} className="text-sm text-ink-2 mt-1">{message}</p>
+          <div className="min-w-0 flex-1">
+            <h3 id={titleId} className="text-lg font-medium text-ink break-words">{title}</h3>
+            <p id={descriptionId} className="text-sm text-ink-2 mt-1 break-words">{message}</p>
           </div>
         </div>
-        <div className="flex gap-3 justify-end mt-6">
+        <div className="flex flex-wrap gap-3 justify-end mt-6">
           <button
             type="button"
             ref={cancelRef}

@@ -176,8 +176,8 @@ export default function SubmitPage() {
   const labelClasses = "flex items-center gap-1.5 text-xs font-medium mb-2 text-ink-2";
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-3 py-6 bg-paper transition-colors duration-200">
-      <div className="relative max-w-4xl w-full">
+    <div className="min-h-[calc(100dvh-3.5rem)] flex items-start lg:items-center justify-center p-3 py-4 sm:py-6 pb-24 lg:pb-8 bg-paper transition-colors duration-200">
+      <div className="relative max-w-4xl w-full min-w-0">
         <div className="flex items-center gap-3 mb-4 px-1">
           <div className="w-9 h-9 rounded-[6px] flex items-center justify-center bg-accent-soft border border-accent/30 text-accent">
             <svg aria-hidden="true" className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -345,7 +345,7 @@ export default function SubmitPage() {
                       />
                       <label
                         htmlFor={dept}
-                        className={`flex items-center justify-center gap-1.5 p-2.5 rounded-[6px] border cursor-pointer transition-colors duration-200 font-medium text-xs peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus ${
+                        className={`flex items-center justify-center gap-1.5 p-2.5 rounded-[6px] border cursor-pointer transition-colors duration-200 font-medium text-xs whitespace-nowrap peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus ${
                           selectedDepts.includes(dept)
                             ? "bg-ok text-paper border-ok"
                             : "bg-paper-3 text-ink-2 border-rule-2 hover:border-ok/60 hover:text-ink"
@@ -384,7 +384,7 @@ export default function SubmitPage() {
                       type="button"
                       onClick={() => handleSubmit(false)}
                       disabled={isLoading}
-                      className={`w-full font-medium py-3 px-4 rounded-[6px] transition-opacity duration-200 text-sm flex items-center justify-center gap-2 tap-feedback whitespace-nowrap ${
+                      className={`w-full font-medium py-3 px-2.5 sm:px-4 rounded-[6px] transition-opacity duration-200 text-sm flex items-center justify-center gap-1.5 sm:gap-2 tap-feedback whitespace-nowrap ${
                         isLoading
                           ? "bg-paper-3 cursor-not-allowed text-muted border border-rule"
                           : "bg-ok text-paper hover:opacity-90"
@@ -413,7 +413,7 @@ export default function SubmitPage() {
                       type="button"
                       onClick={() => handleSubmit(true)}
                       disabled={isLoading}
-                      className={`w-full font-medium py-3 px-4 rounded-[6px] transition-opacity duration-200 text-sm flex items-center justify-center gap-2 tap-feedback whitespace-nowrap ${
+                      className={`w-full font-medium py-3 px-2.5 sm:px-4 rounded-[6px] transition-opacity duration-200 text-sm flex items-center justify-center gap-1.5 sm:gap-2 tap-feedback whitespace-nowrap ${
                         isLoading
                           ? "bg-paper-3 cursor-not-allowed text-muted border border-rule"
                           : "bg-bad text-paper hover:opacity-90"

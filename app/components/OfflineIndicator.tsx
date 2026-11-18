@@ -1,16 +1,20 @@
 "use client";
 
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function OfflineIndicator() {
   const isOnline = useNetworkStatus();
-  const [show, setShow] = useState(!isOnline);
+  const [show, setShow] = useState(false);
+  const wasOfflineRef = useRef(false);
 
   useEffect(() => {
     if (!isOnline) {
+      wasOfflineRef.current = true;
       setShow(true);
-    } else {
+    } else if (wasOfflineRef.current) {
+      wasOfflineRef.current = false;
+      setShow(true);
       // Hide after a brief moment when coming back online
       const timer = setTimeout(() => setShow(false), 3000);
       return () => clearTimeout(timer);

@@ -59,7 +59,7 @@ function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: 
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-20 lg:bottom-6 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <div className="fixed bottom-20 lg:bottom-6 right-3 left-3 sm:left-auto sm:right-4 z-[100] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
       ))}
@@ -121,7 +121,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
       }`}
     >
       {iconMap[toast.type]}
-      <span className="flex-1">{toast.message}</span>
+      <span className="flex-1 min-w-0 break-words">{toast.message}</span>
       {toast.undoAction && (
         <button
           type="button"
