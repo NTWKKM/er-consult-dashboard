@@ -799,12 +799,20 @@ describe("fetchAllCompletedConsultsForExport", () => {
     const MAX_RESULTS = 50000;
     const batches = Math.ceil(MAX_RESULTS / BATCH_SIZE);
 
-    // Every batch is full, so it'll keep fetching until MAX_RESULTS reached
-    const fullBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
-      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, `2024-01-01T00:00:00.000Z`))
-    );
-    // Mock the same batch repeatedly
-    mockGetDocs.mockResolvedValue(makeQuerySnapshot(fullBatch));
+    // Every batch is full with distinct document IDs, so it keeps fetching until MAX_RESULTS reached
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      const batchIdx = callIndex;
+      callIndex += 1;
+      return makeQuerySnapshot(
+        Array.from({ length: BATCH_SIZE }, (_, i) =>
+          makeDocSnapshot(
+            `b${batchIdx}-c${i}`,
+            makeConsultData(`${batchIdx * BATCH_SIZE + i}`, "2024-01-01T00:00:00.000Z")
+          )
+        )
+      );
+    });
 
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
@@ -970,6 +978,81 @@ describe("fetchAllCompletedConsultsForExport", () => {
     expect(result.consults).toHaveLength(BATCH_SIZE);
     expect(result.truncated).toBe(true);
     expect(result.truncationReason).toBe("unconfirmed_completeness");
+  });
+
+  it("retains server-confirmed rows and marks export incomplete when a subsequent ordinary batch read rejects", async () => {
+    const BATCH_SIZE = 1000;
+    const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, "2024-01-01T00:00:00.000Z"))
+    );
+
+    mockGetDocs
+      .mockResolvedValueOnce(makeQuerySnapshot(firstBatch, false))
+      .mockRejectedValueOnce(Object.assign(new Error("Missing or insufficient permissions"), { code: "permission-denied" }));
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(2);
+    expect(mockStartAfter).toHaveBeenCalledTimes(1);
+    expect(mockStartAfter).toHaveBeenCalledWith(firstBatch[BATCH_SIZE - 1]);
+    expect(result.consults).toHaveLength(BATCH_SIZE);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+  });
+
+  it("propagates rejection when the initial ordinary batch read rejects", async () => {
+    mockGetDocs.mockRejectedValueOnce(new Error("Initial batch failure"));
+
+    await expect(
+      fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31")
+    ).rejects.toThrow("Initial batch failure");
+  });
+
+  it("stops scanning after a pending batch read completes when the cancellation signal is aborted", async () => {
+    const BATCH_SIZE = 1000;
+    const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, "2024-01-01T00:00:00.000Z"))
+    );
+    const controller = new AbortController();
+
+    mockGetDocs.mockImplementationOnce(async () => {
+      controller.abort();
+      return makeQuerySnapshot(firstBatch, false);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31", {
+      signal: controller.signal,
+    });
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(1);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+  });
+
+  it("includes a re-consulted case whose createdAt moves forward during ascending pagination without duplicating already scanned cases", async () => {
+    const BATCH_SIZE = 1000;
+    const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, "2024-01-01T00:00:00.000Z"))
+    );
+    const secondBatch = [
+      // Previously unvisited case whose createdAt was moved later by re-consult & re-completion
+      makeDocSnapshot("reconsulted-tail", makeConsultData("5001", "2024-01-20T12:00:00.000Z")),
+      // Previously scanned case updated forward and seen again in second batch -> should deduplicate
+      makeDocSnapshot("c0", makeConsultData("0", "2024-01-21T12:00:00.000Z")),
+    ];
+
+    mockGetDocs
+      .mockResolvedValueOnce(makeQuerySnapshot(firstBatch, false))
+      .mockResolvedValueOnce(makeQuerySnapshot(secondBatch, false));
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(mockOrderBy).toHaveBeenCalledWith("createdAt", "asc");
+    expect(result.truncated).toBe(false);
+    expect(result.consults).toHaveLength(BATCH_SIZE + 1);
+    expect(result.consults.find((c) => c.id === "reconsulted-tail")?.hn).toBe("5001");
+    expect(result.consults.filter((c) => c.id === "c0")).toHaveLength(1);
+    expect(result.consults.find((c) => c.id === "c0")?.createdAt).toBe("2024-01-21T12:00:00.000Z");
   });
 
   it("does not mark an exhausted query as truncated when lookahead at scan limit is empty", async () => {

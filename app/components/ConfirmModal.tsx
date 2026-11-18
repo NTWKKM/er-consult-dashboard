@@ -32,9 +32,7 @@ export default function ConfirmModal({
   const titleId = useId();
   const descriptionId = useId();
 
-  const restoreFocus = useCallback(() => {
-    const restoreTarget = prevFocusedRef.current;
-    prevFocusedRef.current = null;
+  const restoreFocus = useCallback((restoreTarget: HTMLElement | null) => {
     if (
       restoreTarget &&
       restoreTarget.isConnected &&
@@ -88,9 +86,19 @@ export default function ConfirmModal({
 
     return () => {
       inertApplied.forEach((el) => el.removeAttribute("inert"));
+    };
+  }, [isOpen]);
+
+  // Restore focus in a passive effect cleanup so DOM deletions in the same commit
+  // complete before checking `isConnected` or selecting a fallback outside the removed subtree.
+  useEffect(() => {
+    if (!isOpen) return;
+    return () => {
       if (wasOpenRef.current) {
         wasOpenRef.current = false;
-        restoreFocus();
+        const targetToRestore = prevFocusedRef.current;
+        prevFocusedRef.current = null;
+        restoreFocus(targetToRestore);
       }
     };
   }, [isOpen, restoreFocus]);

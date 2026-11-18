@@ -44,9 +44,19 @@ export default function CompletedPage() {
   const exportSessionIdRef = useRef(0);
   const isExportModalOpenRef = useRef(false);
   const exportDatesRef = useRef({ start: "", end: "" });
+  const exportAbortControllerRef = useRef<AbortController | null>(null);
   const exportModalRef = useRef<HTMLDivElement>(null);
   const prevFocusedElement = useRef<HTMLElement | null>(null);
   const exportWasOpenRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      exportSessionIdRef.current += 1;
+      isExportModalOpenRef.current = false;
+      exportAbortControllerRef.current?.abort();
+      exportAbortControllerRef.current = null;
+    };
+  }, []);
 
   const { darkMode } = useSettings();
   const { addToast } = useToast();
@@ -238,6 +248,8 @@ export default function CompletedPage() {
   };
 
   const openExportModal = useCallback(() => {
+    exportAbortControllerRef.current?.abort();
+    exportAbortControllerRef.current = null;
     prevFocusedElement.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     exportSessionIdRef.current += 1;
@@ -251,6 +263,8 @@ export default function CompletedPage() {
   }, []);
 
   const closeExportModal = useCallback(() => {
+    exportAbortControllerRef.current?.abort();
+    exportAbortControllerRef.current = null;
     exportSessionIdRef.current += 1;
     isExportModalOpenRef.current = false;
     setIsExporting(false);
@@ -297,20 +311,28 @@ export default function CompletedPage() {
       return;
     }
 
+    exportAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    exportAbortControllerRef.current = abortController;
     setIsExporting(true);
     try {
       const {
         consults: exportList,
         truncated,
         truncationReason,
-      } = await fetchAllCompletedConsultsForExport(submittedStartDate, submittedEndDate);
+        permissionDenied,
+      } = await fetchAllCompletedConsultsForExport(submittedStartDate, submittedEndDate, {
+        signal: abortController.signal,
+      });
 
       if (!isActiveSession()) return;
 
       if (truncated && exportList.length === 0) {
         if (truncationReason === "unconfirmed_completeness") {
           setDialogFeedback(
-            "ไม่สามารถยืนยันความครบถ้วนของข้อมูลกับเซิร์ฟเวอร์ได้ (Export ได้ 0 รายการ) กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง",
+            permissionDenied
+              ? "ไม่มีสิทธิ์เข้าถึงข้อมูลบางส่วนจากเซิร์ฟเวอร์ (Export ได้ 0 รายการ) กรุณาตรวจสอบสิทธิ์บัญชีผู้ใช้กับผู้ดูแลระบบ"
+              : "ไม่สามารถยืนยันความครบถ้วนของข้อมูลจากเซิร์ฟเวอร์ได้ (Export ได้ 0 รายการ) กรุณาตรวจสอบการเชื่อมต่อหรือลองใหม่อีกครั้ง",
             "warning"
           );
         } else {
@@ -391,7 +413,9 @@ export default function CompletedPage() {
         if (truncationReason === "unconfirmed_completeness") {
           addToast({
             type: "warning",
-            message: `Export ได้ ${exportList.length.toLocaleString()} รายการ แต่ไม่สามารถยืนยันความครบถ้วนของข้อมูลทั้งหมดกับเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง`,
+            message: permissionDenied
+              ? `Export ได้ ${exportList.length.toLocaleString()} รายการ แต่ระบบถูกปฏิเสธสิทธิ์ในการอ่านข้อมูลบางส่วนจากเซิร์ฟเวอร์ กรุณาตรวจสอบสิทธิ์บัญชีผู้ใช้กับผู้ดูแลระบบ`
+              : `Export ได้ ${exportList.length.toLocaleString()} รายการ แต่ไม่สามารถยืนยันความครบถ้วนของข้อมูลทั้งหมดจากเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อหรือลองใหม่อีกครั้ง`,
           });
         } else {
           addToast({
@@ -407,6 +431,9 @@ export default function CompletedPage() {
       console.error("Export error:", error);
       setDialogFeedback("เกิดข้อผิดพลาดในการ Export กรุณาลองใหม่อีกครั้ง", "error");
     } finally {
+      if (exportAbortControllerRef.current === abortController) {
+        exportAbortControllerRef.current = null;
+      }
       if (exportSessionIdRef.current === sessionId) {
         setIsExporting(false);
       }

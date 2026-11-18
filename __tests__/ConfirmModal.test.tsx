@@ -335,5 +335,42 @@ describe("ConfirmModal", () => {
       expect(appShell).not.toHaveAttribute("inert");
       expect(document.activeElement).toBe(opener);
     });
+
+    it("restores focus to a connected button outside a removed wrapper when both opener and modal unmount together", () => {
+      const { rerender } = render(
+        <main>
+          <button key="outside" type="button">Outside Button</button>
+          <div key="wrapper">
+            <button type="button">Opener</button>
+            <ConfirmModal {...defaultProps({ isOpen: false })} />
+          </div>
+        </main>
+      );
+      const opener = screen.getByRole("button", { name: "Opener" });
+      opener.focus();
+
+      rerender(
+        <main>
+          <button key="outside" type="button">Outside Button</button>
+          <div key="wrapper">
+            <button type="button">Opener</button>
+            <ConfirmModal {...defaultProps({ isOpen: true })} />
+          </div>
+        </main>
+      );
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "ยกเลิก" })
+      );
+
+      // Remove wrapper containing both opener and open ConfirmModal
+      rerender(
+        <main>
+          <button key="outside" type="button">Outside Button</button>
+        </main>
+      );
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Outside Button" })
+      );
+    });
   });
 });

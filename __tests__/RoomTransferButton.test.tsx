@@ -531,5 +531,101 @@ describe("RoomTransferButton", () => {
         value: originalInnerWidth,
       });
     });
+
+    it("uses the nearest overflow-clipping ancestor bounds when computing left-0 vs right-0", () => {
+      const originalInnerWidth = window.innerWidth;
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 1024,
+      });
+
+      const { container } = render(
+        <div data-testid="scroll-container" className="overflow-x-auto">
+          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" darkMode={false} />
+        </div>
+      );
+
+      const scrollContainer = container.firstElementChild as HTMLElement;
+      const wrapper = scrollContainer.firstElementChild as HTMLElement;
+      vi.spyOn(scrollContainer, "getBoundingClientRect").mockImplementation(() => ({
+        x: 200,
+        y: 0,
+        width: 500,
+        height: 400,
+        top: 0,
+        right: 700,
+        bottom: 400,
+        left: 200,
+        toJSON: () => ({}),
+      }));
+      // In window coordinates right=250 >= 160, but relative to scrollContainer.left (200),
+      // right-0 would clip past 200 (250 - 160 = 90 < 200) while left-0 fits inside [200, 700].
+      vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
+        x: 220,
+        y: 0,
+        width: 30,
+        height: 30,
+        top: 0,
+        right: 250,
+        bottom: 30,
+        left: 220,
+        toJSON: () => ({}),
+      }));
+
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      expect(screen.getByRole("listbox").className).toContain("left-0");
+
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: originalInnerWidth,
+      });
+    });
+
+    it("clamps horizontal menu placement within viewport when neither anchor fits", () => {
+      const originalInnerWidth = window.innerWidth;
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 320,
+      });
+
+      const { container } = renderButton();
+      const wrapper = container.firstElementChild as HTMLElement;
+      // Menu fallback width is 160px; mock rendered listbox width to 200px during open resize.
+      vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
+        x: 145,
+        y: 0,
+        width: 22,
+        height: 30,
+        top: 0,
+        right: 167,
+        bottom: 30,
+        left: 145,
+        toJSON: () => ({}),
+      }));
+
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      const listbox = screen.getByRole("listbox");
+      Object.defineProperty(listbox, "offsetWidth", {
+        configurable: true,
+        value: 200,
+      });
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+
+      // With menuWidth=200 and trigger x=145..167 in a 320px viewport,
+      // clamping places left edge at viewport x=0 (offset -145px from trigger.left=145).
+      expect(listbox.style.left).toBe("-145px");
+      expect(listbox.style.right).toBe("auto");
+
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: originalInnerWidth,
+      });
+    });
   });
 });

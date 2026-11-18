@@ -26,6 +26,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [alignLeft, setAlignLeft] = useState(false);
+  const [clampOffsetLeft, setClampOffsetLeft] = useState<number | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const { addToast } = useToast();
@@ -145,8 +146,10 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     onOpenChange?.(isOpen);
   }, [isOpen, onOpenChange]);
 
-  const computeAlignLeft = useCallback(() => {
-    if (!dropdownRef.current || typeof window === "undefined") return false;
+  const computeMenuPlacement = useCallback(() => {
+    if (!dropdownRef.current || typeof window === "undefined") {
+      return { alignLeft: false, clampOffsetLeft: null as number | null };
+    }
     const rect = dropdownRef.current.getBoundingClientRect();
     const renderedWidth =
       listboxRef.current?.getBoundingClientRect().width ||
@@ -156,37 +159,85 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       (parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16) * 10;
     const menuWidth = renderedWidth > 0 ? renderedWidth : fallbackWidth;
     const requiredWidth = menuWidth + 8;
-    const fitsRight = rect.right >= menuWidth;
-    const fitsLeft = rect.left + menuWidth <= window.innerWidth;
+
+    let boundsLeft = 0;
+    let boundsRight = window.innerWidth;
+    let ancestor: HTMLElement | null = dropdownRef.current.parentElement;
+    while (ancestor && ancestor !== document.body && ancestor !== document.documentElement) {
+      const style = window.getComputedStyle(ancestor);
+      const overflowX = style.overflowX || style.overflow;
+      const isClippingAncestor =
+        overflowX === "auto" ||
+        overflowX === "scroll" ||
+        overflowX === "hidden" ||
+        overflowX === "clip" ||
+        ancestor.classList.contains("overflow-auto") ||
+        ancestor.classList.contains("overflow-x-auto") ||
+        ancestor.classList.contains("overflow-hidden") ||
+        ancestor.classList.contains("overflow-clip");
+      if (isClippingAncestor) {
+        const ancestorRect = ancestor.getBoundingClientRect();
+        if (ancestorRect.right > ancestorRect.left) {
+          boundsLeft = Math.max(0, ancestorRect.left);
+          boundsRight = Math.min(window.innerWidth, ancestorRect.right);
+          break;
+        }
+      }
+      ancestor = ancestor.parentElement;
+    }
+
+    const fitsRight = rect.right - menuWidth >= boundsLeft && rect.right <= boundsRight;
+    const fitsLeft = rect.left >= boundsLeft && rect.left + menuWidth <= boundsRight;
 
     if (fitsRight !== fitsLeft) {
-      return fitsLeft;
+      return { alignLeft: fitsLeft, clampOffsetLeft: null as number | null };
     }
     if (!fitsRight && !fitsLeft) {
-      return false;
+      const availableWidth = boundsRight - boundsLeft;
+      if (menuWidth <= availableWidth) {
+        const clampedViewportLeft = Math.min(
+          Math.max(rect.right - menuWidth, boundsLeft),
+          boundsRight - menuWidth
+        );
+        return {
+          alignLeft: false,
+          clampOffsetLeft: clampedViewportLeft - rect.left,
+        };
+      }
+      return { alignLeft: false, clampOffsetLeft: null as number | null };
     }
 
-    const fitsRightWithMargin = rect.right >= requiredWidth;
-    const fitsLeftWithMargin = rect.left + requiredWidth <= window.innerWidth;
-    return !fitsRightWithMargin && fitsLeftWithMargin;
+    const fitsRightWithMargin =
+      rect.right - requiredWidth >= boundsLeft && rect.right <= boundsRight;
+    const fitsLeftWithMargin =
+      rect.left >= boundsLeft && rect.left + requiredWidth <= boundsRight;
+    return {
+      alignLeft: !fitsRightWithMargin && fitsLeftWithMargin,
+      clampOffsetLeft: null as number | null,
+    };
   }, []);
+
+  const updateMenuPlacement = useCallback(() => {
+    const placement = computeMenuPlacement();
+    setAlignLeft(placement.alignLeft);
+    setClampOffsetLeft(placement.clampOffsetLeft);
+  }, [computeMenuPlacement]);
 
   useEffect(() => {
     if (!isOpen) return;
-    const updateAlign = () => {
-      setAlignLeft(computeAlignLeft());
-    };
-    updateAlign();
-    window.addEventListener("resize", updateAlign);
-    return () => window.removeEventListener("resize", updateAlign);
-  }, [isOpen, computeAlignLeft]);
+    updateMenuPlacement();
+    window.addEventListener("resize", updateMenuPlacement);
+    return () => window.removeEventListener("resize", updateMenuPlacement);
+  }, [isOpen, updateMenuPlacement]);
 
   const handleToggle = useCallback(() => {
     if (!isOpen) {
-      setAlignLeft(computeAlignLeft());
+      updateMenuPlacement();
+    } else {
+      setClampOffsetLeft(null);
     }
     setIsOpen((prev) => !prev);
-  }, [isOpen, computeAlignLeft]);
+  }, [isOpen, updateMenuPlacement]);
 
   return (
     <div className="relative inline-block ml-1" ref={dropdownRef}>
@@ -220,6 +271,11 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
         <div
           ref={listboxRef}
           role="listbox"
+          style={
+            clampOffsetLeft !== null
+              ? { left: `${clampOffsetLeft}px`, right: "auto" }
+              : undefined
+          }
           className={`absolute z-50 mt-1 ${alignLeft ? "left-0" : "right-0"} w-40 rounded-[6px] border border-rule bg-paper-2 overflow-hidden animate-fade-in`}
         >
           <div className="px-3 py-2 text-xs font-medium border-b border-rule bg-paper-3 text-muted">

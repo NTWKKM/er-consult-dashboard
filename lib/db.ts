@@ -234,33 +234,54 @@ export async function searchCompletedConsults(
 
 export type ExportTruncationReason = "limit_exceeded" | "unconfirmed_completeness";
 
+export interface ExportConsultsOptions {
+    signal?: AbortSignal;
+}
+
+function isPermissionDeniedError(err: unknown): boolean {
+    if (typeof err !== "object" || err === null) return false;
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "string" && code.includes("permission-denied");
+}
+
 /**
  * Fetch all completed cases within a date range (for exporting).
  * Uses cursor-based pagination internally to fetch the entire result set.
  */
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
-    endDate: string
-): Promise<{ consults: Consult[]; truncated: boolean; truncationReason?: ExportTruncationReason }> {
+    endDate: string,
+    options?: AbortSignal | ExportConsultsOptions
+): Promise<{ consults: Consult[]; truncated: boolean; truncationReason?: ExportTruncationReason; permissionDenied?: boolean }> {
     const database = requireDb();
     const { start } = getUtcRangeForLocalDate(startDate);
     const { endExclusive } = getUtcRangeForLocalDate(endDate);
+    const signal = options instanceof AbortSignal ? options : options?.signal;
+    const isCancelled = () => Boolean(signal?.aborted);
 
     let allConsults: Consult[] = [];
+    const consultIndexById = new Map<string, number>();
     let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
     let truncated = false;
     let truncationReason: ExportTruncationReason | undefined;
+    let permissionDenied = false;
     let totalScanned = 0;
     const BATCH_SIZE = 1000;
     const MAX_RESULTS = 50000;
 
     while (true) {
+        if (isCancelled()) {
+            truncated = true;
+            truncationReason = "unconfirmed_completeness";
+            break;
+        }
+
         let q = query(
             collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             where("createdAt", ">=", start),
             where("createdAt", "<", endExclusive),
-            orderBy("createdAt", "desc"),
+            orderBy("createdAt", "asc"),
             limit(BATCH_SIZE)
         );
 
@@ -273,12 +294,24 @@ export async function fetchAllCompletedConsultsForExport(
             snapshot = await getDocs(q);
         } catch (err) {
             if (lastDoc !== null) {
-                console.warn("Export batch fetch failed; retaining server-confirmed rows:", err);
+                permissionDenied = isPermissionDeniedError(err);
+                console.warn(
+                    permissionDenied
+                        ? "Export batch fetch denied; retaining server-confirmed rows:"
+                        : "Export batch fetch failed; retaining server-confirmed rows:",
+                    err
+                );
                 truncated = true;
                 truncationReason = "unconfirmed_completeness";
                 break;
             }
             throw err;
+        }
+
+        if (isCancelled()) {
+            truncated = true;
+            truncationReason = "unconfirmed_completeness";
+            break;
         }
 
         if (snapshot.metadata?.fromCache !== false) {
@@ -296,7 +329,17 @@ export async function fetchAllCompletedConsultsForExport(
             .map(mapDocToConsult)
             .filter((c): c is Consult => c !== null && Boolean(c.hn));
 
-        allConsults.push(...batch);
+        for (const consult of batch) {
+            const existingIndex = consultIndexById.get(consult.id);
+            if (existingIndex !== undefined) {
+                if (allConsults[existingIndex].createdAt !== consult.createdAt) {
+                    allConsults[existingIndex] = consult;
+                }
+            } else {
+                consultIndexById.set(consult.id, allConsults.length);
+                allConsults.push(consult);
+            }
+        }
 
         // Safety limit to prevent unbounded memory growth or infinite scans over invalid docs
         if (allConsults.length > MAX_RESULTS) {
@@ -313,18 +356,27 @@ export async function fetchAllCompletedConsultsForExport(
         lastDoc = snapshot.docs[snapshot.docs.length - 1];
 
         if (totalScanned >= MAX_RESULTS + BATCH_SIZE) {
+            if (isCancelled()) {
+                truncated = true;
+                truncationReason = "unconfirmed_completeness";
+                break;
+            }
+
             const lookaheadQuery = query(
                 collection(database, COLLECTION_NAME),
                 where("status", "==", "completed"),
                 where("createdAt", ">=", start),
                 where("createdAt", "<", endExclusive),
-                orderBy("createdAt", "desc"),
+                orderBy("createdAt", "asc"),
                 startAfter(lastDoc),
                 limit(1)
             );
             try {
                 const lookaheadSnapshot = await getDocs(lookaheadQuery);
-                if (lookaheadSnapshot.metadata?.fromCache !== false) {
+                if (isCancelled()) {
+                    truncated = true;
+                    truncationReason = "unconfirmed_completeness";
+                } else if (lookaheadSnapshot.metadata?.fromCache !== false) {
                     console.warn("Export completeness could not be confirmed from cached lookahead snapshot");
                     truncated = true;
                     truncationReason = "unconfirmed_completeness";
@@ -337,7 +389,13 @@ export async function fetchAllCompletedConsultsForExport(
                     }
                 }
             } catch (err) {
-                console.warn("Export lookahead probe failed; marking export as unconfirmed:", err);
+                permissionDenied = isPermissionDeniedError(err);
+                console.warn(
+                    permissionDenied
+                        ? "Export lookahead probe denied; marking export as unconfirmed:"
+                        : "Export lookahead probe failed; marking export as unconfirmed:",
+                    err
+                );
                 truncated = true;
                 truncationReason = "unconfirmed_completeness";
             }
@@ -349,6 +407,7 @@ export async function fetchAllCompletedConsultsForExport(
         consults: allConsults,
         truncated,
         ...(truncationReason ? { truncationReason } : {}),
+        ...(permissionDenied ? { permissionDenied } : {}),
     };
 }
 
