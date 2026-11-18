@@ -209,6 +209,8 @@ export default function CompletedPage() {
   };
 
   const openReConsultModal = (caseData: Consult) => {
+    reconsultPrevFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSelectedCase(caseData);
     setNewProblem("");
     setSelectedDepartments(Object.keys(caseData.departments));
@@ -367,8 +369,13 @@ export default function CompletedPage() {
   useEffect(() => {
     if (showModal) {
       reconsultWasOpenRef.current = true;
-      reconsultPrevFocusedRef.current =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      if (
+        !reconsultPrevFocusedRef.current ||
+        reconsultPrevFocusedRef.current === document.body
+      ) {
+        reconsultPrevFocusedRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      }
 
       const initialTarget =
         reconsultModalRef.current?.querySelector<HTMLElement>("#reconsult-problem") ??
@@ -431,10 +438,18 @@ export default function CompletedPage() {
   // Focus management for Export Modal
   const exportModalRef = useRef<HTMLDivElement>(null);
   const prevFocusedElement = useRef<HTMLElement | null>(null);
+  const exportWasOpenRef = useRef(false);
 
   useEffect(() => {
     if (showExportModal) {
-      prevFocusedElement.current = document.activeElement as HTMLElement;
+      exportWasOpenRef.current = true;
+      if (
+        !prevFocusedElement.current ||
+        prevFocusedElement.current === document.body
+      ) {
+        prevFocusedElement.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      }
       // Focus the first input or the h2 heading
       const firstInput = exportModalRef.current?.querySelector("input");
       if (firstInput) {
@@ -463,8 +478,13 @@ export default function CompletedPage() {
       };
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
-    } else if (prevFocusedElement.current) {
-      prevFocusedElement.current.focus();
+    } else if (exportWasOpenRef.current) {
+      exportWasOpenRef.current = false;
+      const target = prevFocusedElement.current;
+      prevFocusedElement.current = null;
+      if (target && target.isConnected && !target.hasAttribute("disabled")) {
+        target.focus();
+      }
     }
   }, [showExportModal]);
 
@@ -534,6 +554,8 @@ export default function CompletedPage() {
               <button
                 type="button"
                 onClick={() => {
+                  prevFocusedElement.current =
+                    document.activeElement instanceof HTMLElement ? document.activeElement : null;
                   setExportStartDate("");
                   setExportEndDate("");
                   setShowExportModal(true);

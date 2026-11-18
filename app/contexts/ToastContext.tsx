@@ -56,12 +56,29 @@ export function useToast() {
 // — Toast UI —
 
 function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) {
+  const alertMessages = toasts
+    .filter((t) => t.type === "error" || t.type === "warning")
+    .map((t) => t.message)
+    .join(" ");
+  const statusMessages = toasts
+    .filter((t) => t.type === "success" || t.type === "info")
+    .map((t) => t.message)
+    .join(" ");
+
   return (
-    <div className="fixed bottom-20 lg:bottom-6 right-3 left-3 sm:left-auto sm:right-4 z-[100] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none">
-      {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
-      ))}
-    </div>
+    <>
+      <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">
+        {alertMessages}
+      </div>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {statusMessages}
+      </div>
+      <div className="fixed bottom-20 lg:bottom-6 right-3 left-3 sm:left-auto sm:right-4 z-[100] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none">
+        {toasts.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -119,12 +136,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
       }`}
     >
       {iconMap[toast.type]}
-      <span
-        role={toast.type === "error" || toast.type === "warning" ? "alert" : "status"}
-        aria-live={toast.type === "error" || toast.type === "warning" ? "assertive" : "polite"}
-        aria-atomic="true"
-        className="flex-1 min-w-0 break-words"
-      >
+      <span aria-hidden="true" className="flex-1 min-w-0 break-words">
         {toast.message}
       </span>
       {toast.undoAction && (
