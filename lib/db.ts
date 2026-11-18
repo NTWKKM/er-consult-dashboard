@@ -238,10 +238,23 @@ export interface ExportConsultsOptions {
     signal?: AbortSignal;
 }
 
-function isPermissionDeniedError(err: unknown): boolean {
+export function isPermissionDeniedError(err: unknown): boolean {
     if (typeof err !== "object" || err === null) return false;
     const code = (err as { code?: unknown }).code;
     return typeof code === "string" && code.includes("permission-denied");
+}
+
+const pendingOptimisticWrites = new Set<Promise<unknown>>();
+let optimisticWriteSeq = 0;
+
+function trackOptimisticWrite<T>(promise: Promise<T>): Promise<T> {
+    optimisticWriteSeq += 1;
+    pendingOptimisticWrites.add(promise);
+    const cleanup = () => {
+        pendingOptimisticWrites.delete(promise);
+    };
+    promise.then(cleanup, cleanup);
+    return promise;
 }
 
 /**
@@ -258,6 +271,8 @@ export async function fetchAllCompletedConsultsForExport(
     const { endExclusive } = getUtcRangeForLocalDate(endDate);
     const signal = options instanceof AbortSignal ? options : options?.signal;
     const isCancelled = () => Boolean(signal?.aborted);
+    const startWriteSeq = optimisticWriteSeq;
+    let hasPendingWriteOverlap = pendingOptimisticWrites.size > 0;
 
     let allConsults: Consult[] = [];
     const consultIndexById = new Map<string, number>();
@@ -266,6 +281,7 @@ export async function fetchAllCompletedConsultsForExport(
     let truncationReason: ExportTruncationReason | undefined;
     let permissionDenied = false;
     let totalScanned = 0;
+    let batchCount = 0;
     const BATCH_SIZE = 1000;
     const MAX_RESULTS = 50000;
 
@@ -274,6 +290,10 @@ export async function fetchAllCompletedConsultsForExport(
             truncated = true;
             truncationReason = "unconfirmed_completeness";
             break;
+        }
+
+        if (pendingOptimisticWrites.size > 0 || optimisticWriteSeq !== startWriteSeq) {
+            hasPendingWriteOverlap = true;
         }
 
         let q = query(
@@ -289,6 +309,7 @@ export async function fetchAllCompletedConsultsForExport(
             q = query(q, startAfter(lastDoc));
         }
 
+        batchCount += 1;
         let snapshot;
         try {
             snapshot = await getDocs(q);
@@ -312,6 +333,14 @@ export async function fetchAllCompletedConsultsForExport(
             truncated = true;
             truncationReason = "unconfirmed_completeness";
             break;
+        }
+
+        if (
+            snapshot.metadata?.hasPendingWrites === true ||
+            pendingOptimisticWrites.size > 0 ||
+            optimisticWriteSeq !== startWriteSeq
+        ) {
+            hasPendingWriteOverlap = true;
         }
 
         if (snapshot.metadata?.fromCache !== false) {
@@ -373,6 +402,13 @@ export async function fetchAllCompletedConsultsForExport(
             );
             try {
                 const lookaheadSnapshot = await getDocs(lookaheadQuery);
+                if (
+                    lookaheadSnapshot.metadata?.hasPendingWrites === true ||
+                    pendingOptimisticWrites.size > 0 ||
+                    optimisticWriteSeq !== startWriteSeq
+                ) {
+                    hasPendingWriteOverlap = true;
+                }
                 if (isCancelled()) {
                     truncated = true;
                     truncationReason = "unconfirmed_completeness";
@@ -401,6 +437,13 @@ export async function fetchAllCompletedConsultsForExport(
             }
             break;
         }
+    }
+
+    // Firestore client SDK cursor queries lack a fixed readTime across pages, and pending local
+    // writes can omit queued re-consults or reflect unacknowledged state.
+    if (!truncated && (hasPendingWriteOverlap || batchCount > 1)) {
+        truncated = true;
+        truncationReason = "unconfirmed_completeness";
     }
 
     return {
@@ -486,7 +529,7 @@ export async function updateConsult(
             const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
             
             // Perform the "real" update in background (Allows Offline persistence)
-            const rawPromise = updateDoc(docRef, updates);
+            const rawPromise = trackOptimisticWrite(updateDoc(docRef, updates));
             rawPromise.catch(err => {
                 console.error("Background sync failed for updateConsult:", err);
                 if (options.onBackgroundError) {
@@ -541,7 +584,7 @@ export async function updateConsult(
         // Direct object update
         if (!awaitRemote) {
             // FIRE AND FORGET
-            const rawPromise = updateDoc(docRef, updater);
+            const rawPromise = trackOptimisticWrite(updateDoc(docRef, updater));
             rawPromise.catch(e => {
                 console.error("Delayed updateDoc error:", e);
                 if (options.onBackgroundError) {
@@ -639,7 +682,7 @@ export async function transactionalUpdateConsult(
 
     if (!awaitRemote) {
         // Fire transaction in background, return optimistic result immediately
-        const backgroundPromise = transactionWork().then(result => {
+        const backgroundPromise = trackOptimisticWrite(transactionWork().then(result => {
             if (!result.applied) {
                 // Transaction succeeded but condition was not met — another user got there first
                 const abortError = new Error("TRANSACTION_CONDITION_NOT_MET");
@@ -652,7 +695,7 @@ export async function transactionalUpdateConsult(
             if (options.onBackgroundError) {
                 options.onBackgroundError(err);
             }
-        });
+        }));
 
         // Attach no-op catch to prevent unhandled rejection warning
         void backgroundPromise;

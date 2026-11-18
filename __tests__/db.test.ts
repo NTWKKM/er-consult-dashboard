@@ -82,11 +82,15 @@ function makeDocSnapshot(id: string, data: Record<string, unknown> | null, exist
   };
 }
 
-function makeQuerySnapshot(docs: ReturnType<typeof makeDocSnapshot>[], fromCache = false) {
+function makeQuerySnapshot(
+  docs: ReturnType<typeof makeDocSnapshot>[],
+  fromCache = false,
+  hasPendingWrites = false
+) {
   return {
     empty: docs.length === 0,
     docs,
-    metadata: { fromCache },
+    metadata: { fromCache, hasPendingWrites },
     forEach: (cb: (doc: ReturnType<typeof makeDocSnapshot>) => void) => docs.forEach(cb),
   };
 }
@@ -311,8 +315,13 @@ describe("updateConsult", () => {
   describe("with function updater (awaitRemote: false — optimistic path)", () => {
     it("does NOT await updateDoc — fires in background", async () => {
       mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
-      // Return a never-resolving promise to verify we don't wait for it
-      mockUpdateDoc.mockReturnValue(new Promise(() => {}));
+      // Return a pending promise to verify we don't wait for it, then settle so later tests aren't affected
+      let resolveUpdate!: () => void;
+      mockUpdateDoc.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveUpdate = resolve;
+        })
+      );
 
       const result = await updateConsult(
         "case-1",
@@ -326,6 +335,7 @@ describe("updateConsult", () => {
       expect(result.backgroundPromise).toBeDefined();
       // updateDoc was called but we didn't await it
       expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+      resolveUpdate();
     });
 
     it("calls onBackgroundError when background updateDoc rejects", async () => {
@@ -400,7 +410,12 @@ describe("updateConsult", () => {
 
   describe("with plain object updates (awaitRemote: false)", () => {
     it("fires updateDoc without awaiting and returns null", async () => {
-      mockUpdateDoc.mockReturnValue(new Promise(() => {}));
+      let resolveUpdate!: () => void;
+      mockUpdateDoc.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveUpdate = resolve;
+        })
+      );
       const result = await updateConsult(
         "case-1",
         { status: "completed" as const },
@@ -410,6 +425,7 @@ describe("updateConsult", () => {
       expect(result.isQueued).toBe(true);
       expect(result.backgroundPromise).toBeDefined();
       expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+      resolveUpdate();
     });
 
     it("calls onBackgroundError when fire-and-forget updateDoc rejects", async () => {
@@ -507,8 +523,13 @@ describe("transactionalUpdateConsult", () => {
     it("returns optimistic result immediately while transaction runs in background", async () => {
       // Pre-read for optimistic response
       mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
-      // Transaction never resolves during this test
-      mockRunTransaction.mockReturnValue(new Promise(() => {}));
+      // Transaction stays pending during assertions, then resolves cleanly
+      let resolveTx!: (val: unknown) => void;
+      mockRunTransaction.mockReturnValue(
+        new Promise((resolve) => {
+          resolveTx = resolve;
+        })
+      );
 
       const result = await transactionalUpdateConsult(
         "case-1",
@@ -520,6 +541,7 @@ describe("transactionalUpdateConsult", () => {
       expect(result.isQueued).toBe(true);
       expect(result.applied).toBe(true);
       expect(result.backgroundPromise).toBeDefined();
+      resolveTx({ applied: true, consult: null });
     });
 
     it("calls onBackgroundError with TRANSACTION_CONDITION_NOT_MET when condition not met in background", async () => {
@@ -790,7 +812,8 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     expect(mockGetDocs).toHaveBeenCalledTimes(2);
     expect(result.consults).toHaveLength(BATCH_SIZE + 2);
-    expect(result.truncated).toBe(false);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
     expect(mockStartAfter).toHaveBeenCalledTimes(1);
   });
 
@@ -1025,6 +1048,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
     });
 
     expect(mockGetDocs).toHaveBeenCalledTimes(1);
+    expect(result.consults).toEqual([]);
     expect(result.truncated).toBe(true);
     expect(result.truncationReason).toBe("unconfirmed_completeness");
   });
@@ -1047,15 +1071,62 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
-    expect(mockOrderBy).toHaveBeenCalledWith("createdAt", "asc");
-    expect(result.truncated).toBe(false);
+    expect(mockOrderBy).toHaveBeenCalledTimes(2);
+    expect(mockOrderBy).toHaveBeenNthCalledWith(1, "createdAt", "asc");
+    expect(mockOrderBy).toHaveBeenNthCalledWith(2, "createdAt", "asc");
+    expect(mockStartAfter).toHaveBeenCalledWith(firstBatch[BATCH_SIZE - 1]);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
     expect(result.consults).toHaveLength(BATCH_SIZE + 1);
     expect(result.consults.find((c) => c.id === "reconsulted-tail")?.hn).toBe("5001");
     expect(result.consults.filter((c) => c.id === "c0")).toHaveLength(1);
     expect(result.consults.find((c) => c.id === "c0")?.createdAt).toBe("2024-01-21T12:00:00.000Z");
   });
 
-  it("does not mark an exhausted query as truncated when lookahead at scan limit is empty", async () => {
+  it("marks single-page export as unconfirmed_completeness when snapshot metadata has hasPendingWrites", async () => {
+    const docs = [
+      makeDocSnapshot("c1", makeConsultData("1", "2024-01-01T00:00:00.000Z")),
+    ];
+    mockGetDocs.mockResolvedValueOnce(makeQuerySnapshot(docs, false, true));
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.consults).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+  });
+
+  it("marks single-page export as unconfirmed_completeness when an optimistic updateConsult write overlaps", async () => {
+    mockGetDoc.mockResolvedValueOnce(
+      makeDocSnapshot("reconsult-1", makeConsultData("111", "2024-01-05T00:00:00.000Z"))
+    );
+    let resolveUpdate!: () => void;
+    mockUpdateDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveUpdate = resolve;
+      })
+    );
+
+    await updateConsult(
+      "reconsult-1",
+      () => ({ status: "pending" as const, createdAt: "2024-01-20T00:00:00.000Z" }),
+      { awaitRemote: false }
+    );
+
+    mockGetDocs.mockResolvedValueOnce(
+      makeQuerySnapshot([makeDocSnapshot("c2", makeConsultData("222", "2024-01-06T00:00:00.000Z"))], false, false)
+    );
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.consults).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+
+    resolveUpdate();
+  });
+
+  it("stops at the scan limit with unconfirmed_completeness rather than limit_exceeded when lookahead is empty", async () => {
     const BATCH_SIZE = 1000;
     const VALID_PER_BATCH = 900;
     const EXACT_LIMIT_BATCHES = 51; // 51 * 1000 = 51,000 scanned, 45,900 valid rows
@@ -1091,7 +1162,8 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
-    expect(result.truncated).toBe(false);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
     expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
     expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
   });

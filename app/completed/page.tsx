@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport } from "@/lib/db";
+import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport, isPermissionDeniedError } from "@/lib/db";
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS } from "@/lib/constants";
 import { useSettings } from "../contexts/SettingsContext";
@@ -151,6 +151,13 @@ export default function CompletedPage() {
     viewStateRef.current = { currentPage, searchHN, filterDate };
   }, [currentPage, searchHN, filterDate]);
 
+  const reconsultAttemptRef = useRef(0);
+  const reconsultFailedDraftRef = useRef<{
+    caseId: string;
+    problem: string;
+    selectedDepartments: string[];
+  } | null>(null);
+
   const handleReConsult = async () => {
     if (!selectedCase || !newProblem.trim()) {
       addToast({ type: "error", message: "กรุณาระบุปัญหาใหม่" });
@@ -161,7 +168,10 @@ export default function CompletedPage() {
       return;
     }
     setIsUpdating(true);
+    const attemptId = ++reconsultAttemptRef.current;
     const caseId = selectedCase.id;
+    const submittedProblem = newProblem;
+    const submittedDepartments = [...selectedDepartments];
     
     try {
       const result = await updateConsult(caseId, (current) => {
@@ -170,13 +180,13 @@ export default function CompletedPage() {
 
         // Preserve existing departments; only reset the re-consulted ones
         const updatedDepartments: Record<string, ConsultDepartment> = { ...current.departments };
-        selectedDepartments.forEach((dept) => {
+        submittedDepartments.forEach((dept) => {
           updatedDepartments[dept] = { status: "pending", completedAt: null };
         });
         return {
           status: "pending",
           departments: updatedDepartments,
-          problem: `${current.problem}\n\n[Re-consult]: ${newProblem}`,
+          problem: `${current.problem}\n\n[Re-consult]: ${submittedProblem}`,
           createdAt: new Date().toISOString(),
         };
       }, { 
@@ -217,19 +227,38 @@ export default function CompletedPage() {
       // Instant UI response
       setCases((prev) => prev.filter((c) => c.id !== caseId));
       setSearchResults((prev) => prev !== null ? prev.filter((c) => c.id !== caseId) : null);
-      
-      // Wait for background sync if it was queued
-      if (result.backgroundPromise) {
-          result.backgroundPromise.catch(() => {
-              // Already handled by onBackgroundError
-          });
-      }
 
       setShowModal(false);
       setSelectedCase(null);
-      setNewProblem("");
-      setSelectedDepartments([]);
       addToast({ type: "success", message: "✓ ส่งปรึกษาใหม่สำเร็จ!" });
+
+      // Keep reason and departments while background sync is in flight so they remain available
+      // for reconciliation if the remote write rejects.
+      if (result.backgroundPromise) {
+          reconsultFailedDraftRef.current = {
+              caseId,
+              problem: submittedProblem,
+              selectedDepartments: submittedDepartments,
+          };
+          void result.backgroundPromise.then(
+              () => {
+                  if (reconsultFailedDraftRef.current?.caseId === caseId) {
+                      reconsultFailedDraftRef.current = null;
+                  }
+                  if (reconsultAttemptRef.current === attemptId) {
+                      setNewProblem("");
+                      setSelectedDepartments([]);
+                  }
+              },
+              () => {
+                  // Retained in state and reconsultFailedDraftRef; onBackgroundError already notifies user.
+              }
+          );
+      } else {
+          reconsultFailedDraftRef.current = null;
+          setNewProblem("");
+          setSelectedDepartments([]);
+      }
     } catch (error) {
       console.error("Error re-consulting:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาด" });
@@ -239,11 +268,17 @@ export default function CompletedPage() {
   };
 
   const openReConsultModal = (caseData: Consult) => {
+    reconsultAttemptRef.current += 1;
     reconsultPrevFocusedRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSelectedCase(caseData);
-    setNewProblem("");
-    setSelectedDepartments(Object.keys(caseData.departments));
+    if (reconsultFailedDraftRef.current?.caseId === caseData.id) {
+      setNewProblem(reconsultFailedDraftRef.current.problem);
+      setSelectedDepartments(reconsultFailedDraftRef.current.selectedDepartments);
+    } else {
+      setNewProblem("");
+      setSelectedDepartments(Object.keys(caseData.departments));
+    }
     setShowModal(true);
   };
 
@@ -429,7 +464,12 @@ export default function CompletedPage() {
       closeExportModal();
     } catch (error) {
       console.error("Export error:", error);
-      setDialogFeedback("เกิดข้อผิดพลาดในการ Export กรุณาลองใหม่อีกครั้ง", "error");
+      setDialogFeedback(
+        isPermissionDeniedError(error)
+          ? "ไม่มีสิทธิ์เข้าถึงข้อมูลสำหรับการ Export กรุณาติดต่อผู้ดูแลระบบ"
+          : "เกิดข้อผิดพลาดในการ Export กรุณาลองใหม่อีกครั้ง",
+        "error"
+      );
     } finally {
       if (exportAbortControllerRef.current === abortController) {
         exportAbortControllerRef.current = null;

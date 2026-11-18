@@ -43,11 +43,22 @@ export default function ConfirmModal({
         return;
       }
     }
-    const fallback =
-      document.querySelector<HTMLElement>(
+    const candidates = Array.from(
+      document.querySelectorAll<HTMLElement>(
         'main button:not([disabled]), main a[href], main input:not([disabled]), main select:not([disabled]), [role="main"] button:not([disabled]), nav a[href], button:not([disabled])'
-      ) ?? document.body;
-    fallback?.focus();
+      )
+    );
+    for (const candidate of candidates) {
+      if (!candidate.isConnected) continue;
+      if (candidate.hasAttribute("hidden") || candidate.closest("[hidden], [inert]")) continue;
+      const style = window.getComputedStyle(candidate);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      candidate.focus();
+      if (document.activeElement === candidate) {
+        return;
+      }
+    }
+    document.body?.focus();
   }, []);
 
   useLayoutEffect(() => {

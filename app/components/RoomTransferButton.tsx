@@ -146,6 +146,34 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     onOpenChange?.(isOpen);
   }, [isOpen, onOpenChange]);
 
+  const getClippingAncestors = useCallback((): HTMLElement[] => {
+    if (!dropdownRef.current || typeof window === "undefined") return [];
+    const clippingAncestors: HTMLElement[] = [];
+    let ancestor: HTMLElement | null = dropdownRef.current.parentElement;
+    while (ancestor && ancestor !== document.body && ancestor !== document.documentElement) {
+      const style = window.getComputedStyle(ancestor);
+      const overflowX = style.overflowX || style.overflow;
+      const overflowY = style.overflowY || style.overflow;
+      const isClipping =
+        overflowX === "auto" ||
+        overflowX === "scroll" ||
+        overflowX === "hidden" ||
+        overflowX === "clip" ||
+        overflowY === "auto" ||
+        overflowY === "scroll" ||
+        ancestor.classList.contains("overflow-auto") ||
+        ancestor.classList.contains("overflow-x-auto") ||
+        ancestor.classList.contains("overflow-y-auto") ||
+        ancestor.classList.contains("overflow-hidden") ||
+        ancestor.classList.contains("overflow-clip");
+      if (isClipping) {
+        clippingAncestors.push(ancestor);
+      }
+      ancestor = ancestor.parentElement;
+    }
+    return clippingAncestors;
+  }, []);
+
   const computeMenuPlacement = useCallback(() => {
     if (!dropdownRef.current || typeof window === "undefined") {
       return { alignLeft: false, clampOffsetLeft: null as number | null };
@@ -162,28 +190,31 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 
     let boundsLeft = 0;
     let boundsRight = window.innerWidth;
-    let ancestor: HTMLElement | null = dropdownRef.current.parentElement;
-    while (ancestor && ancestor !== document.body && ancestor !== document.documentElement) {
+    for (const ancestor of getClippingAncestors()) {
+      const ancestorRect = ancestor.getBoundingClientRect();
+      if (ancestorRect.right <= ancestorRect.left) continue;
       const style = window.getComputedStyle(ancestor);
       const overflowX = style.overflowX || style.overflow;
-      const isClippingAncestor =
+      const overflowY = style.overflowY || style.overflow;
+      const isScrollable =
         overflowX === "auto" ||
         overflowX === "scroll" ||
-        overflowX === "hidden" ||
-        overflowX === "clip" ||
+        overflowY === "auto" ||
+        overflowY === "scroll" ||
         ancestor.classList.contains("overflow-auto") ||
         ancestor.classList.contains("overflow-x-auto") ||
-        ancestor.classList.contains("overflow-hidden") ||
-        ancestor.classList.contains("overflow-clip");
-      if (isClippingAncestor) {
-        const ancestorRect = ancestor.getBoundingClientRect();
-        if (ancestorRect.right > ancestorRect.left) {
-          boundsLeft = Math.max(0, ancestorRect.left);
-          boundsRight = Math.min(window.innerWidth, ancestorRect.right);
-          break;
-        }
-      }
-      ancestor = ancestor.parentElement;
+        ancestor.classList.contains("overflow-y-auto");
+      const hasClientDimensions = ancestor.clientWidth > 0;
+      const leftEdge =
+        isScrollable && hasClientDimensions
+          ? ancestorRect.left + ancestor.clientLeft
+          : ancestorRect.left;
+      const rightEdge =
+        isScrollable && hasClientDimensions
+          ? leftEdge + ancestor.clientWidth
+          : ancestorRect.right;
+      boundsLeft = Math.max(boundsLeft, leftEdge);
+      boundsRight = Math.min(boundsRight, rightEdge);
     }
 
     const fitsRight = rect.right - menuWidth >= boundsLeft && rect.right <= boundsRight;
@@ -215,7 +246,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       alignLeft: !fitsRightWithMargin && fitsLeftWithMargin,
       clampOffsetLeft: null as number | null,
     };
-  }, []);
+  }, [getClippingAncestors]);
 
   const updateMenuPlacement = useCallback(() => {
     const placement = computeMenuPlacement();
@@ -226,9 +257,18 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     updateMenuPlacement();
+    const clippingAncestors = getClippingAncestors();
     window.addEventListener("resize", updateMenuPlacement);
-    return () => window.removeEventListener("resize", updateMenuPlacement);
-  }, [isOpen, updateMenuPlacement]);
+    clippingAncestors.forEach((ancestor) => {
+      ancestor.addEventListener("scroll", updateMenuPlacement, { passive: true });
+    });
+    return () => {
+      window.removeEventListener("resize", updateMenuPlacement);
+      clippingAncestors.forEach((ancestor) => {
+        ancestor.removeEventListener("scroll", updateMenuPlacement);
+      });
+    };
+  }, [isOpen, updateMenuPlacement, getClippingAncestors]);
 
   const handleToggle = useCallback(() => {
     if (!isOpen) {

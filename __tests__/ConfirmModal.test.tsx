@@ -372,5 +372,53 @@ describe("ConfirmModal", () => {
         screen.getByRole("button", { name: "Outside Button" })
       );
     });
+
+    it("skips hidden or non-focusable fallback candidates and focuses the first visible enabled fallback", () => {
+      const { rerender } = render(
+        <main>
+          <button key="hidden-btn" type="button" style={{ display: "none" }}>
+            Hidden Fallback
+          </button>
+          <button key="visible-btn" type="button">
+            Visible Fallback
+          </button>
+          <div key="wrapper">
+            <button type="button">Opener</button>
+            <ConfirmModal {...defaultProps({ isOpen: false })} />
+          </div>
+        </main>
+      );
+      const opener = screen.getByRole("button", { name: "Opener" });
+      opener.focus();
+
+      rerender(
+        <main>
+          <button key="hidden-btn" type="button" style={{ display: "none" }}>
+            Hidden Fallback
+          </button>
+          <button key="visible-btn" type="button">
+            Visible Fallback
+          </button>
+          <div key="wrapper">
+            <button type="button">Opener</button>
+            <ConfirmModal {...defaultProps({ isOpen: true })} />
+          </div>
+        </main>
+      );
+
+      rerender(
+        <main>
+          <button key="hidden-btn" type="button" style={{ display: "none" }}>
+            Hidden Fallback
+          </button>
+          <button key="visible-btn" type="button">
+            Visible Fallback
+          </button>
+        </main>
+      );
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Visible Fallback" })
+      );
+    });
   });
 });
