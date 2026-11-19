@@ -6,15 +6,8 @@ import { fetchCompletedConsultsPage, transactionalUpdateConsult, Consult, Consul
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS } from "@/lib/constants";
 import { inclusiveDayCount, MAX_EXPORT_DAYS } from "@/lib/dateUtils";
+import { buildCompletedExportRows } from "@/lib/excelExport";
 import { useToast } from "../contexts/ToastContext";
-
-/**
- * Neutralize spreadsheet formula triggers (=, +, -, @, tab/CR) so clinical Dx strings
- * like "+ve FAST" or "-ve guarding" export as literal text instead of Excel formulas.
- */
-function sanitizeExcelCell(value: string): string {
-  return /^[\t\r\n]*[=+\-@]/.test(value) ? `'${value}` : value;
-}
 
 export default function CompletedPage() {
   const [cases, setCases] = useState<Consult[]>([]);
@@ -413,50 +406,7 @@ export default function CompletedPage() {
       if (!isActiveSession()) return;
       const XLSX = xlsxModule.default ?? xlsxModule;
 
-      const exportData = exportList.map((c) => {
-        const depts = Object.keys(c.departments).join(", ");
-
-        // Returns times for non-cancelled departments only (for "ปิดเคส")
-        const getTimesFor = (key: keyof ConsultDepartment, excludeStatus?: string) => {
-          return Object.entries(c.departments)
-            .map(([dept, data]) => {
-              const time = data[key] as string | undefined;
-              if (!time) return null;
-              if (excludeStatus && data.status === excludeStatus) return null;
-              return `${dept}: ${new Date(time).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`;
-            })
-            .filter(Boolean)
-            .join("\n");
-        };
-
-        // Returns times for cancelled departments only (for "ยกเลิก" column)
-        const getCancelledTimesFor = (key: keyof ConsultDepartment) => {
-          return Object.entries(c.departments)
-            .map(([dept, data]) => {
-              const time = data[key] as string | undefined;
-              if (!time || data.status !== "cancelled") return null;
-              return `${dept}: ${new Date(time).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`;
-            })
-            .filter(Boolean)
-            .join("\n");
-        };
-
-        return {
-          HN: c.hn || "-",
-          ชื่อ: sanitizeExcelCell(c.firstName || "-"),
-          นามสกุล: sanitizeExcelCell(c.lastName || "-"),
-          ห้อง: c.room || "-",
-          Dx: sanitizeExcelCell(c.problem || "-"),
-          แผนก: depts,
-          วันที่ส่ง: c.createdAt ? new Date(c.createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "-",
-          รับเคส: getTimesFor("acceptedAt") || "-",
-          Admit: getTimesFor("admittedAt") || "-",
-          "คืน ER": getTimesFor("returnedAt") || "-",
-          "D/C": getTimesFor("dischargedAt") || "-",
-          ปิดเคส: getTimesFor("completedAt", "cancelled") || "-",  // excluded cancelled
-          ยกเลิก: getCancelledTimesFor("completedAt") || "-",       // cancelled only
-        };
-      });
+      const exportData = buildCompletedExportRows(exportList);
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();

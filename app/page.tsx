@@ -8,8 +8,9 @@ import ErrorState from "@/app/components/ErrorState";
 import ConfirmModal from "@/app/components/ConfirmModal";
 import { RoomTransferButton } from "@/app/components/RoomTransferButton";
 import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
-import { getMilestones, formatTime } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
 import { ElapsedTime as PatientTableElapsedTime } from "@/app/components/ElapsedTime";
+import { MilestoneList } from "@/app/components/MilestoneList";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
@@ -786,14 +787,6 @@ function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; dept
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
 
-  const milestones = getMilestones(dept, formatTime);
-
-  const getMilestoneTone = (label: string) => {
-    if (label === "รับ") return "text-ok";
-    if (label === "คืน ER") return "text-accent";
-    return "text-cool";
-  };
-
   const {
     isUpdating,
     handleAccept,
@@ -908,31 +901,7 @@ function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; dept
             </button>
           </div>
 
-            {milestones.length > 0 && (
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 measured">
-                {milestones.map((m, idx, arr) => (
-                  <React.Fragment key={`${m.label}-${m.raw}`}>
-                    <div className="flex items-center gap-1 text-[10px]">
-                      {m.icon === "check" ? (
-                        <svg aria-hidden="true" className="w-2.5 h-2.5 text-ok shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : m.icon === "transfer" ? (
-                        <svg aria-hidden="true" className="w-2.5 h-2.5 text-cool shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                      ) : null}
-                      <span className={`font-medium whitespace-nowrap ${getMilestoneTone(m.label)}`}>{m.label} {m.time}</span>
-                    </div>
-                    {idx < arr.length - 1 && (
-                      <svg aria-hidden="true" className="w-2.5 h-2.5 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            )}
+          <MilestoneList dept={dept} isAccepted={true} variant="inline" />
         </div>
       </div>
 

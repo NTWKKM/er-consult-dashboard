@@ -15,7 +15,6 @@ function makeDept(overrides: Partial<ConsultDepartment> = {}): ConsultDepartment
     status: "pending",
     completedAt: null,
     acceptedAt: null,
-    actionStatus: "",
     admittedAt: null,
     returnedAt: null,
     dischargedAt: null,

@@ -3,37 +3,10 @@ import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, wher
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
-import { ConsultSchema } from "./schema";
+import { ConsultSchema, type Consult, type ConsultDepartment, type ConsultTransfer } from "./schema";
 import { ZodError } from "zod";
 
-export interface ConsultTransfer {
-    to: RoomName;
-    at?: string; // ISO string
-}
-
-export interface ConsultDepartment {
-    status: "pending" | "completed" | "cancelled";
-    completedAt: string | null;
-    acceptedAt?: string | null;
-    actionStatus?: string;
-    admittedAt?: string | null;
-    returnedAt?: string | null;
-    dischargedAt?: string | null;
-    transfers?: ConsultTransfer[];
-}
-
-export interface Consult {
-    id: string;
-    hn: string;
-    firstName: string;
-    lastName: string;
-    room: RoomName;
-    problem: string;
-    createdAt: string; // ISO string
-    status: "pending" | "completed" | "cancelled";
-    isUrgent: boolean;
-    departments: { [key: string]: ConsultDepartment };
-}
+export type { Consult, ConsultDepartment, ConsultTransfer };
 
 const COLLECTION_NAME = "consults";
 
@@ -488,7 +461,7 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
     return newConsult;
 }
 
-type ConsultUpdate = UpdateData<Omit<Consult, "id">>;
+type ConsultUpdate = UpdateData<Omit<Consult, "id">> | Partial<Omit<Consult, "id">>;
 export type ConsultUpdater = (current: Consult) => ConsultUpdate | null;
 
 export interface UpdateConsultOptions {
@@ -501,6 +474,11 @@ export interface UpdateResults {
     isQueued: boolean;
     backgroundPromise: Promise<void> | null;
     applied: boolean;
+}
+
+function buildOptimisticConsult(current: Consult, updates: ConsultUpdate): Consult | null {
+    const hasDottedKeys = Object.keys(updates).some((k) => k.includes("."));
+    return hasDottedKeys ? null : ({ ...current, ...updates } as Consult);
 }
 
 export async function updateConsult(
@@ -536,8 +514,6 @@ export async function updateConsult(
                 };
             }
             
-            const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
-            
             // Perform the "real" update in background (Allows Offline persistence)
             const rawPromise = trackOptimisticWrite(updateDoc(docRef, updates));
             rawPromise.catch(err => {
@@ -548,10 +524,7 @@ export async function updateConsult(
             });
 
             return {
-                consult: hasDottedKeys ? null : {
-                    ...currentData,
-                    ...updates,
-                } as Consult,
+                consult: buildOptimisticConsult(currentData, updates),
                 isQueued: true,
                 backgroundPromise: rawPromise,
                 applied: true,
@@ -578,14 +551,10 @@ export async function updateConsult(
                 applied: false,
             };
         }
-        const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
         await updateDoc(docRef, updates);
 
         return {
-            consult: hasDottedKeys ? null : {
-                ...currentData,
-                ...updates,
-            } as Consult,
+            consult: buildOptimisticConsult(currentData, updates),
             isQueued: false,
             backgroundPromise: null,
             applied: true,
@@ -650,11 +619,7 @@ export async function transactionalUpdateConsult(
                 const preUpdates = updater(preData);
                 if (preUpdates !== null) {
                     preApplied = true;
-                    const hasDottedKeys = Object.keys(preUpdates).some(k => k.includes("."));
-                    optimisticConsult = hasDottedKeys ? null : {
-                        ...preData,
-                        ...preUpdates,
-                    } as Consult;
+                    optimisticConsult = buildOptimisticConsult(preData, preUpdates);
                 }
             }
         }
@@ -691,13 +656,9 @@ export async function transactionalUpdateConsult(
 
             transaction.update(docRef, updates);
 
-            const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
             return {
                 applied: true,
-                consult: hasDottedKeys ? null : {
-                    ...currentData,
-                    ...updates,
-                } as Consult,
+                consult: buildOptimisticConsult(currentData, updates),
             };
         });
     };

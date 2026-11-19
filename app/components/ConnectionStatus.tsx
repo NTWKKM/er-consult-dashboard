@@ -1,22 +1,9 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
-
-function subscribe(callback: () => void) {
-  window.addEventListener("online", callback);
-  window.addEventListener("offline", callback);
-  return () => {
-    window.removeEventListener("online", callback);
-    window.removeEventListener("offline", callback);
-  };
-}
+import { useConnectionStatus } from "../hooks/useNetworkStatus";
 
 export default function ConnectionStatus() {
-  const isOnline = useSyncExternalStore<boolean | null>(
-    subscribe,
-    () => navigator.onLine,
-    () => null
-  );
+  const isOnline = useConnectionStatus();
 
   // Dot and label derived from confirmed state
   const dotColor = isOnline === null ? 'bg-muted' : isOnline ? 'bg-ok' : 'bg-bad';

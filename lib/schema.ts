@@ -35,4 +35,6 @@ export const ConsultSchema = z.object({
   departments: z.record(z.string(), DepartmentSchema),
 });
 
-export type ConsultFromSchema = z.infer<typeof ConsultSchema>;
+export type ConsultTransfer = z.infer<typeof TransferSchema>;
+export type ConsultDepartment = z.infer<typeof DepartmentSchema>;
+export type Consult = z.infer<typeof ConsultSchema>;
