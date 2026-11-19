@@ -80,41 +80,46 @@ export default function CompletedPage() {
   const fetchRequestIdRef = useRef(0);
 
   // Fetch a specific page of completed cases using Firestore cursors
-  const fetchPage = useCallback(async (page: number): Promise<boolean> => {
-    const requestId = ++fetchRequestIdRef.current;
-    setLoadingMore(true);
-    try {
-      // For page 1, no cursor is needed. For subsequent pages, use the stored cursor.
-      const cursor = page > 1 ? cursorMapRef.current.get(page - 1) : undefined;
-      const result = await fetchCompletedConsultsPage(ITEMS_PER_PAGE, cursor);
-      if (fetchRequestIdRef.current !== requestId) return false;
+  const fetchPage = useCallback(
+    async (page: number, options?: { suppressPageError?: boolean }): Promise<boolean> => {
+      const requestId = ++fetchRequestIdRef.current;
+      setLoadingMore(true);
+      try {
+        // For page 1, no cursor is needed. For subsequent pages, use the stored cursor.
+        const cursor = page > 1 ? cursorMapRef.current.get(page - 1) : undefined;
+        const result = await fetchCompletedConsultsPage(ITEMS_PER_PAGE, cursor);
+        if (fetchRequestIdRef.current !== requestId) return false;
 
-      setCases(result.consults);
-      setHasMore(result.hasMore);
-      setError(null);
-      if (historyTableContainerRef.current) {
-        historyTableContainerRef.current.scrollTop = 0;
-      }
+        setCases(result.consults);
+        setHasMore(result.hasMore);
+        setError(null);
+        if (historyTableContainerRef.current) {
+          historyTableContainerRef.current.scrollTop = 0;
+        }
 
-      // Store the lastDoc as cursor for the next page
-      if (result.lastDoc) {
-        cursorMapRef.current.set(page, result.lastDoc);
-      } else {
-        cursorMapRef.current.delete(page);
+        // Store the lastDoc as cursor for the next page
+        if (result.lastDoc) {
+          cursorMapRef.current.set(page, result.lastDoc);
+        } else {
+          cursorMapRef.current.delete(page);
+        }
+        return true;
+      } catch (err) {
+        if (fetchRequestIdRef.current !== requestId) return false;
+        console.error("Fetch error:", err);
+        if (!options?.suppressPageError) {
+          setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+        }
+        throw err;
+      } finally {
+        if (fetchRequestIdRef.current === requestId) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
-      return true;
-    } catch (err) {
-      if (fetchRequestIdRef.current !== requestId) return false;
-      console.error("Fetch error:", err);
-      setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
-      throw err;
-    } finally {
-      if (fetchRequestIdRef.current === requestId) {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-    }
-  }, []);
+    },
+    []
+  );
 
   // Initial load
   useEffect(() => {
@@ -187,8 +192,7 @@ export default function CompletedPage() {
           setSearchStatus("error");
         });
     } else {
-      setLoading(true);
-      void fetchPage(activePage).catch((err) => {
+      void fetchPage(activePage, { suppressPageError: true }).catch((err) => {
         console.error("Recovery refresh failed:", err);
       });
     }

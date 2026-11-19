@@ -259,8 +259,8 @@ describe("CompletedPage re-consult failed drafts", () => {
     expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Draft preserved on background conflict");
   });
 
-  it("shows conflict toast, refreshes list, and preserves draft when result.applied is false", async () => {
-    render(<CompletedPage />);
+  it("keeps conflict draft modal accessible during a deferred refresh and after the refreshed list omits the case", async () => {
+    const { container } = render(<CompletedPage />);
 
     await screen.findAllByText("111111");
     expect(mockFetchCompletedConsultsPage).toHaveBeenCalledTimes(1);
@@ -268,9 +268,20 @@ describe("CompletedPage re-consult failed drafts", () => {
     clickRowReConsult("111111");
     await screen.findByRole("heading", { name: /Re-consult เคส/i });
 
+    const genSxBtn = screen.getByRole("button", { name: "Gen Sx" });
+    const neuroSxBtn = screen.getByRole("button", { name: "Neuro Sx" });
+    fireEvent.click(genSxBtn);
+    fireEvent.click(neuroSxBtn);
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Precondition conflict draft" },
     });
+
+    const deferredRefresh = createDeferred<{
+      consults: Consult[];
+      lastDoc: undefined;
+      hasMore: boolean;
+    }>();
+    mockFetchCompletedConsultsPage.mockReturnValueOnce(deferredRefresh.promise);
 
     mockUpdateConsult.mockResolvedValueOnce({
       consult: null,
@@ -291,9 +302,73 @@ describe("CompletedPage re-consult failed drafts", () => {
     expect(mockAddToast).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "success" })
     );
-    // Modal remains open with entered draft intact
+
+    // While refresh is still pending, modal and draft remain open and accessible
     expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Precondition conflict draft");
+    expect(screen.getByRole("button", { name: "Gen Sx" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Neuro Sx" })).toHaveAttribute("aria-pressed", "true");
+
+    // Resolve the refresh omitting caseA (moved to pending by another user)
+    await act(async () => {
+      deferredRefresh.resolve({
+        consults: [caseB],
+        lastDoc: undefined,
+        hasMore: false,
+      });
+      await Promise.resolve();
+    });
+
+    const table = container.querySelector("table");
+    expect(table).not.toBeNull();
+    expect(within(table!).queryByText("111111")).toBeNull();
+    expect(within(table!).getByText("222222")).toBeInTheDocument();
+
+    // Even though caseA is no longer in the completed list, the modal stays open with the draft accessible
+    expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Precondition conflict draft");
+    expect(screen.getByRole("button", { name: "Gen Sx" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Neuro Sx" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps conflict draft modal accessible if the deferred refresh rejects", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<CompletedPage />);
+
+    await screen.findAllByText("111111");
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Draft surviving failed refresh" },
+    });
+
+    const deferredRefresh = createDeferred<{
+      consults: Consult[];
+      lastDoc: undefined;
+      hasMore: boolean;
+    }>();
+    mockFetchCompletedConsultsPage.mockReturnValueOnce(deferredRefresh.promise);
+    mockUpdateConsult.mockResolvedValueOnce({
+      consult: null,
+      isQueued: false,
+      backgroundPromise: null,
+      applied: false,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+    await waitFor(() => {
+      expect(mockFetchCompletedConsultsPage).toHaveBeenCalledTimes(2);
+    });
+
+    await act(async () => {
+      deferredRefresh.reject(new Error("Temporary network error"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Draft surviving failed refresh");
+    consoleErrorSpy.mockRestore();
   });
 
   it("does not advance currentPage or scroll when a superseded page fetch resolves late", async () => {
