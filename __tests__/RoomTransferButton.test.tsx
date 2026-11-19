@@ -3,23 +3,12 @@ import { render, screen, fireEvent, act, waitFor } from "@testing-library/react"
 import React from "react";
 
 // ---------------------------------------------------------------------------
-// Mock firebase and db BEFORE importing the component
+// Mock db BEFORE importing the component
 // ---------------------------------------------------------------------------
 const { mockTransferConsultRoom } = vi.hoisted(() => ({
   mockTransferConsultRoom: vi.fn(),
 }));
 
-vi.mock("@/lib/firebase", () => ({ db: {} }));
-vi.mock("firebase/firestore", () => ({
-  collection: vi.fn(),
-  doc: vi.fn(),
-  getDoc: vi.fn(),
-  updateDoc: vi.fn(),
-  onSnapshot: vi.fn(),
-  query: vi.fn(),
-  where: vi.fn(),
-  orderBy: vi.fn(),
-}));
 vi.mock("@/lib/db", () => ({
   transferConsultRoom: mockTransferConsultRoom,
 }));
@@ -44,7 +33,6 @@ function renderButton(props: Partial<React.ComponentProps<typeof RoomTransferBut
     <RoomTransferButton
       consultId="test-consult-1"
       currentRoom="NT"
-      darkMode={false}
       {...props}
     />
   );
@@ -124,7 +112,7 @@ describe("RoomTransferButton", () => {
     });
 
     it("closes dropdown when clicking outside", () => {
-      const { container } = renderButton();
+      renderButton();
       fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
       expect(screen.getByRole("listbox")).toBeInTheDocument();
       // Click on the document body outside the component
@@ -427,21 +415,6 @@ describe("RoomTransferButton", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Dark mode rendering
-  // -------------------------------------------------------------------------
-  describe("dark mode", () => {
-    it("renders without error in dark mode", () => {
-      expect(() => renderButton({ darkMode: true })).not.toThrow();
-    });
-
-    it("opens dropdown in dark mode", () => {
-      renderButton({ darkMode: true });
-      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
-      expect(screen.getByRole("listbox")).toBeInTheDocument();
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // Responsive resize alignment
   // -------------------------------------------------------------------------
   describe("responsive resize alignment", () => {
@@ -542,7 +515,7 @@ describe("RoomTransferButton", () => {
 
       const { container } = render(
         <div data-testid="scroll-container" className="overflow-x-auto">
-          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" darkMode={false} />
+          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" />
         </div>
       );
 
@@ -638,7 +611,7 @@ describe("RoomTransferButton", () => {
 
       const { container } = render(
         <div className="overflow-x-auto">
-          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" darkMode={false} />
+          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" />
         </div>
       );
 
@@ -697,7 +670,7 @@ describe("RoomTransferButton", () => {
       const { container } = render(
         <div className="overflow-hidden">
           <div className="overflow-x-auto">
-            <RoomTransferButton consultId="test-consult-1" currentRoom="NT" darkMode={false} />
+            <RoomTransferButton consultId="test-consult-1" currentRoom="NT" />
           </div>
         </div>
       );
@@ -768,7 +741,7 @@ describe("RoomTransferButton", () => {
 
       const { container } = render(
         <div className="overflow-x-auto">
-          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" darkMode={false} />
+          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" />
         </div>
       );
       const scrollContainer = container.firstElementChild as HTMLElement;

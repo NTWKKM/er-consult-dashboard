@@ -79,13 +79,6 @@ describe("getMilestones", () => {
       expect(result[0].icon).toBe("check");
     });
 
-    it("has correct colors for accept milestone", () => {
-      const dept = makeDept({ acceptedAt: "2024-01-15T08:00:00.000Z" });
-      const result = getMilestones(dept, makeIdentityFormatter);
-      expect(result[0].colorLight).toBe("text-[#699D5D]");
-      expect(result[0].colorDark).toBe("text-[#699D5D]");
-    });
-
     it("passes acceptedAt through the formatter", () => {
       const at = "2024-01-15T08:00:00.000Z";
       const dept = makeDept({ acceptedAt: at });
@@ -104,7 +97,6 @@ describe("getMilestones", () => {
       const result = getMilestones(dept, makeIdentityFormatter);
       const admit = result.find((m) => m.label === "Admit");
       expect(admit).toBeDefined();
-      expect(admit!.colorLight).toBe("text-blue-600");
     });
   });
 
@@ -117,7 +109,6 @@ describe("getMilestones", () => {
       const result = getMilestones(dept, makeIdentityFormatter);
       const returned = result.find((m) => m.label === "คืน ER");
       expect(returned).toBeDefined();
-      expect(returned!.colorLight).toBe("text-amber-600");
     });
   });
 
@@ -130,7 +121,6 @@ describe("getMilestones", () => {
       const result = getMilestones(dept, makeIdentityFormatter);
       const dc = result.find((m) => m.label === "D/C");
       expect(dc).toBeDefined();
-      expect(dc!.colorLight).toBe("text-purple-600");
     });
   });
 
@@ -144,15 +134,6 @@ describe("getMilestones", () => {
       const transfer = result.find((m) => m.icon === "transfer");
       expect(transfer).toBeDefined();
       expect(transfer!.label).toBe("ย้าย SSW");
-    });
-
-    it("transfer milestone has correct colors", () => {
-      const dept = makeDept({
-        transfers: [{ to: "Resus Team 1", at: "2024-01-15T08:30:00.000Z" }],
-      });
-      const result = getMilestones(dept, makeIdentityFormatter);
-      expect(result[0].colorLight).toBe("text-blue-500");
-      expect(result[0].colorDark).toBe("text-blue-400");
     });
 
     it("handles multiple transfers", () => {

@@ -3,7 +3,6 @@
 import React from "react";
 
 interface SkeletonLoadingProps {
-  darkMode?: boolean;
   count?: number;
 }
 

@@ -12,7 +12,7 @@ const mockAddToast = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   fetchCompletedConsultsPage: (...args: unknown[]) => mockFetchCompletedConsultsPage(...args),
-  updateConsult: (...args: unknown[]) => mockUpdateConsult(...args),
+  transactionalUpdateConsult: (...args: unknown[]) => mockUpdateConsult(...args),
   searchCompletedConsults: (...args: unknown[]) => mockSearchCompletedConsults(...args),
   fetchAllCompletedConsultsForExport: (...args: unknown[]) => mockFetchAllCompletedConsultsForExport(...args),
   isPermissionDeniedError: (...args: unknown[]) => mockIsPermissionDeniedError(...args),

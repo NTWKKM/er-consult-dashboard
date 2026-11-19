@@ -2,8 +2,9 @@ import { db } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
-import { ROOMS, RoomName } from "./constants";
+import { RoomName } from "./constants";
 import { ConsultSchema } from "./schema";
+import { ZodError } from "zod";
 
 export interface ConsultTransfer {
     to: RoomName;
@@ -54,12 +55,13 @@ function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     try {
         const parsed = ConsultSchema.parse({ ...data, id });
         return parsed as Consult;
-    } catch (e: any) {
-        if (e.issues) {
-            const safeIssues = e.issues.map((i: any) => ({ path: i.path, message: i.message }));
+    } catch (e: unknown) {
+        if (e instanceof ZodError) {
+            const safeIssues = e.issues.map((i) => ({ path: i.path, message: i.message }));
             console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, safeIssues);
         } else {
-            console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, e.message || "Unknown error");
+            const message = e instanceof Error ? e.message : "Unknown error";
+            console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, message);
         }
         return null; // Ignore malformed documents to prevent app crashes
     }
@@ -134,13 +136,17 @@ export async function fetchCompletedConsultsPage(
     let currentCursor = lastDoc;
     let hasMore = false;
 
+    const MAX_SCAN_DOCS = Math.max(250, pageSize * 10);
+    let totalScanned = 0;
+
     // ดึงข้อมูลไปเรื่อยๆ จนกว่าจะได้เอกสารที่ถูกต้องครบ pageSize + 1 (เพื่อเช็ค hasMore)
-    while (validConsults.length <= pageSize) {
+    while (validConsults.length <= pageSize && totalScanned < MAX_SCAN_DOCS) {
+        const needed = pageSize + 1 - validConsults.length;
         let q = query(
             collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             orderBy("createdAt", "desc"),
-            limit(pageSize + 1 - validConsults.length)
+            limit(needed)
         );
 
         if (currentCursor) {
@@ -149,6 +155,8 @@ export async function fetchCompletedConsultsPage(
 
         const snapshot = await getDocs(q);
         if (snapshot.empty) break;
+
+        totalScanned += snapshot.docs.length;
 
         snapshot.docs.forEach((doc) => {
             if (validConsults.length <= pageSize) {
@@ -161,6 +169,8 @@ export async function fetchCompletedConsultsPage(
         });
 
         currentCursor = snapshot.docs[snapshot.docs.length - 1];
+        // No more documents in Firestore — avoid a wasted extra read
+        if (snapshot.docs.length < needed) break;
     }
 
     hasMore = validConsults.length > pageSize;
@@ -629,6 +639,7 @@ export async function transactionalUpdateConsult(
 
     // For Optimistic UI: read local cache first for immediate UI response
     let optimisticConsult: Consult | null = null;
+    let preApplied = false;
 
     if (!awaitRemote) {
         // Pre-read for optimistic response (may hit local cache)
@@ -638,6 +649,7 @@ export async function transactionalUpdateConsult(
             if (preData) {
                 const preUpdates = updater(preData);
                 if (preUpdates !== null) {
+                    preApplied = true;
                     const hasDottedKeys = Object.keys(preUpdates).some(k => k.includes("."));
                     optimisticConsult = hasDottedKeys ? null : {
                         ...preData,
@@ -645,6 +657,16 @@ export async function transactionalUpdateConsult(
                     } as Consult;
                 }
             }
+        }
+
+        if (!preApplied) {
+            // Local precondition failed — do not fire a doomed background write
+            return {
+                consult: null,
+                isQueued: false,
+                backgroundPromise: null,
+                applied: false,
+            };
         }
     }
 
@@ -704,7 +726,7 @@ export async function transactionalUpdateConsult(
             consult: optimisticConsult,
             isQueued: true,
             backgroundPromise,
-            applied: optimisticConsult !== null,
+            applied: preApplied,
         };
     }
 

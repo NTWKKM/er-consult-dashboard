@@ -4,15 +4,14 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { addConsult } from "@/lib/db";
 import { ALL_DEPARTMENTS, ROOMS, RoomName } from "@/lib/constants";
-import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
 
 export default function SubmitPage() {
   const router = useRouter();
-  const { darkMode } = useSettings();
   const { addToast } = useToast();
   const hnRef = useRef<HTMLInputElement>(null);
   const submitInFlightRef = useRef(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -135,7 +134,7 @@ export default function SubmitPage() {
       setSelectedDepts([]);
       setErrors({});
 
-      setTimeout(() => {
+      redirectTimerRef.current = setTimeout(() => {
         router.push("/");
       }, 1500);
     } catch (error) {
@@ -145,11 +144,19 @@ export default function SubmitPage() {
         message: error instanceof Error ? `เกิดข้อผิดพลาด: ${error.message}` : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
         duration: 5000,
       });
-    } finally {
       submitInFlightRef.current = false;
       setIsLoading(false);
     }
   }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router]);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current !== null) {
+        clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

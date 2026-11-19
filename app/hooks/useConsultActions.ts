@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { updateConsult, transactionalUpdateConsult, ConsultDepartment } from "@/lib/db";
+import { updateConsult, transactionalUpdateConsult } from "@/lib/db";
 import { SURGERY_DEPTS, ORTHO_DEPTS, ACCEPT_STATUS, POST_ACCEPT_STATUSES } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 
@@ -89,20 +89,28 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
            return false;
       }
 
-      setIsUpdating(false);
-
       if (result.backgroundPromise) {
+          // Hold transactional lock until server transaction settles to prevent concurrent duplicate writes
           void result.backgroundPromise.then(
-              () => endSync(),
-              () => endSync()
+              () => {
+                endSync();
+                setIsUpdating(false);
+                inFlightRef.current = false;
+              },
+              () => {
+                endSync();
+                setIsUpdating(false);
+                inFlightRef.current = false;
+              }
           );
       } else {
           endSync();
+          setIsUpdating(false);
+          inFlightRef.current = false;
       }
 
       addToast({ type: "success", message: `รับเคส HN: ${hn} สำเร็จ` });
       onUpdate?.();
-      inFlightRef.current = false;
       return true;
     } catch (error) {
       console.error("Error accepting case:", error);
@@ -237,20 +245,28 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
            return;
       }
 
-      setIsUpdating(false);
-
       if (result.backgroundPromise) {
+          // Hold transactional lock until server transaction settles to prevent concurrent duplicate writes
           void result.backgroundPromise.then(
-              () => endSync(),
-              () => endSync()
+              () => {
+                endSync();
+                setIsUpdating(false);
+                inFlightRef.current = false;
+              },
+              () => {
+                endSync();
+                setIsUpdating(false);
+                inFlightRef.current = false;
+              }
           );
       } else {
           endSync();
+          setIsUpdating(false);
+          inFlightRef.current = false;
       }
 
       addToast({ type: "success", message: `ปิดเคส HN: ${hn} (${departmentName}) สำเร็จ` });
       onUpdate?.();
-      inFlightRef.current = false;
     } catch (error) {
       console.error("Error updating case:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการปิดเคส" });
@@ -312,20 +328,28 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
            return;
       }
 
-      setIsUpdating(false);
-
       if (result.backgroundPromise) {
+          // Hold transactional lock until server transaction settles to prevent concurrent duplicate writes
           void result.backgroundPromise.then(
-              () => endSync(),
-              () => endSync()
+              () => {
+                endSync();
+                setIsUpdating(false);
+                inFlightRef.current = false;
+              },
+              () => {
+                endSync();
+                setIsUpdating(false);
+                inFlightRef.current = false;
+              }
           );
       } else {
           endSync();
+          setIsUpdating(false);
+          inFlightRef.current = false;
       }
 
       addToast({ type: "success", message: `ยกเลิกปรึกษา HN: ${hn} (${departmentName}) สำเร็จ` });
       onUpdate?.();
-      inFlightRef.current = false;
     } catch (error) {
       console.error("Error cancelling consult:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาดในการยกเลิกปรึกษา" });
@@ -340,10 +364,12 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
     inFlightRef.current = true;
     setIsUpdating(true);
     beginSync();
+    let nextUrgent = !currentUrgent;
     try {
       const result = await updateConsult(caseId, (current) => {
+        nextUrgent = !current.isUrgent;
         return {
-          isUrgent: !current.isUrgent
+          isUrgent: nextUrgent
         };
       }, {
         awaitRemote: false,
@@ -375,9 +401,9 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
 
       addToast({
         type: "success",
-        message: currentUrgent
-          ? "เปลี่ยนเป็นเคสปกติสำเร็จ"
-          : "เปลี่ยนเป็นเคส FAST TRACK สำเร็จ"
+        message: nextUrgent
+          ? "เปลี่ยนเป็นเคส FAST TRACK สำเร็จ"
+          : "เปลี่ยนเป็นเคสปกติสำเร็จ"
       });
       onUpdate?.();
       inFlightRef.current = false;

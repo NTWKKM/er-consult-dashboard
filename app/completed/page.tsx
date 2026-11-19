@@ -2,11 +2,19 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport, isPermissionDeniedError } from "@/lib/db";
+import { fetchCompletedConsultsPage, transactionalUpdateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport, isPermissionDeniedError } from "@/lib/db";
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS } from "@/lib/constants";
-import { useSettings } from "../contexts/SettingsContext";
+import { inclusiveDayCount, MAX_EXPORT_DAYS } from "@/lib/dateUtils";
 import { useToast } from "../contexts/ToastContext";
+
+/**
+ * Neutralize spreadsheet formula triggers (=, +, -, @, tab/CR) so clinical Dx strings
+ * like "+ve FAST" or "-ve guarding" export as literal text instead of Excel formulas.
+ */
+function sanitizeExcelCell(value: string): string {
+  return /^[\t\r\n]*[=+\-@]/.test(value) ? `'${value}` : value;
+}
 
 export default function CompletedPage() {
   const [cases, setCases] = useState<Consult[]>([]);
@@ -58,18 +66,17 @@ export default function CompletedPage() {
     };
   }, []);
 
-  const { darkMode } = useSettings();
   const { addToast } = useToast();
 
   // Validate if export date range is within the 31-day database read safeguard
   const isRangeValid = useMemo(() => {
     if (!exportStartDate || !exportEndDate) return true;
     if (exportStartDate > exportEndDate) return false;
-    const start = new Date(exportStartDate);
-    const end = new Date(exportEndDate);
-    const diffTime = end.getTime() - start.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays <= 31;
+    try {
+      return inclusiveDayCount(exportStartDate, exportEndDate) <= MAX_EXPORT_DAYS;
+    } catch {
+      return false;
+    }
   }, [exportStartDate, exportEndDate]);
 
   const ITEMS_PER_PAGE = 25;
@@ -77,14 +84,17 @@ export default function CompletedPage() {
   // Store Firestore cursor snapshots for each page boundary
   const cursorMapRef = useRef<Map<number, QueryDocumentSnapshot<DocumentData>>>(new Map());
   const historyTableContainerRef = useRef<HTMLDivElement>(null);
+  const fetchRequestIdRef = useRef(0);
 
   // Fetch a specific page of completed cases using Firestore cursors
   const fetchPage = useCallback(async (page: number) => {
+    const requestId = ++fetchRequestIdRef.current;
     setLoadingMore(true);
     try {
       // For page 1, no cursor is needed. For subsequent pages, use the stored cursor.
       const cursor = page > 1 ? cursorMapRef.current.get(page - 1) : undefined;
       const result = await fetchCompletedConsultsPage(ITEMS_PER_PAGE, cursor);
+      if (fetchRequestIdRef.current !== requestId) return;
 
       setCases(result.consults);
       setHasMore(result.hasMore);
@@ -98,12 +108,15 @@ export default function CompletedPage() {
         cursorMapRef.current.set(page, result.lastDoc);
       }
     } catch (err) {
+      if (fetchRequestIdRef.current !== requestId) return;
       console.error("Fetch error:", err);
       setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
       throw err;
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (fetchRequestIdRef.current === requestId) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, []);
 
@@ -114,12 +127,15 @@ export default function CompletedPage() {
 
   // Navigate to a specific page
   const goToPage = useCallback((page: number) => {
-    setCurrentPage(page);
     if (historyTableContainerRef.current) {
       historyTableContainerRef.current.scrollTop = 0;
     }
-    void fetchPage(page).catch(() => {});
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    void fetchPage(page)
+      .then(() => {
+        setCurrentPage(page);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      })
+      .catch(() => {});
   }, [fetchPage]);
 
   const filteredCases = useMemo(() => {
@@ -152,11 +168,18 @@ export default function CompletedPage() {
   }, [currentPage, searchHN, filterDate]);
 
   const reconsultAttemptRef = useRef(0);
+  const reconsultInFlightRef = useRef(false);
   const reconsultFailedDraftsRef = useRef<
     Map<string, { problem: string; selectedDepartments: string[] }>
   >(new Map());
 
+  const closeReConsultModal = useCallback(() => {
+    setShowModal(false);
+    setSelectedCase(null);
+  }, []);
+
   const handleReConsult = async () => {
+    if (reconsultInFlightRef.current) return;
     if (!selectedCase || !newProblem.trim()) {
       addToast({ type: "error", message: "กรุณาระบุปัญหาใหม่" });
       return;
@@ -165,6 +188,7 @@ export default function CompletedPage() {
       addToast({ type: "error", message: "กรุณาเลือกอย่างน้อย 1 แผนก" });
       return;
     }
+    reconsultInFlightRef.current = true;
     setIsUpdating(true);
     const attemptId = ++reconsultAttemptRef.current;
     const caseId = selectedCase.id;
@@ -172,9 +196,9 @@ export default function CompletedPage() {
     const submittedDepartments = [...selectedDepartments];
     
     try {
-      const result = await updateConsult(caseId, (current) => {
-        // Guard against missing department
-        if (!current.departments) return null;
+      const result = await transactionalUpdateConsult(caseId, (current) => {
+        // Guard against missing department or concurrent re-consult already in pending state
+        if (!current.departments || current.status === "pending") return null;
 
         // Preserve existing departments; only reset the re-consulted ones
         const updatedDepartments: Record<string, ConsultDepartment> = { ...current.departments };
@@ -217,8 +241,9 @@ export default function CompletedPage() {
         }
       }); // OPTIMISTIC UPDATE
 
-      if (result.consult === null && !result.isQueued) {
+      if (!result.applied) {
           setIsUpdating(false);
+          reconsultInFlightRef.current = false;
           return;
       }
 
@@ -226,8 +251,7 @@ export default function CompletedPage() {
       setCases((prev) => prev.filter((c) => c.id !== caseId));
       setSearchResults((prev) => prev !== null ? prev.filter((c) => c.id !== caseId) : null);
 
-      setShowModal(false);
-      setSelectedCase(null);
+      closeReConsultModal();
       addToast({ type: "success", message: "✓ ส่งปรึกษาใหม่สำเร็จ!" });
 
       // Keep reason and departments per case while background sync is in flight so they remain
@@ -258,6 +282,7 @@ export default function CompletedPage() {
       console.error("Error re-consulting:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาด" });
     } finally {
+      reconsultInFlightRef.current = false;
       setIsUpdating(false);
     }
   };
@@ -304,7 +329,7 @@ export default function CompletedPage() {
   }, []);
 
   const handleExportExcel = async () => {
-    const sessionId = exportSessionIdRef.current;
+    const sessionId = ++exportSessionIdRef.current;
     const submittedStartDate = exportStartDate;
     const submittedEndDate = exportEndDate;
 
@@ -418,10 +443,10 @@ export default function CompletedPage() {
 
         return {
           HN: c.hn || "-",
-          ชื่อ: c.firstName || "-",
-          นามสกุล: c.lastName || "-",
+          ชื่อ: sanitizeExcelCell(c.firstName || "-"),
+          นามสกุล: sanitizeExcelCell(c.lastName || "-"),
           ห้อง: c.room || "-",
-          Dx: c.problem || "-",
+          Dx: sanitizeExcelCell(c.problem || "-"),
           แผนก: depts,
           วันที่ส่ง: c.createdAt ? new Date(c.createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "-",
           รับเคส: getTimesFor("acceptedAt") || "-",
@@ -572,7 +597,7 @@ export default function CompletedPage() {
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
-          setShowModal(false);
+          closeReConsultModal();
           return;
         }
         if (e.key === "Tab" && reconsultModalRef.current) {
@@ -620,7 +645,7 @@ export default function CompletedPage() {
           ?.focus();
       }
     }
-  }, [showModal]);
+  }, [showModal, closeReConsultModal]);
 
   // Focus management for Export Modal
   useEffect(() => {
@@ -1172,7 +1197,7 @@ export default function CompletedPage() {
               <button
                 type="button"
                 aria-label="ปิดหน้าต่าง Re-consult"
-                onClick={() => setShowModal(false)}
+                onClick={closeReConsultModal}
                 className="transition-colors text-muted hover:text-bad shrink-0"
               >
                 <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1185,10 +1210,10 @@ export default function CompletedPage() {
               <p className="text-sm whitespace-pre-wrap break-words text-ink">{selectedCase?.problem}</p>
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-ink-2">
+              <div id="reconsult-depts-label" className="block text-sm font-medium mb-2 text-ink-2">
                 แผนกที่ต้องการส่งปรึกษา <span className="text-bad">*</span>
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              </div>
+              <div role="group" aria-labelledby="reconsult-depts-label" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {ALL_DEPARTMENTS.map((dept) => (
                   <button
                     key={dept}
@@ -1225,7 +1250,7 @@ export default function CompletedPage() {
             <div className="flex flex-wrap gap-3 justify-end">
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={closeReConsultModal}
                 className="px-4 py-2 rounded-[6px] font-medium transition-colors text-sm bg-paper-3 text-ink border border-rule-2 hover:border-ink-2 whitespace-nowrap"
               >
                 ยกเลิก

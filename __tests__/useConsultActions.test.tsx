@@ -5,27 +5,11 @@ import { ToastProvider } from "@/app/contexts/ToastContext";
 import { ACCEPT_STATUS, SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
-// Mock firebase and lib/db BEFORE importing the hook
+// Mock lib/db BEFORE importing the hook
 // ---------------------------------------------------------------------------
 const { mockUpdateConsult, mockTransactionalUpdateConsult } = vi.hoisted(() => ({
   mockUpdateConsult: vi.fn(),
   mockTransactionalUpdateConsult: vi.fn(),
-}));
-
-vi.mock("@/lib/firebase", () => ({ db: {} }));
-vi.mock("firebase/firestore", () => ({
-  collection: vi.fn(),
-  doc: vi.fn(() => ({ type: "docRef" })),
-  getDoc: vi.fn(),
-  updateDoc: vi.fn(),
-  setDoc: vi.fn(),
-  getDocs: vi.fn(),
-  onSnapshot: vi.fn(),
-  query: vi.fn((...args: unknown[]) => args[0]),
-  where: vi.fn(),
-  orderBy: vi.fn(),
-  limit: vi.fn(),
-  startAfter: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -770,6 +754,15 @@ describe("useConsultActions", () => {
 
       // isSyncing should still be true while backgroundPromise is pending
       expect(result.current.isSyncing).toBe(true);
+      // Regression B3: transactional lock stays held until backgroundPromise settles
+      expect(result.current.isUpdating).toBe(true);
+
+      let secondAttempt = true;
+      await act(async () => {
+        secondAttempt = await result.current.handleAccept();
+      });
+      expect(secondAttempt).toBe(false);
+      expect(mockTransactionalUpdateConsult).toHaveBeenCalledTimes(1);
 
       await act(async () => {
         resolveBackground();
@@ -777,6 +770,38 @@ describe("useConsultActions", () => {
       });
 
       expect(result.current.isSyncing).toBe(false);
+      expect(result.current.isUpdating).toBe(false);
+    });
+
+    it("regression B3 (offline safety): offline-queued updateConsult unlocks immediately even while backgroundPromise is pending", async () => {
+      // Simulate offline updateDoc whose Promise stays unresolved until reconnect
+      const neverResolvingOfflinePromise = new Promise<void>(() => {});
+      mockUpdateConsult.mockResolvedValue({
+        consult: makePendingConsult({ isUrgent: true }),
+        isQueued: true,
+        backgroundPromise: neverResolvingOfflinePromise,
+        applied: true,
+      });
+
+      const { result } = renderHook(
+        () => useConsultActions("consult-1", "Gen Sx", "123456"),
+        { wrapper }
+      );
+
+      let firstOk = false;
+      await act(async () => {
+        firstOk = await result.current.handleToggleUrgency(false);
+      });
+      expect(firstOk).toBe(true);
+      expect(result.current.isUpdating).toBe(false);
+
+      // Must NOT deadlock offline — a subsequent offline toggle succeeds immediately
+      let secondOk = false;
+      await act(async () => {
+        secondOk = await result.current.handleToggleUrgency(true);
+      });
+      expect(secondOk).toBe(true);
+      expect(mockUpdateConsult).toHaveBeenCalledTimes(2);
     });
   });
 

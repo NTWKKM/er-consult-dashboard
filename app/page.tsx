@@ -58,7 +58,7 @@ export default function Dashboard() {
     }
   }, [view, roomFilter]);
 
-  const { darkMode, soundEnabled, displayMode, setDisplayMode } = useSettings();
+  const { soundEnabled, displayMode, setDisplayMode } = useSettings();
 
   const handleSetDisplayMode = (mode: "card" | "table") => {
     if (document.startViewTransition) {
@@ -117,7 +117,7 @@ export default function Dashboard() {
   }, [displayMode]);
 
   const scrollToDepartment = (deptName: string) => {
-    Reflect.get(deptRefs.current, deptName)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    (Object.hasOwn(deptRefs.current, deptName) ? deptRefs.current[deptName] : null)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const initAudioContext = useCallback(() => {
@@ -189,6 +189,8 @@ export default function Dashboard() {
   }, [soundEnabled, initAudioContext]);
 
   useEffect(() => {
+    // Wait for the initial snapshot before establishing the baseline so existing cases never trigger an alert
+    if (loading) return;
     const currentIds = new Set(allCases.map((c) => c.id));
     if (!isInitialLoadRef.current) {
       const newIds = findNewCaseIds(currentIds, previousCaseIdsRef.current);
@@ -198,7 +200,16 @@ export default function Dashboard() {
     }
     previousCaseIdsRef.current = currentIds;
     isInitialLoadRef.current = false;
-  }, [allCases, playNotificationSound]);
+  }, [allCases, loading, playNotificationSound]);
+
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        void audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeToConsultsByStatus(
@@ -234,13 +245,13 @@ export default function Dashboard() {
   }, [filteredAllCases]);
 
   const getCasesForDepartment = (deptName: string) => {
-    return Reflect.get(departmentCasesMap, deptName) || [];
+    return (Object.hasOwn(departmentCasesMap, deptName) ? departmentCasesMap[deptName] : undefined) || [];
   };
 
   const totalPendingCases = visibleTableCases.length;
 
   if (loading) {
-    return <SkeletonLoading darkMode={darkMode} />;
+    return <SkeletonLoading />;
   }
 
   if (error) {
@@ -387,7 +398,7 @@ export default function Dashboard() {
                       </tr>
                     ) : (
                       visibleTableCases.map((caseData) => (
-                        <PatientTableRow key={caseData.id} caseData={caseData} darkMode={darkMode} />
+                        <PatientTableRow key={caseData.id} caseData={caseData} />
                       ))
                     )}
                   </tbody>
@@ -403,7 +414,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 visibleTableCases.map((caseData) => (
-                  <MobilePatientCard key={caseData.id} caseData={caseData} darkMode={darkMode} />
+                  <MobilePatientCard key={caseData.id} caseData={caseData} />
                 ))
               )}
             </div>
@@ -469,7 +480,6 @@ export default function Dashboard() {
                               caseData={caseData}
                               caseId={caseData.id}
                               departmentName={dept}
-                              darkMode={darkMode}
                               animationDelay={index * 50}
                             />
                           ))
@@ -539,7 +549,6 @@ export default function Dashboard() {
                                 caseData={caseData}
                                 caseId={caseData.id}
                                 departmentName={dept}
-                                darkMode={darkMode}
                                 animationDelay={index * 50}
                               />
                             ))}
@@ -562,7 +571,7 @@ export default function Dashboard() {
 // SUB-COMPONENTS FOR TABLE VIEW
 // ===========================================================================
 
-function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
+function MobilePatientCard({ caseData }: { caseData: Consult }) {
   const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
   const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
 
@@ -623,10 +632,9 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
             <span className="px-2 py-1 rounded-[4px] text-xs font-medium bg-paper-3 border border-rule text-ink">
               {caseData.room}
             </span>
-            <RoomTransferButton 
+            <RoomTransferButton
               consultId={caseData.id}
               currentRoom={caseData.room}
-              darkMode={darkMode}
             />
           </div>
         </div>
@@ -652,7 +660,7 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
       {/* Management Actions */}
       <div className="flex flex-col gap-2 mt-1">
         {pendingDepts.map(dept => (
-          <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
+          <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} />
         ))}
       </div>
       <ConfirmModal
@@ -669,13 +677,13 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
   );
 }
 
-function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
+function PatientTableRow({ caseData }: { caseData: Consult }) {
   const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
   const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
 
   // กรองเฉพาะแผนกที่สถานะยังรออยู่ (pending) ของเคสนี้
   const pendingDepts = Object.keys(caseData.departments).filter(
-    (d) => Reflect.get(caseData.departments, d)?.status === "pending"
+    (d) => (Object.hasOwn(caseData.departments, d) ? caseData.departments[d] : undefined)?.status === "pending"
   );
 
   if (pendingDepts.length === 0) return null;
@@ -741,7 +749,6 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           <RoomTransferButton 
             consultId={caseData.id}
             currentRoom={caseData.room}
-            darkMode={darkMode}
           />
         </div>
       </td>
@@ -751,7 +758,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
       <td className="p-3">
         <div className="flex flex-col gap-2">
           {pendingDepts.map(dept => (
-            <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
+            <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} />
           ))}
         </div>
       </td>
@@ -769,11 +776,11 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
   );
 }
 
-function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; deptName: string; darkMode: boolean }) {
+function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; deptName: string }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
-  const dept = Reflect.get(caseData.departments, deptName);
+  const dept = Object.hasOwn(caseData.departments, deptName) ? caseData.departments[deptName] : undefined;
   const isAccepted = !!dept?.acceptedAt;
   const actionStatus = dept?.actionStatus || "";
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;

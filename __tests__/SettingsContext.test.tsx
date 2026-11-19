@@ -277,5 +277,27 @@ describe("SettingsContext", () => {
 
       expect(screen.getByTestId("dark-mode").textContent).toBe("true");
     });
+
+    it("regression B15: does not crash when localStorage throws SecurityError", () => {
+      const getSpy = vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
+        throw new Error("SecurityError");
+      });
+      const setSpy = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+        throw new Error("QuotaExceededError");
+      });
+
+      try {
+        render(
+          <SettingsProvider>
+            <SettingsConsumer />
+          </SettingsProvider>
+        );
+        expect(screen.getByTestId("dark-mode").textContent).toBe("false");
+        expect(() => fireEvent.click(screen.getByTestId("toggle-dark"))).not.toThrow();
+      } finally {
+        getSpy.mockRestore();
+        setSpy.mockRestore();
+      }
+    });
   });
 });

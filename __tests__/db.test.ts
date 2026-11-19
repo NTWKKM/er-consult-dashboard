@@ -105,8 +105,8 @@ beforeEach(() => {
 // getUtcRangeForLocalDate (private) — tested via searchCompletedConsults
 // ===========================================================================
 describe("getUtcRangeForLocalDate (via searchCompletedConsults)", () => {
-  it("filters consults from searchCompletedConsults to the correct UTC day boundary", async () => {
-    // ล็อก Timezone เพื่อให้การเทียบวันที่แม่นยำ
+  it("filters consults from searchCompletedConsults using Asia/Bangkok (UTC+7) day boundaries even on UTC devices", async () => {
+    // Even if the client device is in UTC (offset 0), hospital queries must stay anchored to Asia/Bangkok (UTC+7)
     const offsetSpy = vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(0);
     
     try {
@@ -117,10 +117,10 @@ describe("getUtcRangeForLocalDate (via searchCompletedConsults)", () => {
       expect(mockWhere).toHaveBeenCalledWith("status", "==", "completed");
 
       const createdAtCalls = (mockWhere as Mock).mock.calls.filter((c) => c[0] === "createdAt");
-      // เทียบกับเวลาเริ่มและจบของวันนั้นๆ เป๊ะๆ
+      // เทียบกับเวลาเริ่มและจบของวันนั้นๆ ในเขตเวลา Asia/Bangkok (UTC+7)
       expect(createdAtCalls).toEqual([
-        ["createdAt", ">=", "2024-06-15T00:00:00.000Z"],
-        ["createdAt", "<", "2024-06-16T00:00:00.000Z"],
+        ["createdAt", ">=", "2024-06-14T17:00:00.000Z"],
+        ["createdAt", "<", "2024-06-15T17:00:00.000Z"],
       ]);
     } finally {
       // คืนค่า Timezone ปกติเมื่อเทสต์เสร็จ
@@ -542,6 +542,45 @@ describe("transactionalUpdateConsult", () => {
       expect(result.applied).toBe(true);
       expect(result.backgroundPromise).toBeDefined();
       resolveTx({ applied: true, consult: null });
+    });
+
+    it("regression B1: returns applied=true for dotted-key updates with awaitRemote: false", async () => {
+      mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
+      let resolveTx!: (val: unknown) => void;
+      mockRunTransaction.mockReturnValue(
+        new Promise((resolve) => {
+          resolveTx = resolve;
+        })
+      );
+
+      const result = await transactionalUpdateConsult(
+        "case-1",
+        () => ({
+          "departments.Gen Sx.acceptedAt": "2024-01-10T09:00:00.000Z",
+          "departments.Gen Sx.actionStatus": "รับเคส",
+        }),
+        { awaitRemote: false },
+      );
+
+      expect(result.applied).toBe(true);
+      expect(result.isQueued).toBe(true);
+      expect(result.backgroundPromise).toBeDefined();
+      resolveTx({ applied: true, consult: null });
+    });
+
+    it("regression B1: returns applied=false without starting background tx when local precondition fails", async () => {
+      mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
+
+      const result = await transactionalUpdateConsult(
+        "case-1",
+        () => null,
+        { awaitRemote: false },
+      );
+
+      expect(result.applied).toBe(false);
+      expect(result.isQueued).toBe(false);
+      expect(result.backgroundPromise).toBeNull();
+      expect(mockRunTransaction).not.toHaveBeenCalled();
     });
 
     it("calls onBackgroundError with TRANSACTION_CONDITION_NOT_MET when condition not met in background", async () => {

@@ -142,20 +142,20 @@ describe("departmentCasesMap", () => {
     });
 
     it("treats room check as case-insensitive (RESUS in uppercase)", () => {
-      const upperResus = makeConsult({ room: "RESUS TEAM 1", departments: { "Gen Sx": { status: "pending", completedAt: null } } });
+      const upperResus = makeConsult({ room: "RESUS TEAM 1" as unknown as Consult["room"], departments: { "Gen Sx": { status: "pending", completedAt: null } } });
       const map = buildDepartmentCasesMap([upperResus], "resus");
       expect(map["Gen Sx"]).toHaveLength(1);
     });
 
     it("treats case with null-ish room as non-resus", () => {
-      const noRoom = makeConsult({ room: "", departments: { "Gen Sx": { status: "pending", completedAt: null } } });
+      const noRoom = makeConsult({ room: "" as unknown as Consult["room"], departments: { "Gen Sx": { status: "pending", completedAt: null } } });
       const map = buildDepartmentCasesMap([noRoom], "non-resus");
       expect(map["Gen Sx"]).toHaveLength(1);
     });
 
     it("regression: correctly distinguishes 'Non-Resus' from 'Resus'", () => {
-      const resus = makeConsult({ room: "Resus", departments: { "Gen Sx": { status: "pending", completedAt: null } } });
-      const nonResus = makeConsult({ room: "Non-Resus", departments: { "Gen Sx": { status: "pending", completedAt: null } } });
+      const resus = makeConsult({ room: "Resus" as unknown as Consult["room"], departments: { "Gen Sx": { status: "pending", completedAt: null } } });
+      const nonResus = makeConsult({ room: "Non-Resus" as unknown as Consult["room"], departments: { "Gen Sx": { status: "pending", completedAt: null } } });
       
       // Test filter='resus'
       const resusMap = buildDepartmentCasesMap([resus, nonResus], "resus");
