@@ -262,4 +262,77 @@ describe("AuthContext", () => {
       expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
     });
   });
+
+  it("shows a single combined confirmation prompt when both pending writes and failed drafts remain", async () => {
+    mockHasPendingOptimisticWrites.mockReturnValue(true);
+    mockHasRetainedSubmitDrafts.mockReturnValue(true);
+    mockWaitForPendingWrites.mockReturnValue(new Promise(() => {}));
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const originalOnLine = navigator.onLine;
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      act(() => {
+        authCallback!(null);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+        expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("ข้อมูลร่าง"));
+        expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("รอการซิงค์"));
+        expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: originalOnLine });
+    }
+  });
+
+  it("re-checks pending optimistic writes started during logout wait before signOut and cleanup", async () => {
+    let resolveWait!: () => void;
+    mockWaitForPendingWrites.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveWait = resolve;
+      })
+    );
+    mockHasPendingOptimisticWrites.mockReturnValue(false);
+    mockHasRetainedSubmitDrafts.mockReturnValue(false);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    act(() => {
+      authCallback!(null);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+    // A late write begins right as waitForPendingWrites resolves
+    mockHasPendingOptimisticWrites.mockReturnValue(true);
+    await act(async () => {
+      resolveWait();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+    expect(mockSignOut).not.toHaveBeenCalled();
+    expect(mockTerminate).not.toHaveBeenCalled();
+    expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+  });
 });

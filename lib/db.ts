@@ -320,12 +320,14 @@ export interface RetainedSubmitDraft {
     consult: Consult;
     status: "pending" | "failed";
     error?: unknown;
+    replacesDraftId?: string;
 }
 
 const SUBMIT_DRAFTS_STORAGE_KEY = "er_consult_submit_drafts_v1";
 const PersistedSubmitDraftSchema = z.object({
     consult: ConsultSchema,
     status: z.enum(["pending", "failed"]),
+    replacesDraftId: z.string().optional(),
 });
 
 const retainedSubmitDrafts = new Map<string, RetainedSubmitDraft>();
@@ -371,14 +373,30 @@ function persistSubmitDrafts(): void {
             window.sessionStorage.removeItem(SUBMIT_DRAFTS_STORAGE_KEY);
             return;
         }
-        const serialized = Array.from(retainedSubmitDrafts.values()).map(({ consult, status }) => ({
-            consult,
-            status,
-        }));
+        const serialized = Array.from(retainedSubmitDrafts.values()).map(
+            ({ consult, status, replacesDraftId }) => ({
+                consult,
+                status,
+                ...(replacesDraftId ? { replacesDraftId } : {}),
+            })
+        );
         window.sessionStorage.setItem(SUBMIT_DRAFTS_STORAGE_KEY, JSON.stringify(serialized));
     } catch {
         // Ignore storage quota or private-browsing errors
     }
+}
+
+function retireSupersededDraft(replacesDraftId: string | undefined, replacementId: string): void {
+    if (!replacesDraftId || replacesDraftId === replacementId) return;
+    retainedSubmitDrafts.delete(replacesDraftId);
+    activeSubmitWriteIds.delete(replacesDraftId);
+    draftTokens.delete(replacesDraftId);
+}
+
+function isUnavailableFirestoreError(err: unknown): boolean {
+    if (typeof err !== "object" || err === null) return false;
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "string" && (code === "unavailable" || code.endsWith("/unavailable"));
 }
 
 function ensureDraftsHydrated(): void {
@@ -396,6 +414,9 @@ function ensureDraftsHydrated(): void {
                 retainedSubmitDrafts.set(validated.data.consult.id, {
                     consult: validated.data.consult,
                     status: validated.data.status,
+                    ...(validated.data.replacesDraftId
+                        ? { replacesDraftId: validated.data.replacesDraftId }
+                        : {}),
                 });
                 draftTokens.set(validated.data.consult.id, ++nextDraftToken);
             }
@@ -407,9 +428,15 @@ function ensureDraftsHydrated(): void {
 
 export function getLatestFailedSubmitDraft(): Consult | null {
     ensureDraftsHydrated();
+    const supersededByPending = new Set<string>();
+    for (const entry of retainedSubmitDrafts.values()) {
+        if (entry.status === "pending" && entry.replacesDraftId) {
+            supersededByPending.add(entry.replacesDraftId);
+        }
+    }
     let latest: Consult | null = null;
     for (const entry of retainedSubmitDrafts.values()) {
-        if (entry.status === "failed") {
+        if (entry.status === "failed" && !supersededByPending.has(entry.consult.id)) {
             latest = entry.consult;
         }
     }
@@ -464,14 +491,21 @@ export async function reconcileReloadedSubmitDrafts(): Promise<Consult | null> {
             if (docSnap.exists() && !docSnap.metadata?.hasPendingWrites) {
                 retainedSubmitDrafts.delete(id);
                 draftTokens.delete(id);
+                retireSupersededDraft(entry.replacesDraftId, id);
                 mutated = true;
             } else if (!docSnap.exists() && docSnap.metadata?.fromCache === false) {
                 retainedSubmitDrafts.set(id, { ...entry, status: "failed" });
+                retireSupersededDraft(entry.replacesDraftId, id);
                 mutated = true;
             }
         } catch (err) {
             if (!isStillOwned()) continue;
+            if (isUnavailableFirestoreError(err)) {
+                // Offline/unavailable read cannot confirm absence; keep pending for monitor or retry
+                continue;
+            }
             retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
+            retireSupersededDraft(entry.replacesDraftId, id);
             mutated = true;
         }
     }
@@ -525,6 +559,7 @@ export function monitorReloadedPendingSubmitDrafts(
             finish();
             if (!isStillOwned()) return;
             retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
+            retireSupersededDraft(entry.replacesDraftId, id);
             persistSubmitDrafts();
             onFailed?.(entry.consult, err);
             notifyFailedDraftListeners(entry.consult, err);
@@ -541,10 +576,11 @@ export function monitorReloadedPendingSubmitDrafts(
                 }
                 const hasPendingWrites = Boolean(docSnap.metadata?.hasPendingWrites);
                 if (docSnap.exists() && !hasPendingWrites) {
-                    // Server commit confirmed — remove retained draft
+                    // Server commit confirmed — remove retained draft and any draft it replaced
                     finish();
                     retainedSubmitDrafts.delete(id);
                     draftTokens.delete(id);
+                    retireSupersededDraft(entry.replacesDraftId, id);
                     persistSubmitDrafts();
                     return;
                 }
@@ -792,6 +828,7 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
 
 export interface AddConsultOptions {
     awaitRemote?: boolean;
+    replacesDraftId?: string;
     onBackgroundError?: (
         error: unknown,
         draft: Consult,
@@ -804,7 +841,7 @@ export async function addConsult(
     data: Omit<Consult, "id" | "createdAt">,
     options: AddConsultOptions = {}
 ): Promise<Consult> {
-    const { awaitRemote = true, onBackgroundError, onBackgroundSuccess } = options;
+    const { awaitRemote = true, replacesDraftId, onBackgroundError, onBackgroundSuccess } = options;
     const database = requireDb();
     // Generate an ID for the new document using Firestore native doc()
     const newDocRef = doc(collection(database, COLLECTION_NAME));
@@ -822,7 +859,11 @@ export async function addConsult(
         const captureToken = ++nextDraftToken;
         draftTokens.set(newConsult.id, captureToken);
         activeSubmitWriteIds.add(newConsult.id);
-        retainedSubmitDrafts.set(newConsult.id, { consult: newConsult, status: "pending" });
+        retainedSubmitDrafts.set(newConsult.id, {
+            consult: newConsult,
+            status: "pending",
+            ...(replacesDraftId ? { replacesDraftId } : {}),
+        });
         persistSubmitDrafts();
 
         const isStillOwned = () =>
@@ -837,6 +878,7 @@ export async function addConsult(
                 if (!isStillOwned()) return;
                 retainedSubmitDrafts.delete(newConsult.id);
                 draftTokens.delete(newConsult.id);
+                retireSupersededDraft(replacesDraftId, newConsult.id);
                 persistSubmitDrafts();
                 onBackgroundSuccess?.(newConsult);
             },
@@ -847,7 +889,9 @@ export async function addConsult(
                     consult: newConsult,
                     status: "failed",
                     error: err,
+                    ...(replacesDraftId ? { replacesDraftId } : {}),
                 });
+                retireSupersededDraft(replacesDraftId, newConsult.id);
                 persistSubmitDrafts();
                 const notifiedListenerCount = failedDraftListeners.size;
                 onBackgroundError?.(err, newConsult, { notifiedListenerCount });
@@ -857,7 +901,7 @@ export async function addConsult(
         return newConsult;
     }
 
-    await setDoc(newDocRef, newConsult);
+    await trackOptimisticWrite(setDoc(newDocRef, newConsult));
     return newConsult;
 }
 

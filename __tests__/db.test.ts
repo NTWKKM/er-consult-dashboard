@@ -1243,6 +1243,123 @@ describe("addConsult optimistic draft retention", () => {
     expect(reloadedDb.getRetainedSubmitDraft(consult.id)).toBeUndefined();
     window.sessionStorage.clear();
   });
+
+  it("keeps draft pending when reconcile getDoc rejects with unavailable and clears on subsequent server-confirmed read", async () => {
+    window.sessionStorage.clear();
+    let resolveWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite = resolve; }));
+
+    const pendingConsult = await addConsult(
+      {
+        hn: "334455",
+        firstName: "Offline",
+        lastName: "Unavailable",
+        room: "NT",
+        problem: "Unavailable read test",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+
+    // Offline read rejects with unavailable -> must stay pending, not failed
+    mockGetDoc.mockRejectedValueOnce(Object.assign(new Error("Client is offline"), { code: "unavailable" }));
+    const firstReconcile = await reloadedDb.reconcileReloadedSubmitDrafts();
+    expect(firstReconcile).toBeNull();
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
+    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
+
+    // Follow-up read confirms document exists on server -> clears draft cleanly
+    mockGetDoc.mockResolvedValueOnce({
+      ...makeDocSnapshot(pendingConsult.id, { ...pendingConsult }, true),
+      metadata: { fromCache: false, hasPendingWrites: false },
+    });
+    const secondReconcile = await reloadedDb.reconcileReloadedSubmitDrafts();
+    expect(secondReconcile).toBeNull();
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)).toBeUndefined();
+
+    resolveWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.sessionStorage.clear();
+  });
+
+  it("persists replacesDraftId across reload and retires superseded failed draft when replacement commits or fails", async () => {
+    window.sessionStorage.clear();
+    let rejectFirst!: (err: unknown) => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-a" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
+
+    const draftA = await addConsult(
+      {
+        hn: "121212",
+        firstName: "First",
+        lastName: "Failed",
+        room: "NT",
+        problem: "Draft A",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+    rejectFirst(new Error("offline-1"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(draftA.id).toBe("draft-a");
+    expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
+
+    // Retry offline as draft B replacing draft A, then reload before B settles
+    let resolveB!: () => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-b" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveB = resolve; }));
+    const draftB = await addConsult(
+      {
+        hn: "121212",
+        firstName: "First",
+        lastName: "Failed",
+        room: "NT",
+        problem: "Draft B",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, replacesDraftId: draftA.id }
+    );
+    expect(draftB.id).toBe("draft-b");
+
+    try {
+      // A stays retained while B is pending, but is hidden behind pending replacement B
+      expect(getRetainedSubmitDraft(draftA.id)?.status).toBe("failed");
+      expect(getRetainedSubmitDraft(draftB.id)?.replacesDraftId).toBe(draftA.id);
+      expect(getLatestFailedSubmitDraft()).toBeNull();
+
+      // Simulate reload while B is still pending -> monitor sees B fail -> retires A, retains B
+      vi.resetModules();
+      const reloadedDb = await import("@/lib/db");
+      let snapshotNext!: (snap: { exists: () => boolean; metadata?: { fromCache?: boolean; hasPendingWrites?: boolean } }) => void;
+      mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
+        snapshotNext = onNext;
+        return vi.fn();
+      });
+
+      reloadedDb.monitorReloadedPendingSubmitDrafts();
+      snapshotNext({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } });
+
+      expect(reloadedDb.getRetainedSubmitDraft(draftA.id)).toBeUndefined();
+      expect(reloadedDb.getRetainedSubmitDraft(draftB.id)?.status).toBe("failed");
+      expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(draftB.id);
+    } finally {
+      resolveB();
+      await Promise.resolve();
+      await Promise.resolve();
+      window.sessionStorage.clear();
+    }
+  });
 });
 
 // ===========================================================================

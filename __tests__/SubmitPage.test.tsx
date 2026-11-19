@@ -469,13 +469,101 @@ describe("SubmitPage mount and redirect safety", () => {
     });
     expect(mockAddToast).toHaveBeenCalledTimes(1);
 
-    // If originating form unmounted while another /submit listener is active, originating callback avoids "return to /submit" toast
+    // Fresh submission -> unmount originating SubmitPage -> remount new SubmitPage -> deliver failure via listener
+    let remountedListener: ((draft: Consult) => void) | undefined;
+    let onBgError2: ((err: unknown, draft: Consult, ctx?: { notifiedListenerCount: number }) => void) | undefined;
+    const failedDraft2 = makeConsult({
+      id: "coord-2",
+      hn: "777889",
+      firstName: "ผู้ป่วยสอง",
+      lastName: "ทดสอบ",
+      room: "Urgent",
+      problem: "Second coordinated error",
+      departments: { Ortho: { status: "pending", completedAt: null } },
+    });
+    mockAddConsult.mockImplementationOnce(async (_payload, options) => {
+      onBgError2 = options?.onBackgroundError;
+      return failedDraft2;
+    });
+
     unmount();
-    mockAddToast.mockClear();
+    const firstRender = render(<SubmitPage />);
+    fillValidSubmitForm();
     await act(async () => {
-      onBgError?.(new Error("fail"), failedDraft, { notifiedListenerCount: 1 });
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
       await Promise.resolve();
     });
-    expect(mockAddToast).not.toHaveBeenCalled();
+
+    firstRender.unmount();
+    mockSubscribeToFailedSubmitDrafts.mockImplementationOnce((listener: (draft: Consult) => void) => {
+      remountedListener = listener;
+      return () => {};
+    });
+
+    render(<SubmitPage />);
+    mockAddToast.mockClear();
+
+    await act(async () => {
+      // Originating unmounted callback suppresses return-to-submit toast while remounted listener delivers failure
+      onBgError2?.(new Error("fail"), failedDraft2, { notifiedListenerCount: 1 });
+      remountedListener?.(failedDraft2);
+      await Promise.resolve();
+    });
+
+    expect(mockAddToast).toHaveBeenCalledTimes(1);
+    expect(mockAddToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "error",
+        message: expect.not.stringContaining("กรุณากลับไปหน้า"),
+      })
+    );
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("777889");
+    expect(screen.getByPlaceholderText("ชื่อผู้ป่วย")).toHaveValue("ผู้ป่วยสอง");
+    expect(screen.getByLabelText("Ortho")).toBeChecked();
+  });
+
+  it("preserves unrelated pending recovery banner and keeps staff on /submit after submitting a new case", async () => {
+    let resolveReconcile!: (draft: Consult | null) => void;
+    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
+      new Promise<Consult | null>((resolve) => {
+        resolveReconcile = resolve;
+      })
+    );
+    mockAddConsult.mockResolvedValueOnce(makeConsult({ id: "new-case-1", hn: "555666" }));
+
+    render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    const recoveredDraft = makeConsult({
+      id: "pending-recovery-x",
+      hn: "111222",
+      firstName: "เคสเดิม",
+      lastName: "ที่ค้าง",
+      room: "Urgent",
+      problem: "Needs recovery",
+      departments: { Ortho: { status: "pending", completedAt: null } },
+    });
+
+    await act(async () => {
+      resolveReconcile(recoveredDraft);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("button", { name: /กู้คืนข้อมูลร่าง/ })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    // Staff stays on /submit and recovery banner for unrelated draft remains intact
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /กู้คืนข้อมูลร่าง/ })).toBeInTheDocument();
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("");
+    expect(screen.getByRole("button", { name: /ส่ง Consult/i })).not.toBeDisabled();
   });
 });

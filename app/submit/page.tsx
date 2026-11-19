@@ -39,6 +39,11 @@ export default function SubmitPage() {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isMac, setIsMac] = useState(false);
   const [pendingRecoverableDraft, setPendingRecoverableDraft] = useState<Consult | null>(null);
+  const pendingRecoverableDraftRef = useRef<Consult | null>(null);
+
+  useEffect(() => {
+    pendingRecoverableDraftRef.current = pendingRecoverableDraft;
+  }, [pendingRecoverableDraft]);
 
   useEffect(() => {
     formHasValuesRef.current = Boolean(
@@ -212,6 +217,7 @@ export default function SubmitPage() {
       } else {
         await addConsult(payload, {
           awaitRemote: false,
+          ...(previousFailedDraftId ? { replacesDraftId: previousFailedDraftId } : {}),
           onBackgroundSuccess: () => {
             if (previousFailedDraftId && typeof clearRetainedSubmitDraft === "function") {
               clearRetainedSubmitDraft(previousFailedDraftId);
@@ -301,9 +307,13 @@ export default function SubmitPage() {
 
       if (!isMountedRef.current) return;
 
+      const activeRecoveryDraft = pendingRecoverableDraftRef.current;
+      const hasDifferentPendingRecovery = Boolean(
+        activeRecoveryDraft && activeRecoveryDraft.id !== previousFailedDraftId
+      );
+
       // Reset only visible form inputs; any optimistic write draft remains retained in lib/db.ts until settled.
       formDirtyRef.current = false;
-      setPendingRecoverableDraft(null);
       setHn("");
       setFirstName("");
       setLastName("");
@@ -311,6 +321,16 @@ export default function SubmitPage() {
       setProblem("");
       setSelectedDepts([]);
       setErrors({});
+
+      if (hasDifferentPendingRecovery) {
+        // Preserve the unrelated draft awaiting user recovery action and keep staff on /submit
+        submitInFlightRef.current = false;
+        setIsLoading(false);
+        return;
+      }
+
+      pendingRecoverableDraftRef.current = null;
+      setPendingRecoverableDraft(null);
 
       redirectTimerRef.current = setTimeout(() => {
         if (isMountedRef.current) {

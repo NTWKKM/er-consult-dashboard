@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { User, onAuthStateChanged, signOut } from "firebase/auth";
 import { clearIndexedDbPersistence, terminate, waitForPendingWrites, type Firestore } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
@@ -44,7 +44,9 @@ async function checkIsAuthorizedStaff(currentUser: User): Promise<boolean> {
 
 const PENDING_WRITE_SYNC_TIMEOUT_MS = 1200;
 
-async function confirmPendingWritesBeforeLogout(firestoreDb: Firestore | null): Promise<boolean> {
+async function confirmPendingWritesBeforeLogout(
+  firestoreDb: Firestore | null
+): Promise<{ canProceed: boolean; confirmedDiscard: boolean }> {
   const confirmDiscard = (message: string) =>
     typeof window !== "undefined" &&
     typeof window.confirm === "function" &&
@@ -54,54 +56,65 @@ async function confirmPendingWritesBeforeLogout(firestoreDb: Firestore | null): 
     "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์อาจสูญหาย ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
   const retainedDraftMessage =
     "มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง หากออกจากระบบข้อมูลร่างจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
+  const combinedMessage =
+    "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ และมีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์และข้อมูลร่างจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
+
+  let writesSettled = true;
 
   if (firestoreDb) {
-    // If already offline with local pending writes, ask confirmation immediately rather than waiting on network.
+    // If already offline with local pending writes, treat writes as unsettled without waiting on network.
     if (typeof navigator !== "undefined" && navigator.onLine === false && hasPendingOptimisticWrites()) {
-      return confirmDiscard(pendingMessage);
-    }
-
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let syncTimedOut = false;
-    let writesSettled = false;
-
-    try {
-      const syncCompleted = await Promise.race<boolean>([
-        waitForPendingWrites(firestoreDb).then(() => true),
-        new Promise<boolean>((resolve) => {
-          timeoutId = setTimeout(() => {
-            syncTimedOut = true;
-            resolve(false);
-          }, PENDING_WRITE_SYNC_TIMEOUT_MS);
-        }),
-      ]);
-
-      writesSettled = syncCompleted && !syncTimedOut && !hasPendingOptimisticWrites();
-    } catch {
-      // Treat waitForPendingWrites failure as unconfirmed pending writes so we never silently wipe local data
       writesSettled = false;
-    } finally {
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
+    } else {
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let syncTimedOut = false;
+
+      try {
+        const syncCompleted = await Promise.race<boolean>([
+          waitForPendingWrites(firestoreDb).then(() => true),
+          new Promise<boolean>((resolve) => {
+            timeoutId = setTimeout(() => {
+              syncTimedOut = true;
+              resolve(false);
+            }, PENDING_WRITE_SYNC_TIMEOUT_MS);
+          }),
+        ]);
+
+        writesSettled = syncCompleted && !syncTimedOut && !hasPendingOptimisticWrites();
+      } catch {
+        // Treat waitForPendingWrites failure as unconfirmed pending writes so we never silently wipe local data
+        writesSettled = false;
+      } finally {
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+        }
       }
     }
-
-    if (!writesSettled) {
-      return confirmDiscard(pendingMessage);
-    }
+  } else if (hasPendingOptimisticWrites()) {
+    writesSettled = false;
   }
 
-  if (hasRetainedSubmitDrafts()) {
-    return confirmDiscard(retainedDraftMessage);
+  const hasPending = !writesSettled;
+  const hasDrafts = hasRetainedSubmitDrafts();
+
+  if (hasPending && hasDrafts) {
+    return { canProceed: confirmDiscard(combinedMessage), confirmedDiscard: true };
+  }
+  if (hasPending) {
+    return { canProceed: confirmDiscard(pendingMessage), confirmedDiscard: true };
+  }
+  if (hasDrafts) {
+    return { canProceed: confirmDiscard(retainedDraftMessage), confirmedDiscard: true };
   }
 
-  return true;
+  return { canProceed: true, confirmedDiscard: false };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthorizedStaff, setIsAuthorizedStaff] = useState(false);
   const [loading, setLoading] = useState(Boolean(auth));
+  const logoutInProgressRef = useRef(false);
 
   useEffect(() => {
     if (!auth) {
@@ -138,28 +151,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    if (typeof window !== "undefined") {
-      const canProceed = await confirmPendingWritesBeforeLogout(db);
-      if (!canProceed) {
-        return;
-      }
-    }
+    if (logoutInProgressRef.current) return;
+    logoutInProgressRef.current = true;
 
-    clearRetainedSubmitDraft();
+    try {
+      let confirmedDiscard = false;
+      if (typeof window !== "undefined") {
+        const initialCheck = await confirmPendingWritesBeforeLogout(db);
+        if (!initialCheck.canProceed) {
+          return;
+        }
+        confirmedDiscard = initialCheck.confirmedDiscard;
 
-    if (auth) {
-      await signOut(auth);
-    }
-    // Clear local IndexedDB cache on shared ER workstations so patient PHI does not persist across shifts
-    if (db && typeof window !== "undefined") {
-      try {
-        await terminate(db);
-        await clearIndexedDbPersistence(db);
-      } catch {
-        // Ignore if another tab holds an active Firestore connection
+        // Re-check immediately before signOut/cleanup in case a late write started during the async wait
+        if (!confirmedDiscard && (hasPendingOptimisticWrites() || hasRetainedSubmitDrafts())) {
+          const lateCheck = await confirmPendingWritesBeforeLogout(db);
+          if (!lateCheck.canProceed) {
+            return;
+          }
+        }
       }
-      // Full page reload after terminate(db) initializes a clean Firestore instance and redirects via ProtectedRoute
-      window.location.reload();
+
+      clearRetainedSubmitDraft();
+
+      if (auth) {
+        await signOut(auth);
+      }
+      // Clear local IndexedDB cache on shared ER workstations so patient PHI does not persist across shifts
+      if (db && typeof window !== "undefined") {
+        try {
+          await terminate(db);
+          await clearIndexedDbPersistence(db);
+        } catch {
+          // Ignore if another tab holds an active Firestore connection
+        }
+        // Full page reload after terminate(db) initializes a clean Firestore instance and redirects via ProtectedRoute
+        window.location.reload();
+      }
+    } finally {
+      logoutInProgressRef.current = false;
     }
   }, []);
 
