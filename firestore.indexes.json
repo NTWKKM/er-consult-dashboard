@@ -20,8 +20,8 @@
       "collectionGroup": "consults",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hn", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "hn", "order": "ASCENDING" }
       ]
     }
   ],
