@@ -152,7 +152,7 @@ describe("ElapsedTime", () => {
       ).toISOString();
 
       render(<ElapsedTime createdAt={createdAtMidMinute} />);
-      expect(screen.getByText(/89 นาที/)).toBeInTheDocument();
+      expect(screen.getByText(/1 ชม. 29 นาที/)).toBeInTheDocument();
 
       act(() => {
         vi.advanceTimersByTime(1_000); // 1 second more = crosses the minute boundary

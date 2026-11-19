@@ -1,74 +1,92 @@
+/* Hallmark · v2.0.0 · shape: app screen · genre: modern-minimal · theme: console (graphite/paper) · deal: 2/3, seed hospital-emergency-room-surgical-b478·126f3d5c·2026-11-18·r0 · signature: clinical consult whiteboard & milestone trail · redesign: full · scope: app */
+/* critique: Stepped Console surface hierarchy (paper/paper-2/paper-3) with 1px hairline rules, Host Grotesk + Noto Sans Thai reading faces, and Atkinson Hyperlegible Mono tabular numerals for HN and clinical timestamps. */
+/* Hallmark · answered F2 · literal ellipsis in RoomTransferButton dropdown header · unit test asserts exact string */
 @import "tailwindcss";
+@import "./tokens.css";
 
-@theme {
-  --background-image: initial;
-}
+@custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  --color-navy-dark: #014167;
-  --color-gray-blue: #C7CFDA;
-  --color-peach-light: #FBD8C5;
-  --color-peach: #F1AE9E;
-  --color-coral: #E55143;
-  --color-green: #699D5D;
-  --color-green-light: #B4C8AB;
-  --color-yellow-light: #F4ECA3;
-  --color-cream: #FDFCDF;
-}
-
-* {
+html,
+body {
+  overflow-x: clip;
   scroll-behavior: smooth;
 }
 
 body {
-  font-family: var(--font-inter), var(--font-thai), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #014167;
-  color: #FDFCDF;
+  background: var(--color-paper);
+  color: var(--color-ink);
 }
 
-/* Task 9: Global visible focus indicator for keyboard navigation */
+.dark body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-accent) 25%, transparent);
+  color: var(--color-ink);
+}
+
+input,
+textarea,
+select {
+  caret-color: var(--color-accent);
+}
+
+/* Measured clinical values (HN, timestamps, timers, counts) */
+.measured,
+.tabular-nums {
+  font-family: var(--font-outlier);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* Global visible focus indicator for keyboard navigation */
 :focus-visible {
-  outline: 2px solid #699D5D;
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* Task 13: Active tap feedback for touch devices */
+/* Active tap feedback for touch devices */
 .tap-feedback {
-  transition: transform 0.1s ease;
+  transition: transform var(--dur-micro) var(--ease-out);
 }
 
-.tap-feedback:active {
-  transform: scale(0.95);
+.tap-feedback:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
-.dark body {
-  background: #111827;
+/* Console hairline panel surface */
+.glass-panel,
+.console-panel {
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule);
+  box-shadow: none;
 }
 
-/* Card shadows */
-.card-shadow {
-  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.3), 
-              0 2px 4px -2px rgba(1, 65, 103, 0.2);
+/* Modal scroll containment */
+dialog:modal {
+  overscroll-behavior: contain;
 }
 
-.card-shadow-hover {
-  box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.4), 
-              0 4px 8px -4px rgba(1, 65, 103, 0.3),
-              0 0 20px rgba(253, 252, 223, 0.1);
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 
-/* Slide in */
+/* Subtle entrance animations */
 .slide-in {
-  animation: slideIn 0.3s ease-out;
+  animation: slideIn 0.2s var(--ease-out);
 }
 
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-6px);
   }
   to {
     opacity: 1;
@@ -76,21 +94,14 @@ body {
   }
 }
 
-/* Glow hover */
-.glow-hover:hover {
-  box-shadow: 0 0 20px rgba(253, 252, 223, 0.3);
-  transition: all 0.3s ease;
-}
-
-/* Toast slide-in animation */
 .animate-slide-in-right {
-  animation: slideInRight 0.3s ease-out;
+  animation: slideInRight 0.2s var(--ease-out);
 }
 
 @keyframes slideInRight {
   from {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(24px);
   }
   to {
     opacity: 1;
@@ -98,9 +109,8 @@ body {
   }
 }
 
-/* Fade in */
 .animate-fade-in {
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.16s var(--ease-out);
 }
 
 @keyframes fadeIn {
@@ -108,15 +118,14 @@ body {
   to { opacity: 1; }
 }
 
-/* Scale in for modals */
 .animate-scale-in {
-  animation: scaleIn 0.2s ease-out;
+  animation: scaleIn 0.18s var(--ease-out);
 }
 
 @keyframes scaleIn {
   from {
     opacity: 0;
-    transform: scale(0.95);
+    transform: scale(0.97);
   }
   to {
     opacity: 1;
@@ -124,15 +133,14 @@ body {
   }
 }
 
-/* Staggered card animation */
 .animate-stagger-in {
-  animation: staggerIn 0.4s ease-out both;
+  animation: staggerIn 0.22s var(--ease-out) both;
 }
 
 @keyframes staggerIn {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -142,14 +150,24 @@ body {
 
 /* Skeleton loading shimmer */
 .skeleton {
-  background: linear-gradient(90deg, #C7CFDA 25%, #dfe4eb 50%, #C7CFDA 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-paper-3) 25%,
+    var(--color-rule) 50%,
+    var(--color-paper-3) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite ease-in-out;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .dark .skeleton {
-  background: linear-gradient(90deg, #374151 25%, #4B5563 50%, #374151 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-paper-3) 25%,
+    var(--color-rule) 50%,
+    var(--color-paper-3) 75%
+  );
   background-size: 200% 100%;
 }
 
@@ -158,92 +176,78 @@ body {
   100% { background-position: 200% 0; }
 }
 
-/* Elapsed time ticker */
+/* Elapsed time color escalation */
+.elapsed-safe {
+  background-color: var(--color-ok-soft);
+  color: var(--color-ok);
+  border: 1px solid color-mix(in oklab, var(--color-ok) 30%, transparent);
+}
+
+.elapsed-warning {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+
+.elapsed-danger {
+  background-color: var(--color-bad-soft);
+  color: var(--color-bad);
+  border: 1px solid color-mix(in oklab, var(--color-bad) 40%, transparent);
+}
+
+.elapsed-critical {
+  background-color: var(--color-bad);
+  color: var(--color-paper);
+  border: 1px solid var(--color-bad);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .elapsed-critical {
+    animation: tick 1s ease-in-out infinite alternate;
+  }
+}
+
 @keyframes tick {
-  from { opacity: 0.8; }
+  from { opacity: 0.85; }
   to { opacity: 1; }
 }
 
-.elapsed-tick {
-  animation: tick 1s ease-in-out infinite alternate;
-}
-
-/* Task 4: Elapsed time color escalation */
-.elapsed-safe {
-  background-color: rgba(105, 157, 93, 0.15);
-  color: #4a7c3f;
-}
-.elapsed-warning {
-  background-color: rgba(217, 119, 6, 0.15);
-  color: #b45309;
-}
-.elapsed-danger {
-  background-color: rgba(229, 81, 67, 0.2);
-  color: #dc2626;
-}
-.elapsed-critical {
-  background-color: rgba(229, 81, 67, 0.25);
-  color: #dc2626;
-  animation: tick 0.6s ease-in-out infinite alternate;
-}
-
-/* Dark mode elapsed variants */
-.dark .elapsed-safe {
-  background-color: rgba(105, 157, 93, 0.2);
-  color: #86efac;
-}
-.dark .elapsed-warning {
-  background-color: rgba(217, 119, 6, 0.2);
-  color: #fbbf24;
-}
-.dark .elapsed-danger {
-  background-color: rgba(229, 81, 67, 0.2);
-  color: #f87171;
-}
-.dark .elapsed-critical {
-  background-color: rgba(229, 81, 67, 0.25);
-  color: #f87171;
-}
-
-/* Task 10: Success flash for card accept */
+/* Success flash for card accept */
 @keyframes success-flash {
-  0% { box-shadow: 0 0 0 0 rgba(105, 157, 93, 0.6); }
-  50% { box-shadow: 0 0 0 8px rgba(105, 157, 93, 0.2); }
-  100% { box-shadow: 0 0 0 0 rgba(105, 157, 93, 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-ok) 55%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-ok) 20%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 .animate-success-flash {
-  animation: success-flash 0.6s ease-out;
+  animation: success-flash 0.5s ease-out;
 }
 
-/* Task 10: Slide out for card completion */
-@keyframes slide-out-right {
-  to {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-}
-.animate-slide-out {
-  animation: slide-out-right 0.4s ease-in forwards;
-}
-
-/* Accessibility: Honor prefers-reduced-motion for status animations */
+/* Accessibility: Honor prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
-  .elapsed-critical,
+  html,
+  body {
+    scroll-behavior: auto;
+  }
+  .slide-in,
+  .animate-slide-in-right,
+  .animate-fade-in,
+  .animate-scale-in,
+  .animate-stagger-in,
   .animate-success-flash,
-  .animate-slide-out,
+  .skeleton,
+  .elapsed-critical,
   main,
   [role="main"] {
     animation: none !important;
     transition: none !important;
   }
-  /* Disable View Transitions API fade animations for motion-sensitive users */
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation: none !important;
   }
 }
 
-/* Hide scrollbar utility (used in Quick Navigation) */
+/* Hide scrollbar utility */
 .hide-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -252,31 +256,10 @@ body {
   display: none;
 }
 
-/* Smooth page transitions */
-main, [role="main"] {
-  animation: page-enter 0.25s ease-out;
-}
-
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* Keyboard badge styling */
 kbd {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--font-outlier);
   letter-spacing: 0.02em;
-}
-
-/* Improved button press feedback */
-button:active:not(:disabled) {
-  transition-duration: 0.05s;
 }
 
 /* Safe area support for bottom nav */
@@ -286,14 +269,10 @@ button:active:not(:disabled) {
   }
 }
 
-/* ========================================= */
-/* 2026 UI/UX Extreme Clarity & Fluidity     */
-/* ========================================= */
-
 /* View Transitions API */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 0.3s;
+  animation-duration: 0.18s;
 }
 
 ::view-transition-old(root) {
@@ -312,23 +291,6 @@ button:active:not(:disabled) {
   to { opacity: 1; }
 }
 
-/* Glassmorphism utilities */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.05);
-}
-
-.dark .glass-panel {
-  background: rgba(17, 24, 39, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(55, 65, 81, 0.5);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
-}
-
 /* Custom subtle scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
@@ -338,12 +300,14 @@ button:active:not(:disabled) {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(199, 207, 218, 0.5);
+  background: var(--color-rule-2);
   border-radius: 4px;
 }
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.5);
-}
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(199, 207, 218, 0.8);
+  background: var(--color-muted);
+}
+
+/* Responsive table container query support */
+.table-container {
+  container-type: inline-size;
 }

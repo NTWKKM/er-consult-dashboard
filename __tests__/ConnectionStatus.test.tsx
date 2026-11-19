@@ -58,13 +58,14 @@ describe("ConnectionStatus", () => {
 
     it("shows the green dot indicator", () => {
       const { container } = render(<ConnectionStatus />);
-      const dot = container.querySelector(".bg-green-500");
+      const dot = container.querySelector(".relative.inline-flex.rounded-full.h-2.w-2");
       expect(dot).toBeInTheDocument();
+      expect(dot).toHaveClass("bg-ok");
     });
 
     it("shows the ping animation span", () => {
       const { container } = render(<ConnectionStatus />);
-      const ping = container.querySelector(".animate-ping");
+      const ping = container.querySelector(".motion-safe\\:animate-ping");
       expect(ping).toBeInTheDocument();
     });
   });
@@ -89,13 +90,13 @@ describe("ConnectionStatus", () => {
 
     it("shows the red dot indicator", () => {
       const { container } = render(<ConnectionStatus />);
-      const dot = container.querySelector(".bg-red-500");
+      const dot = container.querySelector(".bg-bad");
       expect(dot).toBeInTheDocument();
     });
 
     it("does NOT show the ping animation", () => {
       const { container } = render(<ConnectionStatus />);
-      const ping = container.querySelector(".animate-ping");
+      const ping = container.querySelector(".motion-safe\\:animate-ping");
       expect(ping).not.toBeInTheDocument();
     });
   });
@@ -135,16 +136,16 @@ describe("ConnectionStatus", () => {
   // Label/dotColor logic validation (pure derivation from isOnline)
   // -------------------------------------------------------------------------
   describe("dot color logic", () => {
-    it("grey dot is absent when online", () => {
+    it("muted dot is absent when online", () => {
       setNavigatorOnline(true);
       const { container } = render(<ConnectionStatus />);
-      expect(container.querySelector(".bg-gray-400")).not.toBeInTheDocument();
+      expect(container.querySelector(".bg-muted")).not.toBeInTheDocument();
     });
 
-    it("grey dot is absent when offline", () => {
+    it("muted dot is absent when offline", () => {
       setNavigatorOnline(false);
       const { container } = render(<ConnectionStatus />);
-      expect(container.querySelector(".bg-gray-400")).not.toBeInTheDocument();
+      expect(container.querySelector(".bg-muted")).not.toBeInTheDocument();
     });
   });
 
@@ -179,7 +180,7 @@ describe("ConnectionStatus", () => {
       expect(screen.queryByText("LIVE")).not.toBeInTheDocument();
       expect(screen.queryByText("OFFLINE")).not.toBeInTheDocument();
       
-      expect(container.querySelector(".bg-gray-400")).toBeInTheDocument();
+      expect(container.querySelector(".bg-muted")).toBeInTheDocument();
     });
   });
 });

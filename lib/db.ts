@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type UpdateData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { ROOMS, RoomName } from "./constants";
@@ -35,6 +35,15 @@ export interface Consult {
 }
 
 const COLLECTION_NAME = "consults";
+
+function requireDb(): Firestore {
+    if (!db) {
+        throw new Error(
+            "Firestore is not configured: missing NEXT_PUBLIC_FIREBASE_API_KEY or NEXT_PUBLIC_FIREBASE_PROJECT_ID."
+        );
+    }
+    return db;
+}
 
 /**
  * Sanitizes and validates raw Firestore data into a Consult object using Zod.
@@ -72,6 +81,15 @@ export function subscribeToConsultsByStatus(
     onError?: (error: Error) => void,
     maxResults?: number
 ): () => void {
+    if (!db) {
+        const configError = new Error(
+            "Firestore is not configured: missing NEXT_PUBLIC_FIREBASE_API_KEY or NEXT_PUBLIC_FIREBASE_PROJECT_ID."
+        );
+        if (onError) onError(configError);
+        else console.error(configError.message);
+        return () => {};
+    }
+
     let q = query(
         collection(db, COLLECTION_NAME),
         where("status", "==", status),
@@ -108,6 +126,7 @@ export async function fetchCompletedConsultsPage(
     pageSize: number,
     lastDoc?: QueryDocumentSnapshot<DocumentData>
 ): Promise<{ consults: Consult[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
+    const database = requireDb();
     // Track both valid consults and their corresponding Firestore docs.
     // validDocs[i] is the snapshot for validConsults[i], enabling correct cursor tracking.
     const validConsults: Consult[] = [];
@@ -118,7 +137,7 @@ export async function fetchCompletedConsultsPage(
     // ดึงข้อมูลไปเรื่อยๆ จนกว่าจะได้เอกสารที่ถูกต้องครบ pageSize + 1 (เพื่อเช็ค hasMore)
     while (validConsults.length <= pageSize) {
         let q = query(
-            collection(db, COLLECTION_NAME),
+            collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             orderBy("createdAt", "desc"),
             limit(pageSize + 1 - validConsults.length)
@@ -163,6 +182,7 @@ export async function searchCompletedConsults(
     searchHN?: string,
     filterDate?: string
 ): Promise<Consult[]> {
+    const database = requireDb();
     let consults: Consult[] = [];
 
     // If searching by HN, query by exact HN with server-side status filter.
@@ -170,7 +190,7 @@ export async function searchCompletedConsults(
     // or additional where clauses beyond status filtering.
     if (searchHN) {
         const q = query(
-            collection(db, COLLECTION_NAME),
+            collection(database, COLLECTION_NAME),
             where("hn", ">=", searchHN),
             where("hn", "<", searchHN + "\uf8ff"),
             where("status", "==", "completed")
@@ -195,7 +215,7 @@ export async function searchCompletedConsults(
         const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
         
         const q = query(
-            collection(db, COLLECTION_NAME),
+            collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             where("createdAt", ">=", start),
             where("createdAt", "<", endExclusive),
@@ -212,30 +232,76 @@ export async function searchCompletedConsults(
     return [];
 }
 
+export type ExportTruncationReason = "limit_exceeded" | "unconfirmed_completeness";
+
+export interface ExportConsultsOptions {
+    signal?: AbortSignal;
+}
+
+export function isPermissionDeniedError(err: unknown): boolean {
+    if (typeof err !== "object" || err === null) return false;
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "string" && code.includes("permission-denied");
+}
+
+const pendingOptimisticWrites = new Set<Promise<unknown>>();
+let optimisticWriteSeq = 0;
+
+function trackOptimisticWrite<T>(promise: Promise<T>): Promise<T> {
+    optimisticWriteSeq += 1;
+    pendingOptimisticWrites.add(promise);
+    const cleanup = () => {
+        pendingOptimisticWrites.delete(promise);
+    };
+    promise.then(cleanup, cleanup);
+    return promise;
+}
+
 /**
  * Fetch all completed cases within a date range (for exporting).
  * Uses cursor-based pagination internally to fetch the entire result set.
  */
 export async function fetchAllCompletedConsultsForExport(
     startDate: string,
-    endDate: string
-): Promise<{ consults: Consult[]; truncated: boolean }> {
+    endDate: string,
+    options?: AbortSignal | ExportConsultsOptions
+): Promise<{ consults: Consult[]; truncated: boolean; truncationReason?: ExportTruncationReason; permissionDenied?: boolean }> {
+    const database = requireDb();
     const { start } = getUtcRangeForLocalDate(startDate);
     const { endExclusive } = getUtcRangeForLocalDate(endDate);
+    const signal = options instanceof AbortSignal ? options : options?.signal;
+    const isCancelled = () => Boolean(signal?.aborted);
+    const startWriteSeq = optimisticWriteSeq;
+    let hasPendingWriteOverlap = pendingOptimisticWrites.size > 0;
 
     let allConsults: Consult[] = [];
+    const consultIndexById = new Map<string, number>();
     let lastDoc: QueryDocumentSnapshot < DocumentData > | null = null;
     let truncated = false;
+    let truncationReason: ExportTruncationReason | undefined;
+    let permissionDenied = false;
+    let totalScanned = 0;
+    let batchCount = 0;
     const BATCH_SIZE = 1000;
     const MAX_RESULTS = 50000;
 
     while (true) {
+        if (isCancelled()) {
+            truncated = true;
+            truncationReason = "unconfirmed_completeness";
+            break;
+        }
+
+        if (pendingOptimisticWrites.size > 0 || optimisticWriteSeq !== startWriteSeq) {
+            hasPendingWriteOverlap = true;
+        }
+
         let q = query(
-            collection(db, COLLECTION_NAME),
+            collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             where("createdAt", ">=", start),
             where("createdAt", "<", endExclusive),
-            orderBy("createdAt", "desc"),
+            orderBy("createdAt", "asc"),
             limit(BATCH_SIZE)
         );
 
@@ -243,20 +309,73 @@ export async function fetchAllCompletedConsultsForExport(
             q = query(q, startAfter(lastDoc));
         }
 
-        const snapshot = await getDocs(q);
+        batchCount += 1;
+        let snapshot;
+        try {
+            snapshot = await getDocs(q);
+        } catch (err) {
+            if (lastDoc !== null) {
+                permissionDenied = isPermissionDeniedError(err);
+                console.warn(
+                    permissionDenied
+                        ? "Export batch fetch denied; retaining server-confirmed rows:"
+                        : "Export batch fetch failed; retaining server-confirmed rows:",
+                    err
+                );
+                truncated = true;
+                truncationReason = "unconfirmed_completeness";
+                break;
+            }
+            throw err;
+        }
+
+        if (isCancelled()) {
+            truncated = true;
+            truncationReason = "unconfirmed_completeness";
+            break;
+        }
+
+        if (
+            snapshot.metadata?.hasPendingWrites === true ||
+            pendingOptimisticWrites.size > 0 ||
+            optimisticWriteSeq !== startWriteSeq
+        ) {
+            hasPendingWriteOverlap = true;
+        }
+
+        if (snapshot.metadata?.fromCache !== false) {
+            console.warn("Export completeness could not be confirmed from cached batch snapshot");
+            truncated = true;
+            truncationReason = "unconfirmed_completeness";
+            break;
+        }
+
         if (snapshot.empty) break;
+
+        totalScanned += snapshot.docs.length;
 
         const batch = snapshot.docs
             .map(mapDocToConsult)
             .filter((c): c is Consult => c !== null && Boolean(c.hn));
 
-        allConsults.push(...batch);
+        for (const consult of batch) {
+            const existingIndex = consultIndexById.get(consult.id);
+            if (existingIndex !== undefined) {
+                if (allConsults[existingIndex].createdAt !== consult.createdAt) {
+                    allConsults[existingIndex] = consult;
+                }
+            } else {
+                consultIndexById.set(consult.id, allConsults.length);
+                allConsults.push(consult);
+            }
+        }
 
-        // Safety limit to prevent unbounded memory growth
+        // Safety limit to prevent unbounded memory growth or infinite scans over invalid docs
         if (allConsults.length > MAX_RESULTS) {
             allConsults = allConsults.slice(0, MAX_RESULTS);
             console.warn(`Export truncated at ${MAX_RESULTS} results`);
             truncated = true;
+            truncationReason = "limit_exceeded";
             break;
         }
 
@@ -264,16 +383,80 @@ export async function fetchAllCompletedConsultsForExport(
         if (snapshot.docs.length < BATCH_SIZE) break;
 
         lastDoc = snapshot.docs[snapshot.docs.length - 1];
+
+        if (totalScanned >= MAX_RESULTS + BATCH_SIZE) {
+            if (isCancelled()) {
+                truncated = true;
+                truncationReason = "unconfirmed_completeness";
+                break;
+            }
+
+            const lookaheadQuery = query(
+                collection(database, COLLECTION_NAME),
+                where("status", "==", "completed"),
+                where("createdAt", ">=", start),
+                where("createdAt", "<", endExclusive),
+                orderBy("createdAt", "asc"),
+                startAfter(lastDoc),
+                limit(1)
+            );
+            try {
+                const lookaheadSnapshot = await getDocs(lookaheadQuery);
+                if (
+                    lookaheadSnapshot.metadata?.hasPendingWrites === true ||
+                    pendingOptimisticWrites.size > 0 ||
+                    optimisticWriteSeq !== startWriteSeq
+                ) {
+                    hasPendingWriteOverlap = true;
+                }
+                if (isCancelled()) {
+                    truncated = true;
+                    truncationReason = "unconfirmed_completeness";
+                } else if (lookaheadSnapshot.metadata?.fromCache !== false) {
+                    console.warn("Export completeness could not be confirmed from cached lookahead snapshot");
+                    truncated = true;
+                    truncationReason = "unconfirmed_completeness";
+                } else {
+                    totalScanned += lookaheadSnapshot.docs.length;
+                    if (!lookaheadSnapshot.empty) {
+                        console.warn(`Export scan limit reached at ${totalScanned} documents`);
+                        truncated = true;
+                        truncationReason = "limit_exceeded";
+                    }
+                }
+            } catch (err) {
+                permissionDenied = isPermissionDeniedError(err);
+                console.warn(
+                    permissionDenied
+                        ? "Export lookahead probe denied; marking export as unconfirmed:"
+                        : "Export lookahead probe failed; marking export as unconfirmed:",
+                    err
+                );
+                truncated = true;
+                truncationReason = "unconfirmed_completeness";
+            }
+            break;
+        }
+    }
+
+    // Firestore client SDK cursor queries lack a fixed readTime across pages, and pending local
+    // writes can omit queued re-consults or reflect unacknowledged state.
+    if (!truncated && (hasPendingWriteOverlap || batchCount > 1)) {
+        truncated = true;
+        truncationReason = "unconfirmed_completeness";
     }
 
     return {
         consults: allConsults,
-        truncated
+        truncated,
+        ...(truncationReason ? { truncationReason } : {}),
+        ...(permissionDenied ? { permissionDenied } : {}),
     };
 }
 
 export async function getConsultById(id: string): Promise<Consult | undefined> {
-    const docRef = doc(db, COLLECTION_NAME, id);
+    const database = requireDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
         return mapRawToConsult(docSnap.id, docSnap.data()) ?? undefined;
@@ -282,8 +465,9 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
 }
 
 export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promise<Consult> {
+    const database = requireDb();
     // Generate an ID for the new document using Firestore native doc()
-    const newDocRef = doc(collection(db, COLLECTION_NAME));
+    const newDocRef = doc(collection(database, COLLECTION_NAME));
     const newConsult: Consult = {
         ...data,
         id: newDocRef.id,
@@ -314,7 +498,8 @@ export async function updateConsult(
     updater: ConsultUpdater | ConsultUpdate,
     options: UpdateConsultOptions = {}
 ): Promise<UpdateResults> {
-    const docRef = doc(db, COLLECTION_NAME, id);
+    const database = requireDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
     const { awaitRemote = true } = options;
 
     if (typeof updater === "function") {
@@ -344,7 +529,7 @@ export async function updateConsult(
             const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
             
             // Perform the "real" update in background (Allows Offline persistence)
-            const rawPromise = updateDoc(docRef, updates);
+            const rawPromise = trackOptimisticWrite(updateDoc(docRef, updates));
             rawPromise.catch(err => {
                 console.error("Background sync failed for updateConsult:", err);
                 if (options.onBackgroundError) {
@@ -399,7 +584,7 @@ export async function updateConsult(
         // Direct object update
         if (!awaitRemote) {
             // FIRE AND FORGET
-            const rawPromise = updateDoc(docRef, updater);
+            const rawPromise = trackOptimisticWrite(updateDoc(docRef, updater));
             rawPromise.catch(e => {
                 console.error("Delayed updateDoc error:", e);
                 if (options.onBackgroundError) {
@@ -438,7 +623,8 @@ export async function transactionalUpdateConsult(
     updater: ConsultUpdater,
     options: UpdateConsultOptions = {}
 ): Promise<UpdateResults> {
-    const docRef = doc(db, COLLECTION_NAME, id);
+    const database = requireDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
     const { awaitRemote = true } = options;
 
     // For Optimistic UI: read local cache first for immediate UI response
@@ -463,7 +649,7 @@ export async function transactionalUpdateConsult(
     }
 
     const transactionWork = async (): Promise<{ applied: boolean; consult: Consult | null }> => {
-        return runTransaction(db, async (transaction) => {
+        return runTransaction(database, async (transaction) => {
             const docSnap = await transaction.get(docRef);
             if (!docSnap.exists()) {
                 throw new Error(`Consult not found: ${id}`);
@@ -496,7 +682,7 @@ export async function transactionalUpdateConsult(
 
     if (!awaitRemote) {
         // Fire transaction in background, return optimistic result immediately
-        const backgroundPromise = transactionWork().then(result => {
+        const backgroundPromise = trackOptimisticWrite(transactionWork().then(result => {
             if (!result.applied) {
                 // Transaction succeeded but condition was not met — another user got there first
                 const abortError = new Error("TRANSACTION_CONDITION_NOT_MET");
@@ -509,7 +695,7 @@ export async function transactionalUpdateConsult(
             if (options.onBackgroundError) {
                 options.onBackgroundError(err);
             }
-        });
+        }));
 
         // Attach no-op catch to prevent unhandled rejection warning
         void backgroundPromise;

@@ -11,8 +11,9 @@
 ## 2. Technical Stack Standards
 
 - **Framework:** Next.js (App Router) with TypeScript.
-- **Database:** Firebase Firestore (Real-time sync, initialized via `lib/firebase.ts` with secrets from `.env.local` or Vercel Environment Variables).
-- **UI:** Tailwind CSS with a focus on high-contrast, accessible components.
+- **Database:** Firebase Firestore (`er-consult-mnrh-2026`, `asia-southeast1`, real-time sync initialized via `lib/firebase.ts` with secrets from `.env.local`, GitHub Actions Secrets, or Vercel Environment Variables). This project binding identifies the target database only and is **not** an access control; staff authorization is enforced in `firestore.rules` and Firebase Authentication settings.
+- **CI/CD:** `.github/workflows/ci.yml` runs Vitest unit tests, production Next.js builds, and conditional Firestore Rules, Indexes & Auth provider deployment (`firestore:rules,firestore:indexes,auth`) using repository secrets.
+- **UI:** Tailwind CSS v4 with Hallmark **Console** OKLCH design tokens (`app/tokens.css`) and high-contrast accessible components.
 - **State Management:** React Hooks + Context API for global settings.
 
 ## 3. Optimistic UI Implementation Rules
@@ -48,9 +49,9 @@ To ensure the app feels instantaneous under intermittent hospital Wi-Fi, apply t
 
 ## 7. Security & Patient Privacy (PHI)
 
-- **Authentication:** All access requires Firebase Authentication via `AuthContext`.
+- **Authentication & Staff Authorization:** All access requires Firebase Authentication via `AuthContext`, and `firestore.rules` enforces `isAuthorizedStaff()` (requiring either a `staff == true` custom user claim or a verified `@mnrh.com` email address where `email_verified == true`). A signed-in account without one of those claims alone cannot read or write patient consults. When administratively provisioning passcode/staff accounts, explicitly configure each account to satisfy `isAuthorizedStaff()` by either: (1) setting the `staff: true` custom claim via the Firebase Admin SDK (`admin.auth().setCustomUserClaims(uid, { staff: true })`), or (2) marking the `@mnrh.com` account's email as verified via the Firebase Admin SDK (`admin.auth().updateUser(uid, { emailVerified: true })`). Before connecting patient data on `er-consult-mnrh-2026` or any new project, deploy Auth and Firestore rules (`firebase deploy --only firestore:rules,firestore:indexes,auth`), verify in Firebase Console > Authentication > Settings > User actions that **end-user account creation (self-sign-up) is disabled** and staff accounts are provisioned administratively, and confirm the effective deployed rules (if `auth` config deployment is unavailable in a new project, manually enable the Email/Password provider in Firebase Console > Authentication > Sign-in method).
 - **Secrets Management:** Secrets and config parameters are loaded from `.env.local` for local development. This file contains Firebase Web App API keys and credentials, which must NEVER be committed to the public Git repository. In production, these parameters are managed securely via Vercel Environment Variables.
-- **Infrastructure as Code:** `firestore.rules` must be strictly maintained in the repository to block unauthenticated access.
+- **Infrastructure as Code:** `firestore.rules` must be strictly maintained in the repository to block unauthenticated and non-staff access.
 - **No Sensitive Logging:** Under absolutely NO circumstances should Patient Identifiable Information (PII/PHI) such as Patient Names, Hospital Numbers (HN), or specific medical diagnoses be logged to `console.log()`, external error trackers, or any unencrypted analytics service.
 - **Data Minimization:** Fetch and display only the data strictly necessary for the immediate clinical workflow.
 
@@ -144,7 +145,7 @@ When a doctor triggers a Re-consult on a case from `/completed`:
   *(Note: Stale milestone timestamps like acceptedAt/admittedAt/dischargedAt are completely cleared for the re-consulted departments).*
 - It updates the patient problem description by appending the new consultation reason:
   `problem: "${current.problem}\n\n[Re-consult]: ${newProblem}"`
-- It updates `createdAt = new Date().toISOString()`, sorting it back to the top of the whiteboard.
+- It updates `createdAt = new Date().toISOString()`, sorting it back to the top of the whiteboard. `firestore.rules` permits `createdAt` updates exclusively on transitions where `resource.data.status in ["completed", "cancelled"]` and `request.resource.data.status == "pending"`, keeping `createdAt` immutable for all other updates.
 
 ## 15. Excel Export Pipeline & Safeguards
 

@@ -1,13 +1,46 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only authenticated users (ER staff) can access the consults collection.
-    // Document deletions are prohibited to preserve the clinical audit trail.
-    match /consults/{consultId} {
-      allow read: if request.auth != null;
+    function isAuthorizedStaff() {
+      return request.auth != null
+        && (
+          request.auth.token.get('staff', false) == true
+          || (
+            request.auth.token.get('email_verified', false) == true
+            && request.auth.token.email is string
+            && request.auth.token.email.matches('^[^@]+@mnrh\\.com$')
+          )
+        );
+    }
 
-      // New consults must have a valid HN and start as "pending"
-      allow create: if request.auth != null
+    function isValidCalendarDate(year, month, day) {
+      return (month in [1, 3, 5, 7, 8, 10, 12] && day <= 31)
+        || (month in [4, 6, 9, 11] && day <= 30)
+        || (
+          month == 2
+          && (
+            day <= 28
+            || (
+              day == 29
+              && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)
+            )
+          )
+        );
+    }
+
+    function isIsoTimestamp(value) {
+      return value is string
+        && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$')
+        && isValidCalendarDate(
+          int(value[0:4]),
+          int(value[5:7]),
+          int(value[8:10])
+        );
+    }
+
+    match /consults/{consultId} {
+      allow read: if isAuthorizedStaff();
+      allow create: if isAuthorizedStaff()
         && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
         && request.resource.data.id is string
         && request.resource.data.id == consultId
@@ -18,12 +51,11 @@ service cloud.firestore {
         && request.resource.data.room is string
         && request.resource.data.problem is string
         && request.resource.data.createdAt is string
+        && isIsoTimestamp(request.resource.data.createdAt)
         && request.resource.data.status == "pending"
         && request.resource.data.isUrgent is bool
         && request.resource.data.departments is map;
-
-      // Updates: validate document shape after merge
-      allow update: if request.auth != null
+      allow update: if isAuthorizedStaff()
         && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
         && request.resource.data.id is string
         && request.resource.data.id == consultId
@@ -34,12 +66,17 @@ service cloud.firestore {
         && request.resource.data.room is string
         && request.resource.data.problem is string
         && request.resource.data.createdAt is string
-        && request.resource.data.createdAt == resource.data.createdAt
+        && (
+          request.resource.data.createdAt == resource.data.createdAt
+          || (
+            resource.data.status in ["completed", "cancelled"]
+            && request.resource.data.status == "pending"
+            && isIsoTimestamp(request.resource.data.createdAt)
+          )
+        )
         && request.resource.data.status in ["pending", "completed", "cancelled"]
         && request.resource.data.isUrgent is bool
         && request.resource.data.departments is map;
-
-      // Explicit deny: no deletions — audit trail must be preserved
       allow delete: if false;
     }
   }

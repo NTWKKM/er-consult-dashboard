@@ -1,0 +1,78 @@
+@theme {
+  --background-image: initial;
+
+  /* Console Theme — Light ("paper") Defaults */
+  --color-paper: oklch(98% 0.006 85);
+  --color-paper-2: oklch(95.5% 0.008 85);
+  --color-paper-3: oklch(91.5% 0.01 85);
+
+  --color-ink: oklch(19% 0.01 60);
+  --color-ink-2: oklch(32% 0.01 60);
+  --color-muted: oklch(46% 0.01 60);
+
+  --color-rule: oklch(86% 0.01 80);
+  --color-rule-2: oklch(76% 0.012 80);
+
+  /* Operator / Primary Action = Amber */
+  --color-accent: oklch(44% 0.15 72);
+  --color-accent-ink: oklch(98% 0.005 85);
+  --color-accent-soft: oklch(92% 0.045 75);
+
+  /* Instrument / Transfer / Clinical Trace = Cool Blue */
+  --color-cool: oklch(48% 0.15 250);
+  --color-cool-soft: oklch(92% 0.035 250);
+
+  /* Clinical Status: Ortho/Accept (OK) & Urgent/Surgery (BAD) */
+  --color-ok: oklch(46% 0.14 150);
+  --color-ok-soft: oklch(92% 0.035 150);
+  --color-bad: oklch(48% 0.19 25);
+  --color-bad-soft: oklch(93% 0.04 25);
+
+  --color-focus: oklch(44% 0.15 72);
+
+  --font-display: var(--font-host), var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-host), var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+  --font-outlier: var(--font-atkinson-mono), var(--font-thai), ui-monospace, monospace;
+
+  --radius-card: 10px;
+  --radius-pill: 6px;
+}
+
+:root {
+  --rule-hair: 1px;
+  --shadow-card: none;
+  --tracking-display: -0.025em;
+  --dur-micro: 120ms;
+  --dur-short: 200ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+}
+
+/* Console Theme — Dark ("graphite") */
+.dark {
+  --color-paper: oklch(17% 0.008 250);
+  --color-paper-2: oklch(21% 0.009 250);
+  --color-paper-3: oklch(13.5% 0.007 250);
+
+  --color-ink: oklch(95% 0.005 250);
+  --color-ink-2: oklch(83% 0.008 250);
+  --color-muted: oklch(71% 0.01 250);
+
+  --color-rule: oklch(31% 0.01 250);
+  --color-rule-2: oklch(42% 0.012 250);
+
+  --color-accent: oklch(82% 0.15 80);
+  --color-accent-ink: oklch(18% 0.04 75);
+  --color-accent-soft: oklch(29% 0.05 80);
+
+  --color-cool: oklch(77% 0.12 245);
+  --color-cool-soft: oklch(29% 0.05 245);
+
+  --color-ok: oklch(76% 0.15 150);
+  --color-ok-soft: oklch(24.5% 0.03 150);
+  --color-bad: oklch(70% 0.17 25);
+  --color-bad-soft: oklch(24.5% 0.035 25);
+
+  --color-focus: oklch(82% 0.15 80);
+  color-scheme: dark;
+}

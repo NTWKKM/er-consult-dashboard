@@ -396,8 +396,8 @@ describe("useConsultActions", () => {
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
       expect(updated).not.toBeNull();
       expect(updated![`departments.Gen Sx.admittedAt`]).toBeDefined();
-      expect(updated![`departments.Gen Sx.returnedAt`]).toBeNull();
-      expect(updated![`departments.Gen Sx.dischargedAt`]).toBeNull();
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.returnedAt")).toBe(false);
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.dischargedAt")).toBe(false);
     });
 
     it("updater sets returnedAt when status is คืน ER", async () => {
@@ -414,8 +414,8 @@ describe("useConsultActions", () => {
       const snapshot = makePendingConsult();
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
       expect(updated![`departments.Gen Sx.returnedAt`]).toBeDefined();
-      expect(updated![`departments.Gen Sx.admittedAt`]).toBeNull();
-      expect(updated![`departments.Gen Sx.dischargedAt`]).toBeNull();
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.admittedAt")).toBe(false);
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.dischargedAt")).toBe(false);
     });
 
     it("updater sets dischargedAt when status is D/C", async () => {
@@ -432,11 +432,11 @@ describe("useConsultActions", () => {
       const snapshot = makePendingConsult();
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
       expect(updated![`departments.Gen Sx.dischargedAt`]).toBeDefined();
-      expect(updated![`departments.Gen Sx.admittedAt`]).toBeNull();
-      expect(updated![`departments.Gen Sx.returnedAt`]).toBeNull();
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.admittedAt")).toBe(false);
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.returnedAt")).toBe(false);
     });
 
-    it("clears previous action timestamps when changing status", async () => {
+    it("preserves previous action timestamps when changing status", async () => {
       mockUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
@@ -459,7 +459,7 @@ describe("useConsultActions", () => {
       });
 
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
-      expect(updated![`departments.Gen Sx.admittedAt`]).toBeNull();
+      expect(Object.hasOwn(updated!, "departments.Gen Sx.admittedAt")).toBe(false);
       expect(updated![`departments.Gen Sx.returnedAt`]).toBeDefined();
     });
 
@@ -504,8 +504,8 @@ describe("useConsultActions", () => {
   // handleComplete
   // -------------------------------------------------------------------------
   describe("handleComplete", () => {
-    it("calls updateConsult", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+    it("calls transactionalUpdateConsult", async () => {
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -515,11 +515,11 @@ describe("useConsultActions", () => {
         await result.current.handleComplete();
       });
 
-      expect(mockUpdateConsult).toHaveBeenCalledOnce();
+      expect(mockTransactionalUpdateConsult).toHaveBeenCalledOnce();
     });
 
     it("updater sets department status to completed", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -530,13 +530,13 @@ describe("useConsultActions", () => {
       });
 
       const snapshot = makePendingConsult();
-      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult) as Record<string, unknown> | null;
       expect(updated![`departments.Gen Sx.status`]).toBe("completed");
       expect(updated![`departments.Gen Sx.completedAt`]).toBeDefined();
     });
 
     it("updater promotes overall consult status when all depts are done", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -553,12 +553,12 @@ describe("useConsultActions", () => {
         },
       });
       // Only one dept (Gen Sx), so completing it means all are done
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult);
       expect(updated!.status).toBe("completed");
     });
 
     it("updater does NOT set overall status when some depts are still pending", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -574,13 +574,13 @@ describe("useConsultActions", () => {
           "Ortho": { status: "pending" } as never,
         },
       });
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult);
       // Ortho is still pending, so overall status should NOT be "completed"
       expect(updated!.status).toBeUndefined();
     });
 
     it("updater returns null when dept is not pending", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -595,12 +595,12 @@ describe("useConsultActions", () => {
           "Gen Sx": { status: "completed" } as never,
         },
       });
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult);
       expect(updated).toBeNull();
     });
 
     it("handles error and resets isUpdating", async () => {
-      mockUpdateConsult.mockRejectedValueOnce(new Error("db error"));
+      mockTransactionalUpdateConsult.mockRejectedValueOnce(new Error("db error"));
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -618,8 +618,8 @@ describe("useConsultActions", () => {
   // handleCancel
   // -------------------------------------------------------------------------
   describe("handleCancel", () => {
-    it("calls updateConsult", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+    it("calls transactionalUpdateConsult", async () => {
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -629,11 +629,11 @@ describe("useConsultActions", () => {
         await result.current.handleCancel();
       });
 
-      expect(mockUpdateConsult).toHaveBeenCalledOnce();
+      expect(mockTransactionalUpdateConsult).toHaveBeenCalledOnce();
     });
 
     it("updater sets department status to cancelled", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -644,13 +644,13 @@ describe("useConsultActions", () => {
       });
 
       const snapshot = makePendingConsult();
-      const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult) as Record<string, unknown> | null;
       expect(updated![`departments.Gen Sx.status`]).toBe("cancelled");
       expect(updated![`departments.Gen Sx.completedAt`]).toBeDefined();
     });
 
     it("updater promotes overall status to completed when all depts are finished (completed or cancelled)", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -666,13 +666,13 @@ describe("useConsultActions", () => {
           "Sx Trauma": { status: "completed" } as never,
         },
       });
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult);
       // Cancelling Gen Sx means Gen Sx=cancelled, Sx Trauma=completed → all done
       expect(updated!.status).toBe("completed");
     });
 
     it("updater does NOT set overall status when some depts are still pending", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -688,12 +688,12 @@ describe("useConsultActions", () => {
           "Ortho": { status: "pending" } as never,
         },
       });
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult);
       expect(updated!.status).toBeUndefined();
     });
 
     it("updater returns null when dept is not pending", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }
@@ -708,12 +708,12 @@ describe("useConsultActions", () => {
           "Gen Sx": { status: "cancelled" } as never,
         },
       });
-      const updated = captureAndRunUpdater(snapshot);
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult);
       expect(updated).toBeNull();
     });
 
     it("calls onUpdate after successful cancel", async () => {
-      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const onUpdate = vi.fn();
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456", onUpdate),
@@ -728,7 +728,7 @@ describe("useConsultActions", () => {
     });
 
     it("handles error and resets isUpdating", async () => {
-      mockUpdateConsult.mockRejectedValueOnce(new Error("cancel failed"));
+      mockTransactionalUpdateConsult.mockRejectedValueOnce(new Error("cancel failed"));
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
         { wrapper }

@@ -13,12 +13,12 @@ export default function ClientLayoutWrapper({ children }: { children: React.Reac
   }
 
   return (
-    <>
+    <div id="app-shell-root" data-app-shell="true">
       <Navbar />
       <main className="pb-20 lg:pb-0">
         {children}
       </main>
       <BottomNav />
-    </>
+    </div>
   );
 }

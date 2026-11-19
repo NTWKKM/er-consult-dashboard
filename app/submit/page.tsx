@@ -139,7 +139,7 @@ export default function SubmitPage() {
         router.push("/");
       }, 1500);
     } catch (error) {
-      console.error("❌ Error:", error);
+      console.error("Submit consult error:", error instanceof Error ? error.message : "unknown");
       addToast({
         type: "error",
         message: error instanceof Error ? `เกิดข้อผิดพลาด: ${error.message}` : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
@@ -167,48 +167,40 @@ export default function SubmitPage() {
   }, [handleSubmit, isLoading]);
 
   const inputClasses = (fieldName: string) =>
-    `w-full px-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 transition-all duration-200 text-sm shadow-sm ${errors[fieldName]
-      ? "border-[#E55143] focus:border-[#E55143] focus:ring-[#E55143]/20 bg-[#E55143]/5"
-      : darkMode
-        ? "border-gray-600 bg-gray-700 text-gray-100 placeholder-gray-400 focus:border-[#699D5D] focus:ring-[#699D5D]/20"
-        : "border-[#C7CFDA]/40 bg-white/90 text-[#014167] placeholder-[#C7CFDA] focus:border-[#699D5D] focus:ring-[#699D5D]/20 hover:border-[#C7CFDA]/60"
+    `w-full px-3 py-2.5 border rounded-[6px] focus:outline-none focus:ring-2 transition-colors duration-200 text-sm ${
+      errors[fieldName]
+        ? "border-bad focus:border-bad focus:ring-bad/25 bg-bad-soft text-ink placeholder-muted"
+        : "border-rule-2 bg-paper-3 text-ink placeholder-muted focus:border-accent focus:ring-accent/25 hover:border-muted"
     }`;
 
-  const labelClasses = `flex items-center gap-1.5 text-xs font-bold mb-2 ${darkMode ? "text-gray-200" : "text-[#014167]"
-    }`;
+  const labelClasses = "flex items-center gap-1.5 text-xs font-medium mb-2 text-ink-2";
 
   return (
-    <div
-      className={`min-h-screen flex items-center justify-center p-3 py-6 transition-colors duration-300 ${darkMode ? "bg-gray-900" : "bg-[#014167]"
-        }`}
-    >
-      <div className="relative max-w-4xl w-full">
-        <div className="flex items-center gap-2.5 mb-4 px-1">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ${darkMode ? "bg-[#699D5D]/20 text-[#699D5D]" : "bg-white/15 text-white backdrop-blur-sm"}`}>
-            <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div className="min-h-[calc(100dvh-3.5rem)] flex items-start lg:items-center justify-center p-3 py-4 sm:py-6 pb-24 lg:pb-8 bg-paper transition-colors duration-200">
+      <div className="relative max-w-4xl w-full min-w-0">
+        <div className="flex items-center gap-3 mb-4 px-1">
+          <div className="w-9 h-9 rounded-[6px] flex items-center justify-center bg-accent-soft border border-accent/30 text-accent">
+            <svg aria-hidden="true" className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </div>
           <div>
-            <h1 className={`text-lg font-bold ${darkMode ? "text-gray-100" : "text-white"}`}>ส่งเคสปรึกษา</h1>
-            <p className={`text-[11px] ${darkMode ? "text-gray-400" : "text-white/60"}`}>กรอกข้อมูลผู้ป่วยและเลือกแผนกที่ต้องการปรึกษา</p>
+            <h1 className="text-lg font-medium text-ink">ส่งเคสปรึกษา</h1>
+            <p className="text-xs text-muted">กรอกข้อมูลผู้ป่วยและเลือกแผนกที่ต้องการปรึกษา</p>
           </div>
         </div>
 
-        <div
-          className={`p-5 md:p-6 rounded-2xl shadow-lg relative z-0 border transition-colors ${darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA]/90 border-[#C7CFDA]/30 backdrop-blur-sm"
-            }`}
-        >
+        <div className="p-5 md:p-6 rounded-[10px] relative z-0 border border-rule bg-paper-2 transition-colors">
           <form className="space-y-5">
             <fieldset disabled={isLoading} className="space-y-5">
               {/* Step 1: HN + Name row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label htmlFor="hn" className={labelClasses}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
                     </svg>
-                    HN <span className="text-[#E55143]">*</span>
+                    HN <span className="text-bad">*</span>
                   </label>
                   <input
                     ref={hnRef}
@@ -220,18 +212,18 @@ export default function SubmitPage() {
                       setHn(e.target.value);
                       if (errors.hn) setErrors((prev) => { const n = { ...prev }; delete n.hn; return n; });
                     }}
-                    className={inputClasses("hn")}
+                    className={`${inputClasses("hn")} measured`}
                     placeholder="เช่น 1234567"
                     required
                   />
-                  {errors.hn && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.hn}</p>}
+                  {errors.hn && <p className="text-bad text-xs mt-1 font-medium">{errors.hn}</p>}
                 </div>
                 <div>
                   <label htmlFor="firstName" className={labelClasses}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
-                    ชื่อ <span className="text-[#E55143]">*</span>
+                    ชื่อ <span className="text-bad">*</span>
                   </label>
                   <input
                     type="text"
@@ -245,14 +237,14 @@ export default function SubmitPage() {
                     placeholder="ชื่อผู้ป่วย"
                     required
                   />
-                  {errors.firstName && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.firstName}</p>}
+                  {errors.firstName && <p className="text-bad text-xs mt-1 font-medium">{errors.firstName}</p>}
                 </div>
                 <div>
                   <label htmlFor="lastName" className={labelClasses}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
-                    นามสกุล <span className="text-[#E55143]">*</span>
+                    นามสกุล <span className="text-bad">*</span>
                   </label>
                   <input
                     type="text"
@@ -266,18 +258,18 @@ export default function SubmitPage() {
                     placeholder="นามสกุลผู้ป่วย"
                     required
                   />
-                  {errors.lastName && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.lastName}</p>}
+                  {errors.lastName && <p className="text-bad text-xs mt-1 font-medium">{errors.lastName}</p>}
                 </div>
               </div>
 
               {/* Step 2: Room */}
               <div>
                 <label htmlFor="room" className={labelClasses}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg aria-hidden="true" className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  ห้องตรวจ <span className="text-[#E55143]">*</span>
+                  ห้องตรวจ <span className="text-bad">*</span>
                 </label>
                 <select
                   id="room"
@@ -296,16 +288,16 @@ export default function SubmitPage() {
                     </option>
                   ))}
                 </select>
-                {errors.room && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.room}</p>}
+                {errors.room && <p className="text-bad text-xs mt-1 font-medium">{errors.room}</p>}
               </div>
 
               {/* Step 3: Problem */}
               <div>
                 <label htmlFor="problem" className={labelClasses}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg aria-hidden="true" className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  รายละเอียดปัญหา <span className="text-[#E55143]">*</span>
+                  รายละเอียดปัญหา <span className="text-bad">*</span>
                 </label>
                 <textarea
                   id="problem"
@@ -314,21 +306,21 @@ export default function SubmitPage() {
                     setProblem(e.target.value);
                     if (errors.problem) setErrors((prev) => { const n = { ...prev }; delete n.problem; return n; });
                   }}
-                  className={inputClasses("problem") + " min-h-[90px]"}
+                  className={inputClasses("problem") + " min-h-[96px]"}
                   rows={3}
-                  placeholder="เช่น TBI with GCS 9, Blunt abdomen..."
+                  placeholder="เช่น TBI with GCS 9, Blunt abdomen…"
                   required
                 />
-                {errors.problem && <p className="text-[#E55143] text-xs mt-1 font-medium">{errors.problem}</p>}
+                {errors.problem && <p className="text-bad text-xs mt-1 font-medium">{errors.problem}</p>}
               </div>
 
               {/* Step 4: Departments */}
               <div>
                 <label id="departments-label" className={labelClasses}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg aria-hidden="true" className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                   </svg>
-                  แผนกที่ปรึกษา <span className="text-[#E55143]">*</span>
+                  แผนกที่ปรึกษา <span className="text-bad">*</span>
                 </label>
                 <div
                   id="departments"
@@ -341,8 +333,7 @@ export default function SubmitPage() {
                   {ALL_DEPARTMENTS.map((dept) => (
                     <div
                       key={dept}
-                      className={`relative cursor-pointer transition-all duration-200 ${selectedDepts.includes(dept) ? "scale-105" : ""
-                        }`}
+                      className="relative cursor-pointer"
                     >
                       <input
                         type="checkbox"
@@ -354,15 +345,14 @@ export default function SubmitPage() {
                       />
                       <label
                         htmlFor={dept}
-                        className={`flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer transition-all duration-200 font-semibold text-xs peer-focus:outline peer-focus:outline-2 peer-focus:outline-offset-2 peer-focus:outline-[#699D5D] ${selectedDepts.includes(dept)
-                            ? "bg-[#699D5D] text-white border-[#699D5D] shadow-sm"
-                            : darkMode
-                              ? "bg-gray-700 text-gray-200 border-gray-600 hover:border-[#699D5D]/50 hover:bg-gray-600"
-                              : "bg-white text-[#014167] border-[#C7CFDA] hover:border-[#699D5D]/50 hover:bg-[#C7CFDA]/30"
-                          }`}
+                        className={`flex items-center justify-center gap-1.5 p-2.5 rounded-[6px] border cursor-pointer transition-colors duration-200 font-medium text-xs whitespace-nowrap peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus ${
+                          selectedDepts.includes(dept)
+                            ? "bg-ok text-paper border-ok"
+                            : "bg-paper-3 text-ink-2 border-rule-2 hover:border-ok/60 hover:text-ink"
+                        }`}
                       >
                         {selectedDepts.includes(dept) && (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                           </svg>
                         )}
@@ -372,53 +362,49 @@ export default function SubmitPage() {
                   ))}
                 </div>
                 {errors.departments && (
-                  <p id="departments-error" className="text-[#E55143] text-xs mt-1 font-medium">
+                  <p id="departments-error" className="text-bad text-xs mt-1 font-medium">
                     {errors.departments}
                   </p>
                 )}
                 {selectedDepts.length > 0 && (
-                  <div
-                    className={`mt-2 p-2 rounded-lg border ${darkMode
-                        ? "bg-emerald-500/10 border-emerald-500/30"
-                        : "bg-[#699D5D]/10 border-[#699D5D]/30"
-                      }`}
-                  >
-                    <p className={`text-xs font-medium ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
-                      ✓ {selectedDepts.length} แผนก:{" "}
-                      <span className="font-bold">{selectedDepts.join(", ")}</span>
+                  <div className="mt-2 p-2.5 rounded-[6px] border bg-ok-soft border-ok/30">
+                    <p className="text-xs font-medium text-ok">
+                      เลือกแล้ว {selectedDepts.length} แผนก:{" "}
+                      <span className="font-semibold text-ink">{selectedDepts.join(", ")}</span>
                     </p>
                   </div>
                 )}
               </div>
 
               {/* Submit buttons */}
-              <div className={`pt-4 border-t ${darkMode ? "border-gray-700" : "border-[#014167]/10"}`}>
+              <div className="pt-4 border-t border-rule">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-2">
                     <button
                       type="button"
                       onClick={() => handleSubmit(false)}
                       disabled={isLoading}
-                      className={`w-full font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-md text-sm flex items-center justify-center gap-2 tap-feedback ${isLoading
-                          ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                          : "bg-[#699D5D] text-white hover:shadow-lg hover:bg-[#5a8a4f] transform hover:-translate-y-0.5 active:translate-y-0"
-                        }`}
+                      className={`w-full font-medium py-3 px-2.5 sm:px-4 rounded-[6px] transition-opacity duration-200 text-sm flex items-center justify-center gap-1.5 sm:gap-2 tap-feedback whitespace-nowrap ${
+                        isLoading
+                          ? "bg-paper-3 cursor-not-allowed text-muted border border-rule"
+                          : "bg-ok text-paper hover:opacity-90"
+                      }`}
                     >
                       {isLoading ? (
                         <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span>กำลังส่ง...</span>
+                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin motion-reduce:animate-none"></div>
+                          <span>กำลังส่ง…</span>
                         </>
                       ) : (
                         <>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                           </svg>
                           ส่ง Consult
                         </>
                       )}
                     </button>
-                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-500" : "text-[#014167]/40"}`}>
+                    <p className="text-[11px] text-center text-muted">
                       คลิกเพื่อส่งเคสปกติ
                     </p>
                   </div>
@@ -427,27 +413,28 @@ export default function SubmitPage() {
                       type="button"
                       onClick={() => handleSubmit(true)}
                       disabled={isLoading}
-                      className={`w-full font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-md text-sm flex items-center justify-center gap-2 tap-feedback ${isLoading
-                          ? "bg-[#C7CFDA] cursor-not-allowed text-[#014167]"
-                          : "bg-[#E55143] text-white hover:shadow-lg hover:bg-[#d04535] transform hover:-translate-y-0.5 active:translate-y-0"
-                        }`}
+                      className={`w-full font-medium py-3 px-2.5 sm:px-4 rounded-[6px] transition-opacity duration-200 text-sm flex items-center justify-center gap-1.5 sm:gap-2 tap-feedback whitespace-nowrap ${
+                        isLoading
+                          ? "bg-paper-3 cursor-not-allowed text-muted border border-rule"
+                          : "bg-bad text-paper hover:opacity-90"
+                      }`}
                     >
                       {isLoading ? (
                         <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span>กำลังส่ง...</span>
+                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin motion-reduce:animate-none"></div>
+                          <span>กำลังส่ง…</span>
                         </>
                       ) : (
                         <>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                           </svg>
                           Fast Track
                         </>
                       )}
                     </button>
-                    <p className={`text-[10px] text-center font-medium ${darkMode ? "text-gray-500" : "text-[#014167]/40"}`}>
-                      <kbd className={`px-1 py-0.5 rounded text-[9px] font-mono ${darkMode ? "bg-gray-700" : "bg-white/60"}`}>{isMac ? "⌘" : "Ctrl"}+Enter</kbd> ส่งด่วน
+                    <p className="text-[11px] text-center text-muted">
+                      <kbd className="px-1.5 py-0.5 rounded-[4px] text-[10px] bg-paper-3 border border-rule text-ink-2">{isMac ? "⌘" : "Ctrl"}+Enter</kbd> ส่งด่วน
                     </p>
                   </div>
                 </div>

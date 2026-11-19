@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport } from "@/lib/db";
+import { createPortal } from "react-dom";
+import { fetchCompletedConsultsPage, updateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport, isPermissionDeniedError } from "@/lib/db";
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS } from "@/lib/constants";
 import { useSettings } from "../contexts/SettingsContext";
@@ -34,6 +35,28 @@ export default function CompletedPage() {
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [exportStatusWarning, setExportStatusWarning] = useState<{
+    message: string;
+    tone: "warning" | "error";
+    startDate: string;
+    endDate: string;
+  } | null>(null);
+  const exportSessionIdRef = useRef(0);
+  const isExportModalOpenRef = useRef(false);
+  const exportDatesRef = useRef({ start: "", end: "" });
+  const exportAbortControllerRef = useRef<AbortController | null>(null);
+  const exportModalRef = useRef<HTMLDivElement>(null);
+  const prevFocusedElement = useRef<HTMLElement | null>(null);
+  const exportWasOpenRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      exportSessionIdRef.current += 1;
+      isExportModalOpenRef.current = false;
+      exportAbortControllerRef.current?.abort();
+      exportAbortControllerRef.current = null;
+    };
+  }, []);
 
   const { darkMode } = useSettings();
   const { addToast } = useToast();
@@ -53,6 +76,7 @@ export default function CompletedPage() {
 
   // Store Firestore cursor snapshots for each page boundary
   const cursorMapRef = useRef<Map<number, QueryDocumentSnapshot<DocumentData>>>(new Map());
+  const historyTableContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch a specific page of completed cases using Firestore cursors
   const fetchPage = useCallback(async (page: number) => {
@@ -65,6 +89,9 @@ export default function CompletedPage() {
       setCases(result.consults);
       setHasMore(result.hasMore);
       setError(null);
+      if (historyTableContainerRef.current) {
+        historyTableContainerRef.current.scrollTop = 0;
+      }
 
       // Store the lastDoc as cursor for the next page
       if (result.lastDoc) {
@@ -88,6 +115,9 @@ export default function CompletedPage() {
   // Navigate to a specific page
   const goToPage = useCallback((page: number) => {
     setCurrentPage(page);
+    if (historyTableContainerRef.current) {
+      historyTableContainerRef.current.scrollTop = 0;
+    }
     void fetchPage(page).catch(() => {});
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [fetchPage]);
@@ -121,6 +151,11 @@ export default function CompletedPage() {
     viewStateRef.current = { currentPage, searchHN, filterDate };
   }, [currentPage, searchHN, filterDate]);
 
+  const reconsultAttemptRef = useRef(0);
+  const reconsultFailedDraftsRef = useRef<
+    Map<string, { problem: string; selectedDepartments: string[] }>
+  >(new Map());
+
   const handleReConsult = async () => {
     if (!selectedCase || !newProblem.trim()) {
       addToast({ type: "error", message: "กรุณาระบุปัญหาใหม่" });
@@ -131,7 +166,10 @@ export default function CompletedPage() {
       return;
     }
     setIsUpdating(true);
+    const attemptId = ++reconsultAttemptRef.current;
     const caseId = selectedCase.id;
+    const submittedProblem = newProblem;
+    const submittedDepartments = [...selectedDepartments];
     
     try {
       const result = await updateConsult(caseId, (current) => {
@@ -140,13 +178,13 @@ export default function CompletedPage() {
 
         // Preserve existing departments; only reset the re-consulted ones
         const updatedDepartments: Record<string, ConsultDepartment> = { ...current.departments };
-        selectedDepartments.forEach((dept) => {
+        submittedDepartments.forEach((dept) => {
           updatedDepartments[dept] = { status: "pending", completedAt: null };
         });
         return {
           status: "pending",
           departments: updatedDepartments,
-          problem: `${current.problem}\n\n[Re-consult]: ${newProblem}`,
+          problem: `${current.problem}\n\n[Re-consult]: ${submittedProblem}`,
           createdAt: new Date().toISOString(),
         };
       }, { 
@@ -187,19 +225,35 @@ export default function CompletedPage() {
       // Instant UI response
       setCases((prev) => prev.filter((c) => c.id !== caseId));
       setSearchResults((prev) => prev !== null ? prev.filter((c) => c.id !== caseId) : null);
-      
-      // Wait for background sync if it was queued
-      if (result.backgroundPromise) {
-          result.backgroundPromise.catch(() => {
-              // Already handled by onBackgroundError
-          });
-      }
 
       setShowModal(false);
       setSelectedCase(null);
-      setNewProblem("");
-      setSelectedDepartments([]);
       addToast({ type: "success", message: "✓ ส่งปรึกษาใหม่สำเร็จ!" });
+
+      // Keep reason and departments per case while background sync is in flight so they remain
+      // available for reconciliation if the remote write rejects.
+      if (result.backgroundPromise) {
+          reconsultFailedDraftsRef.current.set(caseId, {
+              problem: submittedProblem,
+              selectedDepartments: submittedDepartments,
+          });
+          void result.backgroundPromise.then(
+              () => {
+                  reconsultFailedDraftsRef.current.delete(caseId);
+                  if (reconsultAttemptRef.current === attemptId) {
+                      setNewProblem("");
+                      setSelectedDepartments([]);
+                  }
+              },
+              () => {
+                  // Retained in state and reconsultFailedDraftsRef for this caseId; onBackgroundError notifies user.
+              }
+          );
+      } else {
+          reconsultFailedDraftsRef.current.delete(caseId);
+          setNewProblem("");
+          setSelectedDepartments([]);
+      }
     } catch (error) {
       console.error("Error re-consulting:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาด" });
@@ -209,47 +263,129 @@ export default function CompletedPage() {
   };
 
   const openReConsultModal = (caseData: Consult) => {
+    reconsultAttemptRef.current += 1;
+    reconsultPrevFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSelectedCase(caseData);
-    setNewProblem("");
-    setSelectedDepartments(Object.keys(caseData.departments));
+    const savedDraft = reconsultFailedDraftsRef.current.get(caseData.id);
+    if (savedDraft) {
+      setNewProblem(savedDraft.problem);
+      setSelectedDepartments(savedDraft.selectedDepartments);
+    } else {
+      setNewProblem("");
+      setSelectedDepartments(Object.keys(caseData.departments));
+    }
     setShowModal(true);
   };
 
+  const openExportModal = useCallback(() => {
+    exportAbortControllerRef.current?.abort();
+    exportAbortControllerRef.current = null;
+    prevFocusedElement.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    exportSessionIdRef.current += 1;
+    isExportModalOpenRef.current = true;
+    exportDatesRef.current = { start: "", end: "" };
+    setIsExporting(false);
+    setExportStatusWarning(null);
+    setExportStartDate("");
+    setExportEndDate("");
+    setShowExportModal(true);
+  }, []);
+
+  const closeExportModal = useCallback(() => {
+    exportAbortControllerRef.current?.abort();
+    exportAbortControllerRef.current = null;
+    exportSessionIdRef.current += 1;
+    isExportModalOpenRef.current = false;
+    setIsExporting(false);
+    setExportStatusWarning(null);
+    setShowExportModal(false);
+  }, []);
+
   const handleExportExcel = async () => {
-    if (!exportStartDate || !exportEndDate) {
-      addToast({ type: "error", message: "กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด" });
+    const sessionId = exportSessionIdRef.current;
+    const submittedStartDate = exportStartDate;
+    const submittedEndDate = exportEndDate;
+
+    const isActiveSession = () =>
+      isExportModalOpenRef.current && exportSessionIdRef.current === sessionId;
+    const isMatchingDates = () =>
+      exportDatesRef.current.start === submittedStartDate &&
+      exportDatesRef.current.end === submittedEndDate;
+    const setDialogFeedback = (message: string, tone: "warning" | "error") => {
+      if (isActiveSession() && isMatchingDates()) {
+        setExportStatusWarning({
+          message,
+          tone,
+          startDate: submittedStartDate,
+          endDate: submittedEndDate,
+        });
+      }
+    };
+
+    setExportStatusWarning(null);
+
+    if (!submittedStartDate || !submittedEndDate) {
+      setDialogFeedback("กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด", "error");
       return;
     }
-    if (exportStartDate > exportEndDate) {
-      addToast({ type: "error", message: "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด" });
+    if (submittedStartDate > submittedEndDate) {
+      setDialogFeedback("วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด", "error");
       return;
     }
     if (!isRangeValid) {
-      addToast({ type: "error", message: "Export date range exceeds the maximum limit of 31 days to preserve system bandwidth." });
+      setDialogFeedback(
+        "Export date range exceeds the maximum limit of 31 days to preserve system bandwidth.",
+        "error"
+      );
       return;
     }
 
+    exportAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    exportAbortControllerRef.current = abortController;
     setIsExporting(true);
     try {
-      const { consults: exportList, truncated } = await fetchAllCompletedConsultsForExport(
-        exportStartDate, 
-        exportEndDate
-      );
-      
-      if (exportList.length === 0) {
-        addToast({ type: "error", message: "ไม่พบข้อมูลในช่วงเวลาที่เลือก" });
+      const {
+        consults: exportList,
+        truncated,
+        truncationReason,
+        permissionDenied,
+      } = await fetchAllCompletedConsultsForExport(submittedStartDate, submittedEndDate, {
+        signal: abortController.signal,
+      });
+
+      if (!isActiveSession()) return;
+
+      if (truncated && exportList.length === 0) {
+        if (truncationReason === "unconfirmed_completeness") {
+          setDialogFeedback(
+            permissionDenied
+              ? "ไม่มีสิทธิ์เข้าถึงข้อมูลบางส่วนจากเซิร์ฟเวอร์ (Export ได้ 0 รายการ) กรุณาตรวจสอบสิทธิ์บัญชีผู้ใช้กับผู้ดูแลระบบ"
+              : "ไม่สามารถยืนยันความครบถ้วนของข้อมูลจากเซิร์ฟเวอร์ได้ (Export ได้ 0 รายการ) กรุณาตรวจสอบการเชื่อมต่อหรือลองใหม่อีกครั้ง",
+            "warning"
+          );
+        } else {
+          setDialogFeedback(
+            "ข้อมูลในช่วงเวลานี้มีจำนวนมากเกินขีดจำกัดการค้นหา (Export ได้ 0 รายการ) กรุณาเลือกช่วงวันที่ให้แคบลง",
+            "warning"
+          );
+        }
         return;
       }
 
-      if (truncated) {
-        addToast({ 
-          type: "warning", 
-          message: "ข้อมูลมีจำนวนมากเกินไป ระบบจะ Export เฉพาะ 50,000 รายการแรกเท่านั้น" 
-        });
+      if (exportList.length === 0) {
+        setDialogFeedback(
+          "ไม่พบข้อมูลในช่วงเวลาที่เลือก กรุณาเลือกช่วงวันที่ใหม่",
+          "error"
+        );
+        return;
       }
 
       // Dynamic import to reduce bundle size
       const xlsxModule = await import("xlsx");
+      if (!isActiveSession()) return;
       const XLSX = xlsxModule.default ?? xlsxModule;
 
       const exportData = exportList.map((c) => {
@@ -300,14 +436,43 @@ export default function CompletedPage() {
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Cases");
-      XLSX.writeFile(workbook, `completed-cases-${exportStartDate}-to-${exportEndDate}.xlsx`);
-      addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
-      setShowExportModal(false);
+      if (!isActiveSession()) return;
+      XLSX.writeFile(workbook, `completed-cases-${submittedStartDate}-to-${submittedEndDate}.xlsx`);
+      if (!isActiveSession()) return;
+
+      if (truncated) {
+        if (truncationReason === "unconfirmed_completeness") {
+          addToast({
+            type: "warning",
+            message: permissionDenied
+              ? `Export ได้ ${exportList.length.toLocaleString()} รายการ แต่ระบบถูกปฏิเสธสิทธิ์ในการอ่านข้อมูลบางส่วนจากเซิร์ฟเวอร์ กรุณาตรวจสอบสิทธิ์บัญชีผู้ใช้กับผู้ดูแลระบบ`
+              : `Export ได้ ${exportList.length.toLocaleString()} รายการ แต่ไม่สามารถยืนยันความครบถ้วนของข้อมูลทั้งหมดจากเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อหรือลองใหม่อีกครั้ง`,
+          });
+        } else {
+          addToast({
+            type: "warning",
+            message: `ข้อมูลมีจำนวนมากเกินขีดจำกัด ระบบ Export ได้ ${exportList.length.toLocaleString()} รายการ กรุณาเลือกช่วงวันที่ให้แคบลง`,
+          });
+        }
+      } else {
+        addToast({ type: "success", message: `Export สำเร็จ (${exportData.length} เคส)` });
+      }
+      closeExportModal();
     } catch (error) {
       console.error("Export error:", error);
-      addToast({ type: "error", message: "เกิดข้อผิดพลาดในการ Export" });
+      setDialogFeedback(
+        isPermissionDeniedError(error)
+          ? "ไม่มีสิทธิ์เข้าถึงข้อมูลสำหรับการ Export กรุณาติดต่อผู้ดูแลระบบ"
+          : "เกิดข้อผิดพลาดในการ Export กรุณาลองใหม่อีกครั้ง",
+        "error"
+      );
     } finally {
-      setIsExporting(false);
+      if (exportAbortControllerRef.current === abortController) {
+        exportAbortControllerRef.current = null;
+      }
+      if (exportSessionIdRef.current === sessionId) {
+        setIsExporting(false);
+      }
     }
   };
 
@@ -354,13 +519,120 @@ export default function CompletedPage() {
     };
   }, [searchHN, filterDate]);
 
-  // Focus management for Export Modal
-  const exportModalRef = useRef<HTMLDivElement>(null);
-  const prevFocusedElement = useRef<HTMLElement | null>(null);
+  const isReconsultModalRendered = !loading && !error && showModal;
+  const isExportModalRendered = !loading && !error && showExportModal;
+  const isAnyModalOpen = isReconsultModalRendered || isExportModalRendered;
 
   useEffect(() => {
+    if (!loading && !error) return;
     if (showExportModal) {
-      prevFocusedElement.current = document.activeElement as HTMLElement;
+      closeExportModal();
+    }
+    if (showModal) {
+      setShowModal(false);
+      setSelectedCase(null);
+    }
+  }, [loading, error, showExportModal, showModal, closeExportModal]);
+
+  // Mark shared layout shell (Navbar + main + BottomNav) inert while any modal is open
+  useEffect(() => {
+    if (!isAnyModalOpen) return;
+    const appShell = document.getElementById("app-shell-root");
+    if (!appShell || appShell.hasAttribute("inert")) return;
+    appShell.setAttribute("inert", "");
+    return () => {
+      appShell.removeAttribute("inert");
+    };
+  }, [isAnyModalOpen]);
+
+  // Focus management for Re-consult Modal
+  const reconsultModalRef = useRef<HTMLDivElement>(null);
+  const reconsultPrevFocusedRef = useRef<HTMLElement | null>(null);
+  const reconsultWasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (showModal) {
+      reconsultWasOpenRef.current = true;
+      if (
+        !reconsultPrevFocusedRef.current ||
+        reconsultPrevFocusedRef.current === document.body
+      ) {
+        reconsultPrevFocusedRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      }
+
+      const initialTarget =
+        reconsultModalRef.current?.querySelector<HTMLElement>("#reconsult-problem") ??
+        reconsultModalRef.current?.querySelector<HTMLElement>(
+          'button:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+        );
+      initialTarget?.focus();
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowModal(false);
+          return;
+        }
+        if (e.key === "Tab" && reconsultModalRef.current) {
+          const focusable = Array.from(
+            reconsultModalRef.current.querySelectorAll<HTMLElement>(
+              'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+            )
+          );
+          if (focusable.length === 0) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          const active = document.activeElement as HTMLElement | null;
+
+          if (!active || !reconsultModalRef.current.contains(active)) {
+            e.preventDefault();
+            (e.shiftKey ? last : first).focus();
+          } else if (e.shiftKey && active === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && active === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      };
+
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    }
+
+    if (reconsultWasOpenRef.current) {
+      reconsultWasOpenRef.current = false;
+      const target = reconsultPrevFocusedRef.current;
+      reconsultPrevFocusedRef.current = null;
+      let focused = false;
+      if (target && target.isConnected && !target.hasAttribute("disabled")) {
+        target.focus();
+        focused = document.activeElement === target;
+      }
+      if (!focused) {
+        document
+          .querySelector<HTMLElement>(
+            '#search-hn, main button:not([disabled]), button:not([disabled])'
+          )
+          ?.focus();
+      }
+    }
+  }, [showModal]);
+
+  // Focus management for Export Modal
+  useEffect(() => {
+    if (showExportModal) {
+      exportWasOpenRef.current = true;
+      if (
+        !prevFocusedElement.current ||
+        prevFocusedElement.current === document.body
+      ) {
+        prevFocusedElement.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      }
       // Focus the first input or the h2 heading
       const firstInput = exportModalRef.current?.querySelector("input");
       if (firstInput) {
@@ -369,19 +641,29 @@ export default function CompletedPage() {
 
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === "Escape") {
-          setShowExportModal(false);
+          e.preventDefault();
+          e.stopPropagation();
+          closeExportModal();
+          return;
         }
         if (e.key === "Tab" && exportModalRef.current) {
-          const focusable = exportModalRef.current.querySelectorAll(
-            'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+          const focusable = Array.from(
+            exportModalRef.current.querySelectorAll<HTMLElement>(
+              'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+            )
           );
-          const first = focusable[0] as HTMLElement;
-          const last = focusable[focusable.length - 1] as HTMLElement;
+          if (focusable.length === 0) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          const active = document.activeElement as HTMLElement | null;
 
-          if (e.shiftKey && document.activeElement === first) {
+          if (!active || !exportModalRef.current.contains(active)) {
+            first.focus();
+            e.preventDefault();
+          } else if (e.shiftKey && active === first) {
             last.focus();
             e.preventDefault();
-          } else if (!e.shiftKey && document.activeElement === last) {
+          } else if (!e.shiftKey && active === last) {
             first.focus();
             e.preventDefault();
           }
@@ -389,17 +671,22 @@ export default function CompletedPage() {
       };
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
-    } else if (prevFocusedElement.current) {
-      prevFocusedElement.current.focus();
+    } else if (exportWasOpenRef.current) {
+      exportWasOpenRef.current = false;
+      const target = prevFocusedElement.current;
+      prevFocusedElement.current = null;
+      if (target && target.isConnected && !target.hasAttribute("disabled")) {
+        target.focus();
+      }
     }
-  }, [showExportModal]);
+  }, [showExportModal, closeExportModal]);
 
   if (loading) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${darkMode ? "bg-gray-900" : "bg-[#014167]"}`}>
+      <div className="min-h-screen flex items-center justify-center bg-paper">
         <div className="text-center">
-          <div className="inline-block w-16 h-16 border-4 border-[#E55143] border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-xl text-[#FDFCDF] font-semibold">กำลังโหลดข้อมูล...</p>
+          <div className="inline-block w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-base text-ink-2 font-medium">กำลังโหลดข้อมูล…</p>
         </div>
       </div>
     );
@@ -407,20 +694,17 @@ export default function CompletedPage() {
 
   if (error) {
     return (
-      <div className={`min-h-screen flex items-center justify-center p-4 ${darkMode ? "bg-gray-900" : "bg-[#014167]"}`}>
-        <div
-          className={`text-center rounded-xl shadow-md p-8 max-w-md border ${
-            darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
-          }`}
-        >
-          <svg className="w-16 h-16 mx-auto text-[#E55143] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-paper">
+        <div className="text-center rounded-[10px] p-8 max-w-md border border-bad/40 bg-paper-2">
+          <svg aria-hidden="true" className="w-12 h-12 mx-auto text-bad mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <h2 className={`text-xl font-bold mb-2 ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>เกิดข้อผิดพลาด</h2>
-          <p className={`font-medium mb-4 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{error}</p>
+          <h2 className="text-xl font-medium mb-2 text-ink">เกิดข้อผิดพลาด</h2>
+          <p className="font-medium mb-4 text-ink-2 text-sm">{error}</p>
           <button
+            type="button"
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-[#E55143] text-white rounded-lg font-semibold hover:shadow-md transition-all"
+            className="px-4 py-2 bg-accent text-accent-ink rounded-[6px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap tap-feedback"
           >
             โหลดใหม่
           </button>
@@ -429,50 +713,43 @@ export default function CompletedPage() {
     );
   }
 
-
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-gray-900" : "bg-[#014167]"}`}>
-      <div className="max-w-[1800px] mx-auto p-4">
+    <div className="min-h-[calc(100dvh-3.5rem)] pb-24 lg:pb-8 bg-paper transition-colors duration-200">
+      <div
+        className="max-w-[1800px] mx-auto p-3 sm:p-4"
+        inert={isAnyModalOpen ? true : undefined}
+      >
         <div className="mb-5">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-md ${
-                darkMode ? "bg-gray-700" : "bg-white/15 backdrop-blur-sm"
-              }`}>
-                <svg className="w-5 h-5 text-[#FDFCDF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-10 h-10 rounded-[6px] flex items-center justify-center bg-paper-2 border border-rule text-cool">
+                <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                 </svg>
               </div>
               <div>
-                <h1 className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#FDFCDF]"}`}>
+                <h1 className="text-xl font-medium text-ink">
                   เคสที่ปรึกษาเสร็จแล้ว
                 </h1>
-                <p className={`text-xs ${darkMode ? "text-gray-400" : "text-[#C7CFDA]"}`}>
+                <p className="text-xs text-muted">
                   ค้นหาและจัดการประวัติเคส
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl shadow-sm border ${
-                  darkMode ? "bg-gray-800 border-gray-700" : "bg-white/10 border-white/15 backdrop-blur-sm"
-                }`}
-              >
-                <span className={`font-semibold text-sm ${darkMode ? "text-gray-300" : "text-[#C7CFDA]"}`}>ผลการค้นหา:</span>
-                <span className={`text-xl font-extrabold tabular-nums ${darkMode ? "text-gray-100" : "text-[#FDFCDF]"}`}>
-                  {searchStatus === "loading" ? "..." : filteredCases.length}
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-[6px] border border-rule bg-paper-2">
+                <span className="font-medium text-sm text-muted">ผลการค้นหา:</span>
+                <span className="text-lg font-medium measured text-ink">
+                  {searchStatus === "loading" ? "…" : filteredCases.length}
                 </span>
-                <span className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#C7CFDA]"}`}>เคส</span>
+                <span className="text-sm text-muted">เคส</span>
               </div>
               <button
-                onClick={() => {
-                  setExportStartDate("");
-                  setExportEndDate("");
-                  setShowExportModal(true);
-                }}
-                className="inline-flex items-center gap-2 bg-[#699D5D] hover:bg-[#5a8a4f] text-white px-4 py-2 rounded-xl shadow-md font-bold text-sm transition-all hover:shadow-lg hover:-translate-y-0.5 tap-feedback"
+                type="button"
+                onClick={openExportModal}
+                className="inline-flex items-center gap-2 bg-ok hover:opacity-90 text-paper px-4 py-2 rounded-[6px] font-medium text-sm transition-opacity tap-feedback whitespace-nowrap"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
                 Export Excel
@@ -482,41 +759,31 @@ export default function CompletedPage() {
         </div>
 
         {/* Search & Filters */}
-        <div
-          className={`mb-4 p-3 rounded-xl shadow-md border flex flex-col sm:flex-row gap-3 ${
-            darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
-          }`}
-        >
+        <div className="mb-4 p-3 rounded-[10px] border border-rule bg-paper-2 flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
-            <label className={`text-xs font-bold mb-1 flex items-center gap-1 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <label htmlFor="search-hn" className="text-xs font-medium mb-1 flex items-center gap-1 text-ink-2">
+              <svg aria-hidden="true" className="w-3.5 h-3.5 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               ค้นหา HN
             </label>
             <input
+              id="search-hn"
               type="text"
               value={searchHN}
               onChange={(e) => setSearchHN(e.target.value)}
-              placeholder="พิมพ์ HN..."
-              className={`w-full px-3 py-1.5 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
-                darkMode
-                  ? "bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400"
-                  : "bg-white border-[#C7CFDA]/50 text-[#014167] placeholder-[#C7CFDA]"
-              }`}
+              placeholder="พิมพ์ HN…"
+              className="w-full px-3 py-1.5 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink placeholder-muted measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors"
             />
           </div>
           <div className="flex-1">
-            <label className={`text-xs font-bold mb-1 flex items-center gap-1 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+            <label htmlFor="filter-dept" className="text-xs font-medium mb-1 flex items-center gap-1 text-ink-2">
+              <svg aria-hidden="true" className="w-3.5 h-3.5 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
               กรองแผนก
             </label>
             <select
+              id="filter-dept"
               value={filterDept}
               onChange={(e) => setFilterDept(e.target.value)}
-              className={`w-full px-3 py-1.5 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
-                darkMode
-                  ? "bg-gray-700 border-gray-600 text-gray-100"
-                  : "bg-white border-[#C7CFDA]/50 text-[#014167]"
-              }`}
+              className="w-full px-3 py-1.5 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink focus:outline-none focus:ring-2 focus:ring-focus transition-colors"
             >
               <option value="">ทุกแผนก</option>
               {ALL_DEPARTMENTS.map((dept) => (
@@ -527,67 +794,60 @@ export default function CompletedPage() {
             </select>
           </div>
           <div className="flex-1">
-            <label className={`text-xs font-bold mb-1 flex items-center gap-1 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            <label htmlFor="filter-date" className="text-xs font-medium mb-1 flex items-center gap-1 text-ink-2">
+              <svg aria-hidden="true" className="w-3.5 h-3.5 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
               กรองวันที่
             </label>
             <input
+              id="filter-date"
               type="date"
               value={filterDate}
               onChange={(e) => setFilterDate(e.target.value)}
-              className={`w-full px-3 py-1.5 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
-                darkMode
-                  ? "bg-gray-700 border-gray-600 text-gray-100"
-                  : "bg-white border-[#C7CFDA]/50 text-[#014167]"
-              }`}
+              className="w-full px-3 py-1.5 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors"
             />
           </div>
           {(searchHN || filterDept || filterDate) && (
             <div className="flex items-end">
               <button
+                type="button"
                 onClick={() => {
                   setSearchHN("");
                   setFilterDept("");
                   setFilterDate("");
                 }}
-                className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                  darkMode
-                    ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                    : "bg-white text-[#014167] hover:bg-gray-50"
-                }`}
+                className="px-3 py-1.5 rounded-[6px] text-sm font-medium border border-rule-2 bg-paper-3 text-ink hover:border-ink-2 transition-colors flex items-center gap-1 whitespace-nowrap"
               >
-                ✕ ล้าง
+                <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                ล้าง
               </button>
             </div>
           )}
         </div>
 
         {/* Desktop table / Mobile cards */}
-        <div
-          className={`rounded-xl shadow-md overflow-hidden border ${
-            darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
-          }`}
-        >
+        <div className="rounded-[10px] overflow-hidden border border-rule bg-paper-2">
           {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full">
-              <thead className={`text-white ${darkMode ? "bg-gray-700" : "bg-[#014167]"}`}>
+          <div ref={historyTableContainerRef} className="hidden md:block overflow-auto max-h-[70vh] table-container">
+            <table className="w-full min-w-[960px] border-collapse">
+              <thead className="sticky top-0 z-10 text-muted bg-paper-3 border-b border-rule">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[8%]">HN</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[12%]">ชื่อ-สกุล</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[8%]">ห้อง</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[18%]">Dx</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[12%]">แผนก</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[10%]">วันที่ส่ง</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-[22%]">สถานะ / เวลา</th>
-                  <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-[10%]">จัดการ</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium w-[8%]">HN</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium w-[12%]">ชื่อ-สกุล</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium w-[8%]">ห้อง</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium w-[18%]">Dx</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium w-[12%]">แผนก</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium w-[10%]">วันที่ส่ง</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium w-[22%]">สถานะ / เวลา</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium w-[10%]">จัดการ</th>
                 </tr>
               </thead>
-              <tbody className={`divide-y ${darkMode ? "divide-gray-700" : "divide-[#014167]/10"}`}>
+              <tbody className="divide-y divide-rule">
                 {currentCases.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className={`px-4 py-12 text-center ${darkMode ? "text-gray-500" : "text-[#014167]/50"}`}>
-                      <svg className="w-10 h-10 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                    <td colSpan={8} className="px-4 py-12 text-center text-muted">
+                      <svg aria-hidden="true" className="w-10 h-10 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                       <p className="font-medium text-sm">ไม่มีข้อมูล</p>
                     </td>
                   </tr>
@@ -595,18 +855,18 @@ export default function CompletedPage() {
                   currentCases.map((caseData) => (
                     <tr
                       key={caseData.id}
-                      className={`transition-colors align-top ${darkMode ? "hover:bg-gray-700/50" : "hover:bg-[#014167]/10"}`}
+                      className="transition-colors align-top hover:bg-paper-3/60"
                     >
-                      <td className={`px-4 py-3 text-sm font-semibold ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
+                      <td className="px-4 py-3 text-sm font-medium measured text-ink whitespace-nowrap">
                         {caseData.hn}
                       </td>
-                      <td className={`px-4 py-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                      <td className="px-4 py-3 text-sm text-ink-2 break-words max-w-[180px]">
                         {[caseData.firstName, caseData.lastName].filter(Boolean).join(" ") || "-"}
                       </td>
-                      <td className={`px-4 py-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                      <td className="px-4 py-3 text-sm text-ink-2 whitespace-nowrap">
                         {caseData.room}
                       </td>
-                       <td className={`px-4 py-3 text-sm flex-wrap whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                       <td className="px-4 py-3 text-sm whitespace-pre-wrap break-words max-w-xs text-ink">
                         {caseData.problem}
                       </td>
                       <td className="px-4 py-3 text-sm">
@@ -614,18 +874,14 @@ export default function CompletedPage() {
                           {Object.keys(caseData.departments).map((dept) => (
                             <span
                               key={dept}
-                              className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${
-                                darkMode
-                                  ? "bg-gray-700 text-gray-200 border-gray-600"
-                                  : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
-                              }`}
+                              className="inline-block px-2 py-0.5 rounded-[4px] text-xs font-medium border bg-paper-3 text-ink-2 border-rule whitespace-nowrap"
                             >
                               {dept}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className={`px-4 py-3 text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                      <td className="px-4 py-3 text-xs measured text-ink-2">
                         {caseData.createdAt
                           ? new Date(caseData.createdAt).toLocaleDateString("th-TH", {
                               timeZone: "Asia/Bangkok",
@@ -642,47 +898,45 @@ export default function CompletedPage() {
                           {Object.entries(caseData.departments).map(([dept, data]) => (
                             <div
                               key={dept}
-                              className={`p-1.5 rounded shadow-sm border ${
-                                darkMode ? "bg-gray-800 border-gray-700" : "bg-white/60 border-[#014167]/10"
-                              }`}
+                              className="p-2 rounded-[6px] border border-rule bg-paper-3"
                             >
                               <span
-                                className={`font-bold border-b pb-0.5 mb-0.5 block ${
-                                  data.status === "cancelled" 
-                                    ? "text-red-500 line-through decoration-2" 
-                                    : darkMode ? "border-gray-700 text-gray-200" : "border-[#014167]/10 text-black"
+                                className={`font-medium border-b pb-0.5 mb-1 block ${
+                                  data.status === "cancelled"
+                                    ? "text-bad line-through border-bad/30"
+                                    : "border-rule text-ink"
                                 }`}
                               >
                                 {dept} {data.status === "cancelled" && "(ยกเลิก)"}
                               </span>
-                              <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 ${darkMode ? "text-gray-400" : "text-black/70"}`}>
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-muted measured">
                                 {data.acceptedAt && (
-                                  <div>
-                                    <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รับ:</span>{" "}
+                                  <div className="whitespace-nowrap">
+                                    <span className="font-medium text-ok">รับ:</span>{" "}
                                     {new Date(data.acceptedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.admittedAt && (
-                                  <div>
-                                    <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>Admit:</span>{" "}
+                                  <div className="whitespace-nowrap">
+                                    <span className="font-medium text-cool">Admit:</span>{" "}
                                     {new Date(data.admittedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.returnedAt && (
-                                  <div>
-                                    <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>คืน ER:</span>{" "}
+                                  <div className="whitespace-nowrap">
+                                    <span className="font-medium text-accent">คืน ER:</span>{" "}
                                     {new Date(data.returnedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.dischargedAt && (
-                                  <div>
-                                    <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>D/C:</span>{" "}
+                                  <div className="whitespace-nowrap">
+                                    <span className="font-medium text-cool">D/C:</span>{" "}
                                     {new Date(data.dischargedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                                   </div>
                                 )}
                                 {data.completedAt && (
-                                  <div>
-                                    <span className={data.status === "cancelled" ? "text-red-500 font-semibold" : "text-[#E55143] font-semibold"}>
+                                  <div className="whitespace-nowrap">
+                                    <span className={data.status === "cancelled" ? "text-bad font-medium" : "text-ink-2 font-medium"}>
                                       {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
                                     </span>{" "}
                                     {new Date(data.completedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
@@ -695,14 +949,11 @@ export default function CompletedPage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button
+                          type="button"
                           onClick={() => openReConsultModal(caseData)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold hover:shadow-md transition-all duration-200 flex items-center gap-1 mx-auto mt-1 ${
-                            darkMode
-                              ? "bg-gray-700 text-gray-200 hover:bg-gray-600"
-                              : "bg-[#F1AE9E] text-[#014167]"
-                          }`}
+                          className="px-3 py-1.5 rounded-[6px] text-xs font-medium transition-opacity duration-200 flex items-center gap-1 mx-auto mt-1 bg-accent text-accent-ink hover:opacity-90 whitespace-nowrap tap-feedback"
                         >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -723,84 +974,76 @@ export default function CompletedPage() {
           {/* Mobile card layout */}
           <div className="md:hidden p-3 space-y-3">
             {currentCases.length === 0 ? (
-              <div className={`text-center py-8 font-medium ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
+              <div className="text-center py-8 font-medium text-muted">
                 ไม่มีข้อมูล
               </div>
             ) : (
               currentCases.map((caseData) => (
                 <div
                   key={caseData.id}
-                  className={`rounded-lg p-3 border shadow-sm ${
-                    darkMode ? "bg-gray-700 border-gray-600" : "bg-white border-[#014167]/10"
-                  }`}
+                  className="rounded-[6px] p-3 border border-rule bg-paper min-w-0"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <span className={`text-sm font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-sm font-medium measured text-ink break-all">
                         HN: {caseData.hn}
                       </span>
                       {(caseData.firstName || caseData.lastName) && (
-                        <p className={`text-xs ${darkMode ? "text-gray-300" : "text-[#014167]/70"}`}>
+                        <p className="text-xs text-ink-2 break-words">
                           {[caseData.firstName, caseData.lastName].filter(Boolean).join(" ")}
                         </p>
                       )}
                     </div>
-                    <span
-                      className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        darkMode ? "bg-gray-600 text-gray-300" : "bg-[#C7CFDA] text-[#014167]"
-                      }`}
-                    >
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-[4px] bg-paper-3 border border-rule text-ink whitespace-nowrap shrink-0">
                       {caseData.room}
                     </span>
                   </div>
-                   <div className="mb-2">
-                    <div className={`text-[10px] font-bold mb-0.5 opacity-70 ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>Dx:</div>
-                    <p className={`text-xs whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+                   <div className="mb-2 min-w-0">
+                    <div className="text-xs font-medium mb-0.5 text-muted">Dx:</div>
+                    <p className="text-xs whitespace-pre-wrap break-words text-ink">
                       {caseData.problem}
                     </p>
                   </div>
                   <div className="flex flex-col gap-1.5 mb-2">
                     {Object.entries(caseData.departments).map(([dept, data]) => (
-                      <div key={dept} className={`p-1.5 rounded shadow-sm border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-white/60 border-[#014167]/10"}`}>
+                      <div key={dept} className="p-2 rounded-[6px] border border-rule bg-paper-3">
                         <span
-                          className={`inline-block px-2 py-0.5 mb-1 rounded text-[10px] font-medium border ${
+                          className={`inline-block px-2 py-0.5 mb-1 rounded-[4px] text-xs font-medium border ${
                             data.status === "cancelled"
-                              ? "bg-red-500/20 text-red-500 line-through border-red-500/30"
-                              : darkMode
-                                ? "bg-gray-600 text-gray-200 border-gray-500"
-                                : "bg-[#F1AE9E] text-[#014167] border-[#F1AE9E]/30"
+                              ? "bg-bad-soft text-bad line-through border-bad/30"
+                              : "bg-paper-2 text-ink border-rule"
                           }`}
                         >
                           {dept} {data.status === "cancelled" && "(ยกเลิก)"}
                         </span>
-                        <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] ${darkMode ? "text-gray-400" : "text-black/70"}`}>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted measured">
                           {data.acceptedAt && (
-                            <div>
-                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>รับ:</span>{" "}
+                            <div className="whitespace-nowrap">
+                              <span className="font-medium text-ok">รับ:</span>{" "}
                               {new Date(data.acceptedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.admittedAt && (
-                            <div>
-                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>Admit:</span>{" "}
+                            <div className="whitespace-nowrap">
+                              <span className="font-medium text-cool">Admit:</span>{" "}
                               {new Date(data.admittedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.returnedAt && (
-                            <div>
-                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>คืน ER:</span>{" "}
+                            <div className="whitespace-nowrap">
+                              <span className="font-medium text-accent">คืน ER:</span>{" "}
                               {new Date(data.returnedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.dischargedAt && (
-                            <div>
-                              <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>D/C:</span>{" "}
+                            <div className="whitespace-nowrap">
+                              <span className="font-medium text-cool">D/C:</span>{" "}
                               {new Date(data.dischargedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
                             </div>
                           )}
                           {data.completedAt && (
-                            <div>
-                              <span className={data.status === "cancelled" ? "text-red-500 font-semibold" : "text-[#E55143] font-semibold"}>
+                            <div className="whitespace-nowrap">
+                              <span className={data.status === "cancelled" ? "text-bad font-medium" : "text-ink-2 font-medium"}>
                                 {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
                               </span>{" "}
                               {new Date(data.completedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
@@ -810,7 +1053,7 @@ export default function CompletedPage() {
                       </div>
                     ))}
                   </div>
-                  <div className={`text-[11px] ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+                  <div className="text-[11px] text-muted measured">
                     {caseData.createdAt
                       ? new Date(caseData.createdAt).toLocaleDateString("th-TH", {
                           timeZone: "Asia/Bangkok",
@@ -823,14 +1066,11 @@ export default function CompletedPage() {
                       : "-"}
                   </div>
                   <button
+                    type="button"
                     onClick={() => openReConsultModal(caseData)}
-                    className={`mt-2 w-full px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-                      darkMode
-                        ? "bg-gray-600 text-gray-200 hover:bg-gray-500"
-                        : "bg-[#F1AE9E] text-[#014167] hover:shadow-md"
-                    }`}
+                    className="mt-2 w-full px-3 py-1.5 rounded-[6px] text-xs font-medium transition-opacity flex items-center justify-center gap-1 bg-accent text-accent-ink hover:opacity-90 whitespace-nowrap tap-feedback"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -847,17 +1087,18 @@ export default function CompletedPage() {
 
           {/* Pagination */}
           {(currentPage > 1 || hasMore || Boolean(searchHN || filterDate)) && (
-            <div
-              className={`px-4 py-3 border-t flex items-center justify-between ${
-                darkMode ? "bg-gray-800/50 border-gray-700" : "bg-[#014167]/10 border-[#014167]/20"
-              }`}
-            >
-  <div className={`text-sm font-medium ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+            <div className="px-4 py-3 border-t border-rule bg-paper-3 flex items-center justify-between gap-2 flex-wrap">
+  <div className="text-sm font-medium text-ink-2">
     {searchStatus === "error" ? (
-      <span className="text-[#E55143] font-bold">⚠️ การค้นหาล้มเหลว</span>
+      <span className="inline-flex items-center gap-1.5 text-bad font-medium">
+        <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        การค้นหาล้มเหลว
+      </span>
     ) : Boolean(searchHN || filterDate) ? (
       searchStatus === "loading"
-        ? "พบทั้งหมด ... เคส"
+        ? "พบทั้งหมด … เคส"
         : `พบทั้งหมด ${filteredCases.length} เคส`
     ) : (
       `หน้า ${currentPage} — แสดง ${filteredCases.length} เคส`
@@ -866,41 +1107,37 @@ export default function CompletedPage() {
               {!Boolean(searchHN || filterDate) && (
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => goToPage(currentPage - 1)}
                     disabled={currentPage === 1 || loadingMore}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors inline-flex items-center gap-1 whitespace-nowrap ${
                       currentPage === 1 || loadingMore
-                        ? darkMode
-                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                        : darkMode
-                        ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
-                        : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
+                        ? "bg-paper-2 text-muted border border-rule cursor-not-allowed"
+                        : "bg-paper-2 text-ink border border-rule-2 hover:border-ink-2"
                     }`}
                   >
-                    ← ก่อนหน้า
+                    <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    ก่อนหน้า
                   </button>
-                  <span
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                      darkMode ? "bg-gray-700 text-gray-200" : "bg-[#699D5D] text-white"
-                    }`}
-                  >
+                  <span className="px-3 py-1.5 rounded-[6px] text-xs font-medium measured bg-accent text-accent-ink">
                     {currentPage}
                   </span>
                   <button
+                    type="button"
                     onClick={() => goToPage(currentPage + 1)}
                     disabled={!hasMore || loadingMore}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors inline-flex items-center gap-1 whitespace-nowrap ${
                       !hasMore || loadingMore
-                        ? darkMode
-                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                        : darkMode
-                        ? "bg-gray-800 text-gray-200 border border-gray-600 hover:bg-gray-700"
-                        : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
+                        ? "bg-paper-2 text-muted border border-rule cursor-not-allowed"
+                        : "bg-paper-2 text-ink border border-rule-2 hover:border-ink-2"
                     }`}
                   >
-                    ถัดไป →
+                    ถัดไป
+                    <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                   </button>
                 </div>
               )}
@@ -910,107 +1147,107 @@ export default function CompletedPage() {
       </div>
 
       {/* Re-consult Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-[#000000]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+      {showModal &&
+        (() => {
+          const modalNode = (
+            <div
+              className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reconsult-modal-title"
+            >
           <div
-            className={`rounded-xl shadow-xl max-w-2xl w-full p-6 border animate-scale-in ${
-              darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
-            }`}
+            ref={reconsultModalRef}
+            className="rounded-[10px] max-w-2xl w-full p-5 sm:p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
-                Re-consult เคส HN: {selectedCase?.hn}
+            <div className="flex items-start justify-between gap-2 mb-4 pb-3 border-b border-rule">
+              <h2 id="reconsult-modal-title" className="text-lg font-medium text-ink min-w-0 break-words">
+                Re-consult เคส <span className="measured whitespace-nowrap">HN: {selectedCase?.hn}</span>
                 {selectedCase?.firstName && (
-                  <span className={`text-sm font-normal ml-2 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>
+                  <span className="text-sm font-normal ml-2 text-muted">
                     ({[selectedCase.firstName, selectedCase.lastName].filter(Boolean).join(" ")})
                   </span>
                 )}
               </h2>
               <button
+                type="button"
+                aria-label="ปิดหน้าต่าง Re-consult"
                 onClick={() => setShowModal(false)}
-                className={`transition-colors ${darkMode ? "text-gray-400 hover:text-red-400" : "text-[#014167] hover:text-[#E55143]"}`}
+                className="transition-colors text-muted hover:text-bad shrink-0"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className={`mb-4 p-3 rounded-lg border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-white border-[#C7CFDA]"}`}>
-              <p className={`text-xs font-semibold mb-1 ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>ปัญหาเดิม:</p>
-              <p className={`text-sm whitespace-pre-wrap ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{selectedCase?.problem}</p>
+            <div className="mb-4 p-3 rounded-[6px] border border-rule bg-paper-3 min-w-0">
+              <p className="text-xs font-medium mb-1 text-muted">ปัญหาเดิม:</p>
+              <p className="text-sm whitespace-pre-wrap break-words text-ink">{selectedCase?.problem}</p>
             </div>
             <div className="mb-4">
-              <label className={`block text-sm font-bold mb-2 ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
-                แผนกที่ต้องการส่งปรึกษา <span className="text-[#E55143]">*</span>
+              <label className="block text-sm font-medium mb-2 text-ink-2">
+                แผนกที่ต้องการส่งปรึกษา <span className="text-bad">*</span>
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {ALL_DEPARTMENTS.map((dept) => (
                   <button
                     key={dept}
                     type="button"
+                    aria-pressed={selectedDepartments.includes(dept)}
                     onClick={() => toggleDepartment(dept)}
-                    className={`px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
+                    className={`px-3 py-2 rounded-[6px] font-medium text-sm transition-colors duration-200 border whitespace-nowrap ${
                       selectedDepartments.includes(dept)
-                        ? "bg-[#699D5D] text-white shadow-sm"
-                        : darkMode
-                        ? "bg-gray-700 text-gray-200 hover:bg-gray-600 border border-gray-600"
-                        : "bg-white text-[#014167] hover:bg-[#C7CFDA]/30 border border-[#C7CFDA]"
+                        ? "bg-ok text-paper border-ok"
+                        : "bg-paper-3 text-ink-2 hover:text-ink border-rule-2"
                     }`}
                   >
                     {dept}
                   </button>
                 ))}
               </div>
-              <p className={`text-xs font-medium mt-2 ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
+              <p className="text-xs mt-2 text-muted">
                 เลือกได้หลายแผนก (คลิกเพื่อเลือก/ยกเลิก)
               </p>
             </div>
             <div className="mb-4">
-              <label className={`block text-sm font-bold mb-2 ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>
-                ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-[#E55143]">*</span>
+              <label htmlFor="reconsult-problem" className="block text-sm font-medium mb-2 text-ink-2">
+                ปัญหาใหม่ / อาการเพิ่มเติม <span className="text-bad">*</span>
               </label>
               <textarea
+                id="reconsult-problem"
                 value={newProblem}
                 onChange={(e) => setNewProblem(e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-[#699D5D] focus:ring-2 focus:ring-[#699D5D]/20 transition-all duration-200 min-h-[120px] text-sm ${
-                  darkMode
-                    ? "bg-gray-900 border-gray-700 text-gray-200 placeholder-gray-500"
-                    : "bg-white border-[#C7CFDA] text-[#014167] placeholder-[#C7CFDA]"
-                }`}
-                placeholder="ระบุปัญหาใหม่หรืออาการเพิ่มเติมที่ต้องการปรึกษา..."
+                className="w-full px-3 py-2 border border-rule-2 rounded-[6px] bg-paper-3 text-ink placeholder-muted focus:outline-none focus:border-focus focus:ring-2 focus:ring-focus/25 transition-colors duration-200 min-h-[120px] text-sm"
+                placeholder="ระบุปัญหาใหม่หรืออาการเพิ่มเติมที่ต้องการปรึกษา…"
                 required
               />
             </div>
-            <div className="flex gap-3 justify-end">
+            <div className="flex flex-wrap gap-3 justify-end">
               <button
+                type="button"
                 onClick={() => setShowModal(false)}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all text-sm ${
-                  darkMode
-                    ? "bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600"
-                    : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
-                }`}
+                className="px-4 py-2 rounded-[6px] font-medium transition-colors text-sm bg-paper-3 text-ink border border-rule-2 hover:border-ink-2 whitespace-nowrap"
               >
                 ยกเลิก
               </button>
               <button
+                type="button"
                 onClick={handleReConsult}
                 disabled={isUpdating || !newProblem.trim() || selectedDepartments.length === 0}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
+                className={`px-4 py-2 rounded-[6px] font-medium text-sm flex items-center gap-2 transition-opacity whitespace-nowrap ${
                   isUpdating || !newProblem.trim() || selectedDepartments.length === 0
-                    ? darkMode
-                      ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                      : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                    : "bg-[#699D5D] text-white hover:shadow-md"
+                    ? "bg-paper-3 text-muted border border-rule cursor-not-allowed"
+                    : "bg-ok text-paper hover:opacity-90"
                 }`}
               >
                 {isUpdating ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>กำลังส่ง...</span>
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                    <span>กำลังส่ง…</span>
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -1025,114 +1262,143 @@ export default function CompletedPage() {
             </div>
           </div>
         </div>
-      )}
+          );
+          return typeof document !== "undefined"
+            ? createPortal(modalNode, document.body)
+            : modalNode;
+        })()}
 
       {/* Export Options Modal */}
-      {showExportModal && (
-        <div 
-          className="fixed inset-0 bg-[#000000]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="export-modal-title"
-        >
+      {showExportModal &&
+        (() => {
+          const visibleExportWarning =
+            exportStatusWarning &&
+            exportStatusWarning.startDate === exportStartDate &&
+            exportStatusWarning.endDate === exportEndDate
+              ? exportStatusWarning
+              : null;
+          const exportModalNode = (
+            <div 
+              className="fixed inset-0 bg-paper-3/80 flex items-center justify-center z-[110] p-4 animate-fade-in overscroll-contain"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="export-modal-title"
+            >
           <div
             ref={exportModalRef}
-            className={`rounded-xl shadow-xl max-w-md w-full p-6 border animate-scale-in ${
-              darkMode ? "bg-gray-800 border-gray-700" : "bg-[#C7CFDA] border-[#C7CFDA]/30"
-            }`}
+            className="rounded-[10px] max-w-md w-full p-6 border border-rule bg-paper-2 animate-scale-in overscroll-contain max-h-[90vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 id="export-modal-title" className={`text-xl font-bold ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-rule">
+              <h2 id="export-modal-title" className="text-lg font-medium text-ink">
                 Export ข้อมูล Excel
               </h2>
               <button
                 type="button"
                 aria-label="ปิดหน้าต่าง Export"
-                onClick={() => setShowExportModal(false)}
-                className={`transition-colors ${darkMode ? "text-gray-400 hover:text-red-400" : "text-[#014167] hover:text-[#E55143]"}`}
+                onClick={closeExportModal}
+                className="transition-colors text-muted hover:text-bad"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
             <div className="space-y-4 mb-6">
-              <p className={`text-sm ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
+              <p className="text-sm text-ink-2">
                 กรุณาเลือกช่วงวันที่เริ่มต้นและสิ้นสุดของข้อมูลที่ต้องการ Export
               </p>
               {!isRangeValid && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-400 font-medium animate-fade-in">
-                  🚨 Export range is restricted to a maximum of 31 days to preserve database bandwidth.
+                <div className="bg-bad-soft border border-bad/40 rounded-[6px] p-3 text-xs text-bad font-medium animate-fade-in flex items-start gap-2">
+                  <svg aria-hidden="true" className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Export range is restricted to a maximum of 31 days to preserve database bandwidth.</span>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="exportStartDate" className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                  <label htmlFor="exportStartDate" className="text-xs font-medium mb-1 block text-ink-2">
                     ตั้งแต่วันที่
                   </label>
                   <input
                     id="exportStartDate"
                     type="date"
+                    disabled={isExporting}
                     value={exportStartDate}
-                    onChange={(e) => setExportStartDate(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
-                      darkMode
-                        ? "bg-gray-900 border-gray-700 text-gray-200"
-                        : "bg-white border-[#C7CFDA] text-[#014167]"
-                    }`}
+                    onChange={(e) => {
+                      const nextStart = e.target.value;
+                      exportDatesRef.current = { ...exportDatesRef.current, start: nextStart };
+                      setExportStatusWarning(null);
+                      setExportStartDate(nextStart);
+                    }}
+                    className="w-full px-3 py-2 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div>
-                  <label htmlFor="exportEndDate" className={`text-xs font-bold mb-1 block ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                  <label htmlFor="exportEndDate" className="text-xs font-medium mb-1 block text-ink-2">
                     ถึงวันที่
                   </label>
                   <input
                     id="exportEndDate"
                     type="date"
+                    disabled={isExporting}
                     value={exportEndDate}
-                    onChange={(e) => setExportEndDate(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-[#699D5D]/20 transition-all ${
-                      darkMode
-                        ? "bg-gray-900 border-gray-700 text-gray-200"
-                        : "bg-white border-[#C7CFDA] text-[#014167]"
-                    }`}
+                    onChange={(e) => {
+                      const nextEnd = e.target.value;
+                      exportDatesRef.current = { ...exportDatesRef.current, end: nextEnd };
+                      setExportStatusWarning(null);
+                      setExportEndDate(nextEnd);
+                    }}
+                    className="w-full px-3 py-2 rounded-[6px] text-sm border border-rule-2 bg-paper-3 text-ink measured focus:outline-none focus:ring-2 focus:ring-focus transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>
+              <div role="status" aria-live="polite" aria-atomic="true">
+                {visibleExportWarning && (
+                  <div
+                    className={`${
+                      visibleExportWarning.tone === "error"
+                        ? "bg-bad-soft border-bad/40 text-bad"
+                        : "bg-accent-soft border-accent/40 text-accent"
+                    } border rounded-[6px] p-3 text-xs font-medium animate-fade-in flex items-start gap-2`}
+                  >
+                    <svg aria-hidden="true" className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{visibleExportWarning.message}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="flex gap-3 justify-end">
+            <div className="flex flex-wrap gap-3 justify-end">
               <button
-                onClick={() => setShowExportModal(false)}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all text-sm ${
-                  darkMode
-                    ? "bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600"
-                    : "bg-white text-[#014167] border border-[#C7CFDA] hover:bg-[#C7CFDA]/30"
-                }`}
+                type="button"
+                onClick={closeExportModal}
+                className="px-4 py-2 rounded-[6px] font-medium transition-colors text-sm bg-paper-3 text-ink border border-rule-2 hover:border-ink-2 whitespace-nowrap"
               >
                 ยกเลิก
               </button>
               <button
+                type="button"
                 onClick={handleExportExcel}
                 disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate || !isRangeValid}
                 aria-disabled={isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate || !isRangeValid}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-all ${
+                className={`px-4 py-2 rounded-[6px] font-medium text-sm flex items-center gap-2 transition-opacity whitespace-nowrap ${
                   isExporting || !exportStartDate || !exportEndDate || exportStartDate > exportEndDate || !isRangeValid
-                    ? darkMode
-                      ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                      : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                    : "bg-[#699D5D] text-white hover:shadow-md hover:-translate-y-0.5"
+                    ? "bg-paper-3 text-muted border border-rule cursor-not-allowed"
+                    : "bg-ok text-paper hover:opacity-90"
                 }`}
               >
                 {isExporting ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>กำลังดึงข้อมูล...</span>
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                    <span>กำลังดึงข้อมูล…</span>
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                     <span>Export</span>
@@ -1142,7 +1408,11 @@ export default function CompletedPage() {
             </div>
           </div>
         </div>
-      )}
+          );
+          return typeof document !== "undefined"
+            ? createPortal(exportModalNode, document.body)
+            : exportModalNode;
+        })()}
     </div>
   );
 }

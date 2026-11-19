@@ -33,7 +33,7 @@ const {
   mockQuery: vi.fn((...args: unknown[]) => args[0]),
   mockWhere: vi.fn(() => ({ type: "where" })),
   mockOrderBy: vi.fn(() => ({ type: "orderBy" })),
-  mockLimit: vi.fn(() => ({ type: "limit" })),
+  mockLimit: vi.fn((n?: number) => ({ type: "limit", n })),
   mockStartAfter: vi.fn(() => ({ type: "startAfter" })),
 }));
 
@@ -82,10 +82,15 @@ function makeDocSnapshot(id: string, data: Record<string, unknown> | null, exist
   };
 }
 
-function makeQuerySnapshot(docs: ReturnType<typeof makeDocSnapshot>[]) {
+function makeQuerySnapshot(
+  docs: ReturnType<typeof makeDocSnapshot>[],
+  fromCache = false,
+  hasPendingWrites = false
+) {
   return {
     empty: docs.length === 0,
     docs,
+    metadata: { fromCache, hasPendingWrites },
     forEach: (cb: (doc: ReturnType<typeof makeDocSnapshot>) => void) => docs.forEach(cb),
   };
 }
@@ -310,8 +315,13 @@ describe("updateConsult", () => {
   describe("with function updater (awaitRemote: false — optimistic path)", () => {
     it("does NOT await updateDoc — fires in background", async () => {
       mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
-      // Return a never-resolving promise to verify we don't wait for it
-      mockUpdateDoc.mockReturnValue(new Promise(() => {}));
+      // Return a pending promise to verify we don't wait for it, then settle so later tests aren't affected
+      let resolveUpdate!: () => void;
+      mockUpdateDoc.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveUpdate = resolve;
+        })
+      );
 
       const result = await updateConsult(
         "case-1",
@@ -325,6 +335,7 @@ describe("updateConsult", () => {
       expect(result.backgroundPromise).toBeDefined();
       // updateDoc was called but we didn't await it
       expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+      resolveUpdate();
     });
 
     it("calls onBackgroundError when background updateDoc rejects", async () => {
@@ -399,7 +410,12 @@ describe("updateConsult", () => {
 
   describe("with plain object updates (awaitRemote: false)", () => {
     it("fires updateDoc without awaiting and returns null", async () => {
-      mockUpdateDoc.mockReturnValue(new Promise(() => {}));
+      let resolveUpdate!: () => void;
+      mockUpdateDoc.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveUpdate = resolve;
+        })
+      );
       const result = await updateConsult(
         "case-1",
         { status: "completed" as const },
@@ -409,6 +425,7 @@ describe("updateConsult", () => {
       expect(result.isQueued).toBe(true);
       expect(result.backgroundPromise).toBeDefined();
       expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+      resolveUpdate();
     });
 
     it("calls onBackgroundError when fire-and-forget updateDoc rejects", async () => {
@@ -506,8 +523,13 @@ describe("transactionalUpdateConsult", () => {
     it("returns optimistic result immediately while transaction runs in background", async () => {
       // Pre-read for optimistic response
       mockGetDoc.mockResolvedValue(makeDocSnapshot("case-1", existingData));
-      // Transaction never resolves during this test
-      mockRunTransaction.mockReturnValue(new Promise(() => {}));
+      // Transaction stays pending during assertions, then resolves cleanly
+      let resolveTx!: (val: unknown) => void;
+      mockRunTransaction.mockReturnValue(
+        new Promise((resolve) => {
+          resolveTx = resolve;
+        })
+      );
 
       const result = await transactionalUpdateConsult(
         "case-1",
@@ -519,6 +541,7 @@ describe("transactionalUpdateConsult", () => {
       expect(result.isQueued).toBe(true);
       expect(result.applied).toBe(true);
       expect(result.backgroundPromise).toBeDefined();
+      resolveTx({ applied: true, consult: null });
     });
 
     it("calls onBackgroundError with TRANSACTION_CONDITION_NOT_MET when condition not met in background", async () => {
@@ -760,7 +783,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
   it("returns all consults and truncated=false when under MAX_RESULTS", async () => {
     const docs = Array.from({ length: 3 }, (_, i) =>
-      makeDocSnapshot(`c${i}`, makeConsultData(`HN${i}`, `2024-01-0${i + 1}T00:00:00.000Z`))
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, `2024-01-0${i + 1}T00:00:00.000Z`))
     );
     mockGetDocs.mockResolvedValue(makeQuerySnapshot(docs));
 
@@ -775,10 +798,10 @@ describe("fetchAllCompletedConsultsForExport", () => {
     // First batch returns BATCH_SIZE (1000) docs
     const BATCH_SIZE = 1000;
     const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
-      makeDocSnapshot(`c${i}`, makeConsultData(`HN${i}`, `2024-01-01T00:00:00.000Z`))
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, `2024-01-01T00:00:00.000Z`))
     );
     const secondBatch = Array.from({ length: 2 }, (_, i) =>
-      makeDocSnapshot(`c${BATCH_SIZE + i}`, makeConsultData(`HN${BATCH_SIZE + i}`, `2024-01-02T00:00:00.000Z`))
+      makeDocSnapshot(`c${BATCH_SIZE + i}`, makeConsultData(`${BATCH_SIZE + i}`, `2024-01-02T00:00:00.000Z`))
     );
 
     mockGetDocs
@@ -789,7 +812,8 @@ describe("fetchAllCompletedConsultsForExport", () => {
 
     expect(mockGetDocs).toHaveBeenCalledTimes(2);
     expect(result.consults).toHaveLength(BATCH_SIZE + 2);
-    expect(result.truncated).toBe(false);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
     expect(mockStartAfter).toHaveBeenCalledTimes(1);
   });
 
@@ -798,12 +822,20 @@ describe("fetchAllCompletedConsultsForExport", () => {
     const MAX_RESULTS = 50000;
     const batches = Math.ceil(MAX_RESULTS / BATCH_SIZE);
 
-    // Every batch is full, so it'll keep fetching until MAX_RESULTS reached
-    const fullBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
-      makeDocSnapshot(`c${i}`, makeConsultData(`HN${i}`, `2024-01-01T00:00:00.000Z`))
-    );
-    // Mock the same batch repeatedly
-    mockGetDocs.mockResolvedValue(makeQuerySnapshot(fullBatch));
+    // Every batch is full with distinct document IDs, so it keeps fetching until MAX_RESULTS reached
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      const batchIdx = callIndex;
+      callIndex += 1;
+      return makeQuerySnapshot(
+        Array.from({ length: BATCH_SIZE }, (_, i) =>
+          makeDocSnapshot(
+            `b${batchIdx}-c${i}`,
+            makeConsultData(`${batchIdx * BATCH_SIZE + i}`, "2024-01-01T00:00:00.000Z")
+          )
+        )
+      );
+    });
 
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
@@ -814,8 +846,330 @@ describe("fetchAllCompletedConsultsForExport", () => {
     expect(mockGetDocs).toHaveBeenCalledTimes(batches + 1);
   });
 
+  it("stops reading at the scan budget when invalid documents keep valid rows below MAX_RESULTS", async () => {
+    const BATCH_SIZE = 1000;
+    const VALID_PER_BATCH = 900;
+    const TOTAL_BATCHES = 55; // 55 * 900 = 49,500 valid rows (< 50,000)
+
+    const mixedBatches = Array.from({ length: TOTAL_BATCHES }, (_, batchIdx) =>
+      Array.from({ length: BATCH_SIZE }, (_, docIdx) => {
+        const id = `b${batchIdx}-c${docIdx}`;
+        if (docIdx < VALID_PER_BATCH) {
+          return makeDocSnapshot(id, makeConsultData(`${batchIdx * BATCH_SIZE + docIdx}`, "2024-01-01T00:00:00.000Z"));
+        }
+        return makeDocSnapshot(id, {
+          firstName: "",
+          lastName: "",
+          room: "NT",
+          problem: "P",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          status: "completed",
+          isUrgent: false,
+          departments: {},
+        });
+      })
+    );
+
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      if (callIndex === 51) {
+        callIndex += 1;
+        // 52nd call is the bounded limit(1) lookahead probe
+        return makeQuerySnapshot([mixedBatches[51][0]]);
+      }
+      if (callIndex >= mixedBatches.length) {
+        return makeQuerySnapshot([]);
+      }
+      const docs = mixedBatches[callIndex];
+      callIndex += 1;
+      return makeQuerySnapshot(docs);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("limit_exceeded");
+    expect(result.consults).toHaveLength(51 * VALID_PER_BATCH);
+    // 51 full batches (51,000 scanned) + 1 bounded lookahead read = 52 total reads
+    expect(mockGetDocs).toHaveBeenCalledTimes(52);
+    expect(mockLimit).toHaveBeenNthCalledWith(52, 1);
+    expect(mockStartAfter).toHaveBeenLastCalledWith(mixedBatches[50][BATCH_SIZE - 1]);
+  });
+
+  it("marks export as truncated when empty lookahead snapshot comes from cache", async () => {
+    const BATCH_SIZE = 1000;
+    const VALID_PER_BATCH = 900;
+    const EXACT_LIMIT_BATCHES = 51;
+
+    const mixedBatches = Array.from({ length: EXACT_LIMIT_BATCHES }, (_, batchIdx) =>
+      Array.from({ length: BATCH_SIZE }, (_, docIdx) => {
+        const id = `b${batchIdx}-c${docIdx}`;
+        if (docIdx < VALID_PER_BATCH) {
+          return makeDocSnapshot(id, makeConsultData(`${batchIdx * BATCH_SIZE + docIdx}`, "2024-01-01T00:00:00.000Z"));
+        }
+        return makeDocSnapshot(id, {
+          firstName: "",
+          lastName: "",
+          room: "NT",
+          problem: "P",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          status: "completed",
+          isUrgent: false,
+          departments: {},
+        });
+      })
+    );
+
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      if (callIndex >= mixedBatches.length) {
+        return makeQuerySnapshot([], true);
+      }
+      const docs = mixedBatches[callIndex];
+      callIndex += 1;
+      return makeQuerySnapshot(docs);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+    expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
+    expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
+  });
+
+  it("preserves collected rows and marks export as truncated if lookahead fails", async () => {
+    const BATCH_SIZE = 1000;
+    const VALID_PER_BATCH = 900;
+    const EXACT_LIMIT_BATCHES = 51;
+
+    const mixedBatches = Array.from({ length: EXACT_LIMIT_BATCHES }, (_, batchIdx) =>
+      Array.from({ length: BATCH_SIZE }, (_, docIdx) => {
+        const id = `b${batchIdx}-c${docIdx}`;
+        if (docIdx < VALID_PER_BATCH) {
+          return makeDocSnapshot(id, makeConsultData(`${batchIdx * BATCH_SIZE + docIdx}`, "2024-01-01T00:00:00.000Z"));
+        }
+        return makeDocSnapshot(id, {
+          firstName: "",
+          lastName: "",
+          room: "NT",
+          problem: "P",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          status: "completed",
+          isUrgent: false,
+          departments: {},
+        });
+      })
+    );
+
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      if (callIndex >= mixedBatches.length) {
+        throw new Error("Lookahead network error");
+      }
+      const docs = mixedBatches[callIndex];
+      callIndex += 1;
+      return makeQuerySnapshot(docs);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+    expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
+    expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
+  });
+
+  it("retains server-confirmed rows and stops without advancing cursor when an ordinary batch comes from cache", async () => {
+    const BATCH_SIZE = 1000;
+    const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, "2024-01-01T00:00:00.000Z"))
+    );
+    const cachedSecondBatch = [
+      makeDocSnapshot("cached-1", makeConsultData("9999", "2024-01-02T00:00:00.000Z")),
+    ];
+
+    mockGetDocs
+      .mockResolvedValueOnce(makeQuerySnapshot(firstBatch, false))
+      .mockResolvedValueOnce(makeQuerySnapshot(cachedSecondBatch, true));
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(2);
+    expect(mockStartAfter).toHaveBeenCalledTimes(1);
+    expect(mockStartAfter).toHaveBeenCalledWith(firstBatch[BATCH_SIZE - 1]);
+    expect(result.consults).toHaveLength(BATCH_SIZE);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+  });
+
+  it("retains server-confirmed rows and marks export incomplete when a subsequent ordinary batch read rejects", async () => {
+    const BATCH_SIZE = 1000;
+    const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, "2024-01-01T00:00:00.000Z"))
+    );
+
+    mockGetDocs
+      .mockResolvedValueOnce(makeQuerySnapshot(firstBatch, false))
+      .mockRejectedValueOnce(Object.assign(new Error("Missing or insufficient permissions"), { code: "permission-denied" }));
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(2);
+    expect(mockStartAfter).toHaveBeenCalledTimes(1);
+    expect(mockStartAfter).toHaveBeenCalledWith(firstBatch[BATCH_SIZE - 1]);
+    expect(result.consults).toHaveLength(BATCH_SIZE);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+  });
+
+  it("propagates rejection when the initial ordinary batch read rejects", async () => {
+    mockGetDocs.mockRejectedValueOnce(new Error("Initial batch failure"));
+
+    await expect(
+      fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31")
+    ).rejects.toThrow("Initial batch failure");
+  });
+
+  it("stops scanning after a pending batch read completes when the cancellation signal is aborted", async () => {
+    const BATCH_SIZE = 1000;
+    const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, "2024-01-01T00:00:00.000Z"))
+    );
+    const controller = new AbortController();
+
+    mockGetDocs.mockImplementationOnce(async () => {
+      controller.abort();
+      return makeQuerySnapshot(firstBatch, false);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31", {
+      signal: controller.signal,
+    });
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(1);
+    expect(result.consults).toEqual([]);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+  });
+
+  it("includes a re-consulted case whose createdAt moves forward during ascending pagination without duplicating already scanned cases", async () => {
+    const BATCH_SIZE = 1000;
+    const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+      makeDocSnapshot(`c${i}`, makeConsultData(`${i}`, "2024-01-01T00:00:00.000Z"))
+    );
+    const secondBatch = [
+      // Previously unvisited case whose createdAt was moved later by re-consult & re-completion
+      makeDocSnapshot("reconsulted-tail", makeConsultData("5001", "2024-01-20T12:00:00.000Z")),
+      // Previously scanned case updated forward and seen again in second batch -> should deduplicate
+      makeDocSnapshot("c0", makeConsultData("0", "2024-01-21T12:00:00.000Z")),
+    ];
+
+    mockGetDocs
+      .mockResolvedValueOnce(makeQuerySnapshot(firstBatch, false))
+      .mockResolvedValueOnce(makeQuerySnapshot(secondBatch, false));
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(mockOrderBy).toHaveBeenCalledTimes(2);
+    expect(mockOrderBy).toHaveBeenNthCalledWith(1, "createdAt", "asc");
+    expect(mockOrderBy).toHaveBeenNthCalledWith(2, "createdAt", "asc");
+    expect(mockStartAfter).toHaveBeenCalledWith(firstBatch[BATCH_SIZE - 1]);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+    expect(result.consults).toHaveLength(BATCH_SIZE + 1);
+    expect(result.consults.find((c) => c.id === "reconsulted-tail")?.hn).toBe("5001");
+    expect(result.consults.filter((c) => c.id === "c0")).toHaveLength(1);
+    expect(result.consults.find((c) => c.id === "c0")?.createdAt).toBe("2024-01-21T12:00:00.000Z");
+  });
+
+  it("marks single-page export as unconfirmed_completeness when snapshot metadata has hasPendingWrites", async () => {
+    const docs = [
+      makeDocSnapshot("c1", makeConsultData("1", "2024-01-01T00:00:00.000Z")),
+    ];
+    mockGetDocs.mockResolvedValueOnce(makeQuerySnapshot(docs, false, true));
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.consults).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+  });
+
+  it("marks single-page export as unconfirmed_completeness when an optimistic updateConsult write overlaps", async () => {
+    mockGetDoc.mockResolvedValueOnce(
+      makeDocSnapshot("reconsult-1", makeConsultData("111", "2024-01-05T00:00:00.000Z"))
+    );
+    let resolveUpdate!: () => void;
+    mockUpdateDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveUpdate = resolve;
+      })
+    );
+
+    await updateConsult(
+      "reconsult-1",
+      () => ({ status: "pending" as const, createdAt: "2024-01-20T00:00:00.000Z" }),
+      { awaitRemote: false }
+    );
+
+    mockGetDocs.mockResolvedValueOnce(
+      makeQuerySnapshot([makeDocSnapshot("c2", makeConsultData("222", "2024-01-06T00:00:00.000Z"))], false, false)
+    );
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.consults).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+
+    resolveUpdate();
+  });
+
+  it("stops at the scan limit with unconfirmed_completeness rather than limit_exceeded when lookahead is empty", async () => {
+    const BATCH_SIZE = 1000;
+    const VALID_PER_BATCH = 900;
+    const EXACT_LIMIT_BATCHES = 51; // 51 * 1000 = 51,000 scanned, 45,900 valid rows
+
+    const mixedBatches = Array.from({ length: EXACT_LIMIT_BATCHES }, (_, batchIdx) =>
+      Array.from({ length: BATCH_SIZE }, (_, docIdx) => {
+        const id = `b${batchIdx}-c${docIdx}`;
+        if (docIdx < VALID_PER_BATCH) {
+          return makeDocSnapshot(id, makeConsultData(`${batchIdx * BATCH_SIZE + docIdx}`, "2024-01-01T00:00:00.000Z"));
+        }
+        return makeDocSnapshot(id, {
+          firstName: "",
+          lastName: "",
+          room: "NT",
+          problem: "P",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          status: "completed",
+          isUrgent: false,
+          departments: {},
+        });
+      })
+    );
+
+    let callIndex = 0;
+    mockGetDocs.mockImplementation(async () => {
+      if (callIndex >= mixedBatches.length) {
+        return makeQuerySnapshot([]);
+      }
+      const docs = mixedBatches[callIndex];
+      callIndex += 1;
+      return makeQuerySnapshot(docs);
+    });
+
+    const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
+
+    expect(result.truncated).toBe(true);
+    expect(result.truncationReason).toBe("unconfirmed_completeness");
+    expect(result.consults).toHaveLength(EXACT_LIMIT_BATCHES * VALID_PER_BATCH);
+    expect(mockGetDocs).toHaveBeenCalledTimes(EXACT_LIMIT_BATCHES + 1);
+  });
+
   it("filters out documents without hn in each batch", async () => {
-    const validDoc = makeDocSnapshot("c1", makeConsultData("HN1", "2024-01-01T00:00:00.000Z"));
+    const validDoc = makeDocSnapshot("c1", makeConsultData("1", "2024-01-01T00:00:00.000Z"));
     const noHnDoc = makeDocSnapshot("c2", {
       firstName: "",
       lastName: "",
@@ -831,7 +1185,7 @@ describe("fetchAllCompletedConsultsForExport", () => {
     const result = await fetchAllCompletedConsultsForExport("2024-01-01", "2024-01-31");
 
     expect(result.consults).toHaveLength(1);
-    expect(result.consults[0].hn).toBe("HN1");
+    expect(result.consults[0].hn).toBe("1");
   });
 });
 

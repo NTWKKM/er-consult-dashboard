@@ -27,6 +27,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
   const [flashSuccess, setFlashSuccess] = useState(false);
+  const [isRoomMenuOpen, setIsRoomMenuOpen] = useState(false);
 
   const hn = caseData.hn || "-";
   const firstName = caseData.firstName || "";
@@ -98,12 +99,12 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   return (
     <>
       <div
-        className={`transition-all duration-200 rounded-xl p-3 animate-stagger-in relative glass-panel border-l-4 ${
+        className={`transition-colors duration-200 rounded-[10px] p-3 animate-stagger-in relative bg-paper border border-rule border-l-4 ${
+          isRoomMenuOpen ? "z-30" : ""
+        } has-[[role=listbox]]:z-30 ${
           flashSuccess ? "animate-success-flash" : ""
         } ${
-          isUrgent 
-            ? "border-l-[#E55143] shadow-[0_0_15px_rgba(229,81,67,0.15)]" 
-            : darkMode ? "border-l-gray-600" : "border-l-[#699D5D]"
+          isUrgent ? "border-l-bad" : "border-l-ok"
         }`}
         style={{ animationDelay: `${animationDelay}ms` }}
       >
@@ -113,125 +114,136 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             aria-label="ยกเลิกปรึกษา"
             onClick={() => setShowCancelConfirm(true)}
             disabled={isUpdating}
-            className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 text-[10px] font-bold z-10 ${
+            className={`absolute top-2 right-2 w-6 h-6 rounded-[4px] flex items-center justify-center transition-colors duration-200 z-10 ${
               isUpdating
-                ? "bg-gray-400 text-gray-200 cursor-not-allowed"
-                : darkMode
-                ? "bg-gray-600 hover:bg-red-500 text-gray-300 hover:text-white"
-                : "bg-gray-400/80 hover:bg-red-500 text-white opacity-60 hover:opacity-100"
+                ? "bg-paper-3 text-muted cursor-not-allowed"
+                : "bg-paper-3 text-muted hover:bg-bad hover:text-paper border border-rule"
             }`}
             title="ยกเลิกปรึกษา"
           >
-            ✕
+            <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         )}
-        <div className="flex justify-between items-start mb-2">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleToggleUrgencyClick}
-              disabled={isUpdating}
-              title={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
-              aria-label={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                isUrgent ? "bg-[#E55143]" : "bg-[#699D5D]"
-              }`}
-            >
-              {isUrgent ? (
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5 text-[#FDFCDF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              )}
-            </button>
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className={`text-lg font-bold tabular-nums ${darkMode ? "text-gray-100" : "text-[#014167]"}`}>
+        <div className="flex items-start gap-2.5 min-w-0 pr-7 mb-1.5">
+          <button
+            type="button"
+            onClick={handleToggleUrgencyClick}
+            disabled={isUpdating}
+            title={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+            aria-label={isUrgent ? "เปลี่ยนเป็นเคสปกติ" : "เปลี่ยนเป็นเคส FAST TRACK"}
+            className={`w-8 h-8 shrink-0 rounded-[6px] flex items-center justify-center transition-transform duration-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              isUrgent ? "bg-bad text-paper" : "bg-ok text-paper"
+            }`}
+          >
+            {isUrgent ? (
+              <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            ) : (
+              <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            )}
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                <h3 className="text-base font-medium measured text-ink break-all">
                   {"HN: "}
                   {hn}
                 </h3>
                 {isUrgent && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-[#E55143] text-white shadow-md">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-bad text-paper shrink-0">
                     FAST
                   </span>
                 )}
               </div>
-              {fullName && (
-                <p className={`text-xs font-medium ${darkMode ? "text-gray-300" : "text-[#014167]/80"}`}>
-                  {fullName}
-                </p>
-              )}
-              <div className="flex items-center gap-1.5 text-xs flex-wrap">
-                <span className={`font-semibold ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>{departmentName}</span>
-                <span className={darkMode ? "text-gray-600" : "text-[#C7CFDA]"}>{"→"}</span>
-                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[11px] ${
-                  isResusRoom
-                    ? darkMode ? "bg-[#E55143]/15 text-[#ff7063] border border-[#E55143]/20" : "bg-[#E55143]/10 text-[#c23a2e] border border-[#E55143]/15"
-                    : darkMode ? "bg-[#699D5D]/15 text-[#86efac] border border-[#699D5D]/20" : "bg-[#699D5D]/10 text-[#4d7845] border border-[#699D5D]/15"
-                }`}>
-                  <svg aria-hidden="true" focusable="false" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                  {room ?? "-"}
-                </span>
-                <RoomTransferButton 
-                  consultId={caseId}
-                  currentRoom={room}
-                  darkMode={darkMode}
-                  disabled={isUpdating}
-                />
-              </div>
-              {Object.keys(caseData.departments).filter(
-                (d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending"
-              ).length > 0 && (
-                <div className="flex items-center gap-1 text-xs mt-1">
-                  <span className={`font-medium ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>{"แผนกอื่น:"}</span>
-                  <span className={`font-semibold underline ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                    {Object.keys(caseData.departments)
-                      .filter((d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending")
-                      .join(", ")}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {isSyncing && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-cool font-medium whitespace-nowrap">
+                    <svg aria-hidden="true" className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Syncing…
                   </span>
-                </div>
-              )}
+                )}
+                {isTerminal && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-[4px] text-xs font-medium bg-ok-soft text-ok border border-ok/30">
+                    <svg aria-hidden="true" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </span>
+                )}
+                {!isTerminal && caseData.createdAt && (
+                  <ElapsedTime createdAt={caseData.createdAt} />
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            {isSyncing && (
-              <span className="text-[9px] animate-pulse text-[#699D5D] font-bold">
-                ⏳ Syncing...
-              </span>
-            )}
-            {isTerminal && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#699D5D]/20 text-[#699D5D]">
-                ✓
-              </span>
-            )}
-            {!isTerminal && caseData.createdAt && (
-              <ElapsedTime createdAt={caseData.createdAt} />
+            {fullName && (
+              <p className="text-xs font-medium text-ink-2 break-words">
+                {fullName}
+              </p>
             )}
           </div>
         </div>
 
-        <div className={`mb-2 p-2 rounded-lg border ${darkMode ? "bg-gray-900/50 border-gray-700" : "bg-white/70 border-[#014167]/10 shadow-[inset_0_1px_3px_rgba(0,0,0,0.03)]"}`}>
-          <p className={`text-xs font-semibold mb-0.5 ${darkMode ? "text-gray-400" : "text-[#014167]/60"}`}>Dx:</p>
-          <p className={`text-sm leading-snug whitespace-pre-wrap ${darkMode ? "text-gray-200" : "text-[#014167]"}`}>{problem}</p>
+        <div className="mb-2 min-w-0">
+          <div className="flex items-center gap-1.5 text-xs flex-wrap">
+            <span className="font-medium text-ink whitespace-nowrap">{departmentName}</span>
+            <svg aria-hidden="true" className="w-3 h-3 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] font-medium text-[11px] border whitespace-nowrap ${
+              isResusRoom
+                ? "bg-bad-soft text-bad border-bad/30"
+                : "bg-ok-soft text-ok border-ok/30"
+            }`}>
+              <svg aria-hidden="true" focusable="false" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              {room ?? "-"}
+            </span>
+            <RoomTransferButton 
+              consultId={caseId}
+              currentRoom={room}
+              darkMode={darkMode}
+              onOpenChange={setIsRoomMenuOpen}
+              disabled={isUpdating}
+            />
+          </div>
+          {Object.keys(caseData.departments).filter(
+            (d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending"
+          ).length > 0 && (
+            <div className="flex items-baseline gap-1 text-xs mt-1 min-w-0 flex-wrap">
+              <span className="text-muted whitespace-nowrap">{"แผนกอื่น:"}</span>
+              <span className="font-medium underline text-ink-2 break-words">
+                {Object.keys(caseData.departments)
+                  .filter((d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending")
+                  .join(", ")}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="mb-2.5 p-2.5 rounded-[6px] border border-rule bg-paper-3 min-w-0">
+          <p className="text-xs font-medium mb-0.5 text-muted">Dx:</p>
+          <p className="text-sm leading-snug whitespace-pre-wrap break-words text-ink">{problem}</p>
         </div>
 
         <div className="flex flex-col gap-2 text-xs">
-          <div className="flex items-center justify-between">
-            <div className={`flex items-center gap-1 font-medium ${darkMode ? "text-gray-400" : "text-[#014167]"}`}>
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1 text-muted measured">
+              <svg aria-hidden="true" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span className="font-medium">{timeAgo}</span>
+              <span>{timeAgo}</span>
             </div>
             {isTerminal && (
-              <div className={`flex items-center gap-1 ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex items-center gap-1 text-ink-2 measured">
+                <svg aria-hidden="true" className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="font-semibold">{dept?.status === "cancelled" ? "ยกเลิก" : "ปิด"}: {completedTime}</span>
+                <span className="font-medium">{dept?.status === "cancelled" ? "ยกเลิก" : "ปิด"}: {completedTime}</span>
               </div>
             )}
             {(() => {
@@ -242,24 +254,32 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 
               if (milestonesToRender.length === 0) return null;
 
+              const getMilestoneTone = (label: string) => {
+                if (label === "รับ") return "text-ok";
+                if (label === "คืน ER") return "text-accent";
+                return "text-cool";
+              };
+
               return (
-                <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] sm:text-xs tracking-tight ${darkMode ? "text-gray-300" : "text-[#014167]"}`}>
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] measured">
                   {milestonesToRender.map((m, idx, arr) => (
                     <React.Fragment key={`${m.label}-${m.raw}`}>
                       <div className="flex items-center gap-1">
                         {m.icon === "check" ? (
-                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#699D5D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg aria-hidden="true" className="w-3 h-3 text-ok shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
                         ) : m.icon === "transfer" ? (
-                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg aria-hidden="true" className="w-3 h-3 text-cool shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                           </svg>
                         ) : null}
-                        <span className={`font-semibold whitespace-nowrap ${darkMode ? m.colorDark : m.colorLight}`}>{m.label} {m.time}</span>
+                        <span className={`font-medium whitespace-nowrap ${getMilestoneTone(m.label)}`}>{m.label} {m.time}</span>
                       </div>
                       {idx < arr.length - 1 && (
-                        <span className={darkMode ? "text-gray-600" : "text-[#014167]/40"}>→</span>
+                        <svg aria-hidden="true" className="w-3 h-3 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       )}
                     </React.Fragment>
                   ))}
@@ -269,9 +289,9 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
           </div>
 
           {!isTerminal && (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5 pt-1 border-t border-rule">
               {isAccepted && !isStatusSelected && !isUpdating && (
-                <div className={`text-[10px] font-bold text-center animate-pulse ${darkMode ? "text-amber-300" : "text-amber-600"}`}>
+                <div className="text-[11px] font-medium text-center text-accent">
                   กรุณาเลือกสถานะก่อนปิดเคส
                 </div>
               )}
@@ -279,24 +299,23 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 {!isAccepted ? (
                   <>
                   <button
+                    type="button"
                     onClick={handleAcceptCase}
                     disabled={isUpdating}
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 tap-feedback ${
+                    className={`flex-1 px-3 py-1.5 rounded-[6px] font-medium text-xs transition-colors duration-200 flex items-center justify-center gap-1 tap-feedback whitespace-nowrap ${
                       isUpdating
-                        ? darkMode
-                          ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                          : "bg-[#C7CFDA] text-[#014167] cursor-not-allowed"
-                        : "bg-[#699D5D] text-white hover:shadow-lg glow-hover"
+                        ? "bg-paper-3 text-muted cursor-not-allowed border border-rule"
+                        : "bg-ok text-paper hover:opacity-90"
                     }`}
                   >
                     {isUpdating ? (
                       <>
-                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span>กำลังรับ...</span>
+                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        <span>กำลังรับ…</span>
                       </>
                     ) : (
                       <>
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                         <span>รับเคส</span>
@@ -304,14 +323,11 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                     )}
                   </button>
                   <button
+                    type="button"
                     disabled
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs cursor-not-allowed flex items-center justify-center gap-1 ${
-                      darkMode
-                        ? "bg-gray-800 border border-dashed border-gray-600 text-gray-500"
-                        : "bg-gray-100 border border-dashed border-gray-300 text-gray-400"
-                    }`}
+                    className="flex-1 px-3 py-1.5 rounded-[6px] font-medium text-xs cursor-not-allowed flex items-center justify-center gap-1 bg-paper-3 border border-dashed border-rule-2 text-muted whitespace-nowrap"
                   >
-                    <svg className="w-3 h-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="w-3 h-3 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                     <span>ปิดเคส</span>
@@ -319,19 +335,15 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 </>
               ) : (
                 <>
-                  <div className={`flex-1 relative ${isUpdating ? "opacity-50 pointer-events-none" : ""}`}>
+                  <div className={`flex-1 min-w-0 relative ${isUpdating ? "opacity-50 pointer-events-none" : ""}`}>
                     <select
                       aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                       onChange={(e) => handleStatusChange(e.target.value as PostAcceptStatus)}
-                      className={`w-full h-full px-2 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 appearance-none text-center cursor-pointer ${
+                      className={`w-full h-full pl-2 pr-7 py-1.5 rounded-[6px] font-medium text-xs transition-colors duration-200 appearance-none text-center cursor-pointer border ${
                         actionStatus && actionStatus !== ACCEPT_STATUS
-                          ? darkMode
-                            ? "bg-amber-500/20 text-amber-300 border border-amber-500"
-                            : "bg-amber-400/20 text-amber-700 border border-amber-500"
-                          : darkMode
-                          ? "bg-amber-500/30 text-amber-300 border border-amber-500/50"
-                          : "bg-amber-400/30 text-amber-700 border border-amber-500/50"
+                          ? "bg-accent-soft text-accent border-accent"
+                          : "bg-paper-3 text-ink border-rule-2"
                       }`}
                     >
                       <option value="" disabled>
@@ -343,35 +355,30 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                         </option>
                       ))}
                     </select>
-                    <div
-                      className={`pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 ${
-                        darkMode ? "text-amber-400" : "text-amber-600"
-                      }`}
-                    >
-                      <svg className="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-accent">
+                      <svg aria-hidden="true" className="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                         <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
                       </svg>
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setShowConfirm(true)}
                     disabled={isUpdating || !isStatusSelected}
-                    className={`flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1 tap-feedback ${
+                    className={`flex-1 px-3 py-1.5 rounded-[6px] font-medium text-xs transition-colors duration-200 flex items-center justify-center gap-1 tap-feedback whitespace-nowrap ${
                       isUpdating || !isStatusSelected
-                        ? darkMode
-                          ? "bg-gray-700 text-gray-500 cursor-not-allowed border border-dashed border-gray-600"
-                          : "bg-gray-100 text-gray-400 cursor-not-allowed border border-dashed border-gray-300"
-                        : "bg-[#E55143] text-white hover:shadow-lg glow-hover"
+                        ? "bg-paper-3 text-muted cursor-not-allowed border border-dashed border-rule-2"
+                        : "bg-bad text-paper hover:opacity-90"
                     }`}
                   >
                     {isUpdating ? (
                       <>
-                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span>กำลังปิด...</span>
+                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        <span>กำลังปิด…</span>
                       </>
                     ) : (
                       <>
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                         <span>ปิดเคส</span>
