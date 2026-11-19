@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type UpdateData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type QueryConstraint, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
@@ -201,37 +201,69 @@ export async function fetchCompletedConsultsPage(
  */
 export const MAX_HN_SEARCH_RESULTS = 100;
 
+export interface SearchCompletedConsultsResult {
+    consults: Consult[];
+    truncated: boolean;
+    hasMore: boolean;
+    lastDoc: QueryDocumentSnapshot<DocumentData> | null;
+}
+
 export async function searchCompletedConsults(
     searchHN?: string,
-    filterDate?: string
-): Promise<Consult[]> {
+    filterDate?: string,
+    lastDoc?: QueryDocumentSnapshot<DocumentData>
+): Promise<SearchCompletedConsultsResult> {
     const database = requireDb();
     const trimmedHN = searchHN?.trim() ?? "";
-    let consults: Consult[] = [];
 
-    // If searching by HN, query by prefix with server-side status filter and bounded limit
-    // to protect Firebase Spark Plan daily read quotas (50k reads/day).
+    // If searching by HN, query by prefix with server-side status (and optional date bounds)
+    // before applying a bounded limit to protect Firebase Spark Plan daily read quotas (50k reads/day).
     if (trimmedHN) {
-        const q = query(
-            collection(database, COLLECTION_NAME),
+        const constraints: QueryConstraint[] = [
+            where("status", "==", "completed"),
             where("hn", ">=", trimmedHN),
             where("hn", "<", trimmedHN + "\uf8ff"),
-            where("status", "==", "completed"),
-            limit(MAX_HN_SEARCH_RESULTS)
-        );
-        const snapshot = await getDocs(q);
+        ];
 
-        consults = snapshot.docs
+        if (filterDate) {
+            const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
+            constraints.push(
+                where("createdAt", ">=", start),
+                where("createdAt", "<", endExclusive)
+            );
+        }
+
+        // Preserve Firestore inequality ordering: HN range first, then createdAt when date-bounded
+        constraints.push(orderBy("hn", "asc"));
+        if (filterDate) {
+            constraints.push(orderBy("createdAt", "desc"));
+        }
+        if (lastDoc) {
+            constraints.push(startAfter(lastDoc));
+        }
+        constraints.push(limit(MAX_HN_SEARCH_RESULTS + 1));
+
+        const q = query(collection(database, COLLECTION_NAME), ...constraints);
+        const snapshot = await getDocs(q);
+        const hasMore = snapshot.docs.length > MAX_HN_SEARCH_RESULTS;
+        const pageDocs = hasMore ? snapshot.docs.slice(0, MAX_HN_SEARCH_RESULTS) : snapshot.docs;
+        const nextCursor = hasMore ? (pageDocs[pageDocs.length - 1] ?? null) : null;
+
+        let consults = pageDocs
             .map(mapDocToConsult)
             .filter((c): c is Consult => c !== null && Boolean(c.hn));
-
 
         if (filterDate) {
             const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
             consults = consults.filter(c => c.createdAt && c.createdAt >= start && c.createdAt < endExclusive);
         }
 
-        return consults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return {
+            consults: consults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+            truncated: hasMore,
+            hasMore,
+            lastDoc: nextCursor,
+        };
     }
 
     // If only filtering by date, use the existing status + createdAt index
@@ -247,13 +279,22 @@ export async function searchCompletedConsults(
         );
         
         const snapshot = await getDocs(q);
-        return snapshot.docs
-            .map(mapDocToConsult)
-            .filter((c): c is Consult => c !== null && Boolean(c.hn));
-
+        return {
+            consults: snapshot.docs
+                .map(mapDocToConsult)
+                .filter((c): c is Consult => c !== null && Boolean(c.hn)),
+            truncated: false,
+            hasMore: false,
+            lastDoc: null,
+        };
     }
 
-    return [];
+    return {
+        consults: [],
+        truncated: false,
+        hasMore: false,
+        lastDoc: null,
+    };
 }
 
 export type ExportTruncationReason = "limit_exceeded" | "unconfirmed_completeness";
@@ -270,6 +311,40 @@ export function isPermissionDeniedError(err: unknown): boolean {
 
 const pendingOptimisticWrites = new Set<Promise<unknown>>();
 let optimisticWriteSeq = 0;
+
+export function hasPendingOptimisticWrites(): boolean {
+    return pendingOptimisticWrites.size > 0;
+}
+
+export interface RetainedSubmitDraft {
+    consult: Consult;
+    status: "pending" | "failed";
+    error?: unknown;
+}
+
+const retainedSubmitDrafts = new Map<string, RetainedSubmitDraft>();
+
+export function getLatestFailedSubmitDraft(): Consult | null {
+    let latest: Consult | null = null;
+    for (const entry of retainedSubmitDrafts.values()) {
+        if (entry.status === "failed") {
+            latest = entry.consult;
+        }
+    }
+    return latest;
+}
+
+export function getRetainedSubmitDraft(id: string): RetainedSubmitDraft | undefined {
+    return retainedSubmitDrafts.get(id);
+}
+
+export function clearRetainedSubmitDraft(id?: string): void {
+    if (id === undefined) {
+        retainedSubmitDrafts.clear();
+        return;
+    }
+    retainedSubmitDrafts.delete(id);
+}
 
 function trackOptimisticWrite<T>(promise: Promise<T>): Promise<T> {
     optimisticWriteSeq += 1;
@@ -490,14 +565,15 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
 
 export interface AddConsultOptions {
     awaitRemote?: boolean;
-    onBackgroundError?: (error: unknown) => void;
+    onBackgroundError?: (error: unknown, draft: Consult) => void;
+    onBackgroundSuccess?: (consult: Consult) => void;
 }
 
 export async function addConsult(
     data: Omit<Consult, "id" | "createdAt">,
     options: AddConsultOptions = {}
 ): Promise<Consult> {
-    const { awaitRemote = true, onBackgroundError } = options;
+    const { awaitRemote = true, onBackgroundError, onBackgroundSuccess } = options;
     const database = requireDb();
     // Generate an ID for the new document using Firestore native doc()
     const newDocRef = doc(collection(database, COLLECTION_NAME));
@@ -508,12 +584,24 @@ export async function addConsult(
     };
 
     if (!awaitRemote) {
-        // Optimistic offline-first write: queues immediately in persistentLocalCache
-        // so hospital Wi-Fi drops never freeze the submission form.
+        // Optimistic offline-first write: retain a retryable draft until the Firestore write settles
+        // so hospital Wi-Fi drops never freeze the form or silently lose rejected submissions.
+        retainedSubmitDrafts.set(newConsult.id, { consult: newConsult, status: "pending" });
         const writePromise = trackOptimisticWrite(setDoc(newDocRef, newConsult));
-        void writePromise.catch((err) => {
-            onBackgroundError?.(err);
-        });
+        void writePromise.then(
+            () => {
+                retainedSubmitDrafts.delete(newConsult.id);
+                onBackgroundSuccess?.(newConsult);
+            },
+            (err) => {
+                retainedSubmitDrafts.set(newConsult.id, {
+                    consult: newConsult,
+                    status: "failed",
+                    error: err,
+                });
+                onBackgroundError?.(err, newConsult);
+            }
+        );
         return newConsult;
     }
 

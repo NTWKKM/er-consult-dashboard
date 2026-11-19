@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { fetchCompletedConsultsPage, transactionalUpdateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport, isPermissionDeniedError } from "@/lib/db";
+import { fetchCompletedConsultsPage, transactionalUpdateConsult, Consult, ConsultDepartment, searchCompletedConsults, fetchAllCompletedConsultsForExport, isPermissionDeniedError, MAX_HN_SEARCH_RESULTS } from "@/lib/db";
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
-import { ALL_DEPARTMENTS } from "@/lib/constants";
+import { ALL_DEPARTMENTS, MAX_PROBLEM_UPDATE_LENGTH, MAX_RECONSULT_HISTORY } from "@/lib/constants";
 import { inclusiveDayCount, MAX_EXPORT_DAYS } from "@/lib/dateUtils";
 import { buildCompletedExportRows } from "@/lib/excelExport";
 import { useToast } from "../contexts/ToastContext";
@@ -30,6 +30,10 @@ export default function CompletedPage() {
   const [searchHN, setSearchHN] = useState("");
   const [filterDept, setFilterDept] = useState("");
   const [filterDate, setFilterDate] = useState("");
+  const [searchTruncated, setSearchTruncated] = useState(false);
+
+  const trimmedSearchHN = searchHN.trim();
+  const isSearchActive = Boolean(trimmedSearchHN || filterDate);
 
   // Export
   const [showExportModal, setShowExportModal] = useState(false);
@@ -147,8 +151,6 @@ export default function CompletedPage() {
   }, [fetchPage]);
 
   const filteredCases = useMemo(() => {
-    const trimmedSearchHN = searchHN.trim();
-    const isSearchActive = Boolean(trimmedSearchHN || filterDate);
     let baseCases = cases;
 
     // เลือกอาร์เรย์เริ่มต้นที่จะนำมากรอง
@@ -169,7 +171,7 @@ export default function CompletedPage() {
       if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
       return true;
     });
-  }, [cases, searchResults, searchStatus, searchHN, filterDept, filterDate]);
+  }, [cases, searchResults, searchStatus, trimmedSearchHN, isSearchActive, filterDept, filterDate]);
 
   const viewStateRef = useRef({ currentPage, searchHN, filterDate });
   useEffect(() => {
@@ -190,13 +192,16 @@ export default function CompletedPage() {
   const refreshCompletedList = useCallback(() => {
     const { searchHN: activeSearchHN, filterDate: activeFilterDate, currentPage: activePage } =
       viewStateRef.current;
-    if (activeSearchHN || activeFilterDate) {
+    const trimmedActiveHN = activeSearchHN.trim();
+    if (trimmedActiveHN || activeFilterDate) {
       const requestId = ++searchRequestIdRef.current;
       setSearchStatus("loading");
-      void searchCompletedConsults(activeSearchHN, activeFilterDate)
+      setSearchTruncated(false);
+      void searchCompletedConsults(trimmedActiveHN, activeFilterDate)
         .then((res) => {
           if (searchRequestIdRef.current !== requestId) return;
-          setSearchResults(res);
+          setSearchResults(res.consults);
+          setSearchTruncated(res.truncated);
           setSearchStatus("ready");
         })
         .catch((err) => {
@@ -235,11 +240,28 @@ export default function CompletedPage() {
     const submittedProblem = newProblem;
     const submittedDepartments = [...selectedDepartments];
     let backgroundFailed = false;
+    let validationRejection: "history_limit" | "problem_length" | null = null;
     
     try {
       const result = await transactionalUpdateConsult(caseId, (current) => {
+        validationRejection = null;
         // Guard against missing department or concurrent re-consult already in pending state
         if (!current.departments || current.status === "pending") return null;
+
+        const existingHistory = Array.isArray(current.reconsultHistory)
+          ? current.reconsultHistory
+          : [];
+        if (existingHistory.length >= MAX_RECONSULT_HISTORY) {
+          validationRejection = "history_limit";
+          return null;
+        }
+
+        const trimmedProblem = submittedProblem.trim();
+        const combinedProblem = `${current.problem}\n\n[Re-consult]: ${trimmedProblem}`;
+        if (combinedProblem.length > MAX_PROBLEM_UPDATE_LENGTH) {
+          validationRejection = "problem_length";
+          return null;
+        }
 
         // Preserve existing departments; only reset the re-consulted ones
         const updatedDepartments: Record<string, ConsultDepartment> = { ...current.departments };
@@ -247,13 +269,10 @@ export default function CompletedPage() {
           updatedDepartments[dept] = { status: "pending", completedAt: null };
         });
         const now = new Date().toISOString();
-        const existingHistory = Array.isArray(current.reconsultHistory)
-          ? current.reconsultHistory
-          : [];
         return {
           status: "pending",
           departments: updatedDepartments,
-          problem: `${current.problem}\n\n[Re-consult]: ${submittedProblem.trim()}`,
+          problem: combinedProblem,
           // Preserve original createdAt for clinical audit/TAT; use reconsultedAt for whiteboard sorting & wait timer
           reconsultedAt: now,
           reconsultHistory: [
@@ -261,7 +280,7 @@ export default function CompletedPage() {
             {
               at: now,
               departments: submittedDepartments,
-              problem: submittedProblem.trim(),
+              problem: trimmedProblem,
             },
           ],
         };
@@ -284,6 +303,20 @@ export default function CompletedPage() {
       }); // OPTIMISTIC UPDATE
 
       if (!result.applied) {
+          if (validationRejection === "history_limit") {
+              addToast({
+                  type: "error",
+                  message: `ไม่สามารถส่งปรึกษาใหม่ได้: ประวัติการปรึกษาซ้ำครบขีดจำกัด ${MAX_RECONSULT_HISTORY} ครั้งแล้ว`,
+              });
+              return;
+          }
+          if (validationRejection === "problem_length") {
+              addToast({
+                  type: "error",
+                  message: `รายละเอียดปัญหารวมเกินขีดจำกัด ${MAX_PROBLEM_UPDATE_LENGTH.toLocaleString()} ตัวอักษร กรุณาย่อข้อความใหม่`,
+              });
+              return;
+          }
           reconsultFailedDraftsRef.current.set(caseId, {
               problem: submittedProblem,
               selectedDepartments: submittedDepartments,
@@ -519,16 +552,16 @@ export default function CompletedPage() {
   // With cursor pagination, display the current page's filtered cases directly
   const currentCases = filteredCases;
 
-  // Server-side search when searchHN or filterDate changes
+  // Server-side search when trimmedSearchHN or filterDate changes
   useEffect(() => {
     const requestId = ++searchRequestIdRef.current;
-    const trimmedSearchHN = searchHN.trim();
 
     if (!trimmedSearchHN && !filterDate) {
       let active = true;
       void Promise.resolve().then(() => {
         if (active && searchRequestIdRef.current === requestId) {
           setSearchResults(null);
+          setSearchTruncated(false);
           setSearchStatus("idle");
         }
       });
@@ -543,6 +576,7 @@ export default function CompletedPage() {
     void Promise.resolve().then(() => {
       if (!cancelled && searchRequestIdRef.current === requestId) {
         setSearchResults(null);
+        setSearchTruncated(false);
         setSearchStatus("loading");
       }
     });
@@ -550,9 +584,10 @@ export default function CompletedPage() {
     const timer = setTimeout(async () => {
       if (cancelled || searchRequestIdRef.current !== requestId) return;
       try {
-        const results = await searchCompletedConsults(trimmedSearchHN, filterDate);
+        const result = await searchCompletedConsults(trimmedSearchHN, filterDate);
         if (!cancelled && searchRequestIdRef.current === requestId) {
-          setSearchResults(results);
+          setSearchResults(result.consults);
+          setSearchTruncated(result.truncated);
           setSearchStatus("ready");
         }
       } catch (err) {
@@ -568,7 +603,7 @@ export default function CompletedPage() {
       searchRequestIdRef.current += 1;
       clearTimeout(timer);
     };
-  }, [searchHN, filterDate]);
+  }, [trimmedSearchHN, filterDate]);
 
   const isReconsultModalRendered = !loading && !error && showModal;
   const isExportModalRendered = !loading && !error && showExportModal;
@@ -1145,7 +1180,7 @@ export default function CompletedPage() {
           </div>
 
           {/* Pagination */}
-          {(currentPage > 1 || hasMore || Boolean(searchHN || filterDate)) && (
+          {(currentPage > 1 || hasMore || isSearchActive) && (
             <div className="px-4 py-3 border-t border-rule bg-paper-3 flex items-center justify-between gap-2 flex-wrap">
   <div className="text-sm font-medium text-ink-2">
     {searchStatus === "error" ? (
@@ -1155,15 +1190,17 @@ export default function CompletedPage() {
         </svg>
         การค้นหาล้มเหลว
       </span>
-    ) : Boolean(searchHN || filterDate) ? (
+    ) : isSearchActive ? (
       searchStatus === "loading"
         ? "พบทั้งหมด … เคส"
-        : `พบทั้งหมด ${filteredCases.length} เคส`
+        : searchTruncated
+          ? `แสดง ${filteredCases.length} เคสแรก (จำกัดสูงสุด ${MAX_HN_SEARCH_RESULTS} เคส — กรุณาระบุ HN หรือวันที่ให้แคบลง)`
+          : `พบทั้งหมด ${filteredCases.length} เคส`
     ) : (
       `หน้า ${currentPage} — แสดง ${filteredCases.length} เคส`
     )}
   </div>
-              {!Boolean(searchHN || filterDate) && (
+              {!isSearchActive && (
                 <div className="flex gap-2">
                   <button
                     type="button"

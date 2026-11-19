@@ -37,6 +37,10 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   });
   const [isTransferring, setIsTransferring] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
+  if (disabled && (isOpen || focusedIndex !== -1)) {
+    setIsOpen(false);
+    setFocusedIndex(-1);
+  }
   const { addToast } = useToast();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const listboxRef = useRef<HTMLDivElement>(null);

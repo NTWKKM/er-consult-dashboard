@@ -2,8 +2,9 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { User, onAuthStateChanged, signOut } from "firebase/auth";
-import { clearIndexedDbPersistence, terminate } from "firebase/firestore";
+import { clearIndexedDbPersistence, terminate, waitForPendingWrites, type Firestore } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
+import { clearRetainedSubmitDraft, hasPendingOptimisticWrites } from "../../lib/db";
 
 interface AuthContextType {
   user: User | null;
@@ -37,6 +38,49 @@ async function checkIsAuthorizedStaff(currentUser: User): Promise<boolean> {
   }
 }
 
+const PENDING_WRITE_SYNC_TIMEOUT_MS = 1200;
+
+async function confirmPendingWritesBeforeLogout(firestoreDb: Firestore): Promise<boolean> {
+  const confirmDiscard = () =>
+    typeof window !== "undefined" &&
+    typeof window.confirm === "function" &&
+    window.confirm(
+      "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์อาจสูญหาย ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?"
+    );
+
+  // If already offline with local pending writes, ask confirmation immediately rather than waiting on network.
+  if (typeof navigator !== "undefined" && navigator.onLine === false && hasPendingOptimisticWrites()) {
+    return confirmDiscard();
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let syncTimedOut = false;
+
+  try {
+    const syncCompleted = await Promise.race<boolean>([
+      waitForPendingWrites(firestoreDb).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timeoutId = setTimeout(() => {
+          syncTimedOut = true;
+          resolve(false);
+        }, PENDING_WRITE_SYNC_TIMEOUT_MS);
+      }),
+    ]);
+
+    if (syncCompleted && !syncTimedOut && !hasPendingOptimisticWrites()) {
+      return true;
+    }
+  } catch {
+    // Treat waitForPendingWrites failure as unconfirmed pending writes so we never silently wipe local data
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  return confirmDiscard();
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthorizedStaff, setIsAuthorizedStaff] = useState(false);
@@ -48,9 +92,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let cancelled = false;
+    let authGeneration = 0;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      const generation = ++authGeneration;
       if (!currentUser) {
-        if (!cancelled) {
+        if (!cancelled && generation === authGeneration) {
           setUser(null);
           setIsAuthorizedStaff(false);
           setLoading(false);
@@ -59,7 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       void checkIsAuthorizedStaff(currentUser).then((authorized) => {
-        if (!cancelled) {
+        if (!cancelled && generation === authGeneration) {
           setUser(currentUser);
           setIsAuthorizedStaff(authorized);
           setLoading(false);
@@ -69,11 +115,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true;
+      authGeneration += 1;
       unsubscribe();
     };
   }, []);
 
   const logout = useCallback(async () => {
+    if (db && typeof window !== "undefined") {
+      const canProceed = await confirmPendingWritesBeforeLogout(db);
+      if (!canProceed) {
+        return;
+      }
+    }
+
+    clearRetainedSubmitDraft();
+
     if (auth) {
       await signOut(auth);
     }

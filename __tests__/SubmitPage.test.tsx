@@ -6,6 +6,8 @@ import { makeConsult } from "./helpers/fixtures";
 
 const mockPush = vi.fn();
 const mockAddConsult = vi.fn();
+const mockClearRetainedSubmitDraft = vi.fn();
+const mockGetLatestFailedSubmitDraft = vi.fn<() => Consult | null>(() => null);
 const mockAddToast = vi.fn();
 let mockPendingCases: Consult[] = [];
 let mockIsOnline = true;
@@ -16,6 +18,8 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/db", () => ({
   addConsult: (...args: unknown[]) => mockAddConsult(...args),
+  clearRetainedSubmitDraft: (...args: unknown[]) => mockClearRetainedSubmitDraft(...args),
+  getLatestFailedSubmitDraft: () => mockGetLatestFailedSubmitDraft(),
 }));
 
 vi.mock("@/app/contexts/ToastContext", () => ({
@@ -206,5 +210,72 @@ describe("SubmitPage mount and redirect safety", () => {
     expect(mockAddConsult).toHaveBeenCalledWith(
       expect.objectContaining({ hn: "123456", isUrgent: true })
     );
+  });
+
+  it("uses type=submit for normal submission and keeps Fast Track as type=button", () => {
+    render(<SubmitPage />);
+    expect(screen.getByRole("button", { name: /ส่ง Consult/i })).toHaveAttribute("type", "submit");
+    expect(screen.getByRole("button", { name: /FAST TRACK/i })).toHaveAttribute("type", "button");
+  });
+
+  it("validates Firestore create length limits for HN, patient name, and problem without clearing values", async () => {
+    render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "1".repeat(33) } });
+    fireEvent.change(screen.getByPlaceholderText("ชื่อผู้ป่วย"), { target: { value: "ก".repeat(201) } });
+    fireEvent.change(screen.getByPlaceholderText("นามสกุลผู้ป่วย"), { target: { value: "ข".repeat(201) } });
+    fireEvent.change(screen.getByLabelText(/รายละเอียดปัญหา/i), { target: { value: "p".repeat(5001) } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    expect(mockAddConsult).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("1".repeat(33));
+    expect(screen.getByPlaceholderText("ชื่อผู้ป่วย")).toHaveValue("ก".repeat(201));
+    expect(screen.getByPlaceholderText("นามสกุลผู้ป่วย")).toHaveValue("ข".repeat(201));
+    expect(screen.getByLabelText(/รายละเอียดปัญหา/i)).toHaveValue("p".repeat(5001));
+    expect(screen.getByText(/HN ต้องไม่เกิน 32 หลัก/)).toBeInTheDocument();
+    expect(screen.getByText(/ชื่อต้องไม่เกิน 200 ตัวอักษร/)).toBeInTheDocument();
+    expect(screen.getByText(/นามสกุลต้องไม่เกิน 200 ตัวอักษร/)).toBeInTheDocument();
+    expect(screen.getByText(/รายละเอียดปัญหาต้องไม่เกิน 5,000 ตัวอักษร/)).toBeInTheDocument();
+  });
+
+  it("restores submitted values and cancels redirect when offline background write rejects", async () => {
+    mockIsOnline = false;
+    let onBgError: ((err: unknown, draft: Consult) => void) | undefined;
+    mockAddConsult.mockImplementationOnce(async (payload, options) => {
+      onBgError = options?.onBackgroundError;
+      return { id: "offline-fail-1", createdAt: "2026-11-19T00:00:00.000Z", ...payload };
+    });
+
+    render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+    await act(async () => {
+      onBgError?.(new Error("permission-denied"), makeConsult({ id: "offline-fail-1", hn: "123456" }));
+      await Promise.resolve();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("123456");
+    expect(screen.getByPlaceholderText("ชื่อผู้ป่วย")).toHaveValue("สมชาย");
+    expect(screen.getByPlaceholderText("นามสกุลผู้ป่วย")).toHaveValue("ใจดี");
+    expect(screen.getByLabelText(/รายละเอียดปัญหา/i)).toHaveValue("Acute abdomen");
+    expect(screen.getByRole("button", { name: /ส่ง Consult/i })).not.toBeDisabled();
+    expect(mockAddToast).toHaveBeenCalledWith(expect.objectContaining({ type: "error" }));
   });
 });

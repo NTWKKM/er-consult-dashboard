@@ -11,6 +11,7 @@ const mockIsPermissionDeniedError = vi.fn<(...args: unknown[]) => boolean>(() =>
 const mockAddToast = vi.fn();
 
 vi.mock("@/lib/db", () => ({
+  MAX_HN_SEARCH_RESULTS: 100,
   fetchCompletedConsultsPage: (...args: unknown[]) => mockFetchCompletedConsultsPage(...args),
   transactionalUpdateConsult: (...args: unknown[]) => mockUpdateConsult(...args),
   searchCompletedConsults: (...args: unknown[]) => mockSearchCompletedConsults(...args),
@@ -89,7 +90,12 @@ describe("CompletedPage re-consult failed drafts", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSearchCompletedConsults.mockResolvedValue([]);
+    mockSearchCompletedConsults.mockResolvedValue({
+      consults: [],
+      truncated: false,
+      hasMore: false,
+      lastDoc: null,
+    });
     mockFetchCompletedConsultsPage.mockResolvedValue({
       consults: [caseA, caseB],
       lastDoc: undefined,
@@ -213,7 +219,12 @@ describe("CompletedPage re-consult failed drafts", () => {
     });
 
     // Simulate Case A reappearing via search after a later completion to confirm its draft was cleared on success
-    mockSearchCompletedConsults.mockResolvedValueOnce([caseA]);
+    mockSearchCompletedConsults.mockResolvedValueOnce({
+      consults: [caseA],
+      truncated: false,
+      hasMore: false,
+      lastDoc: null,
+    });
     fireEvent.change(screen.getByLabelText(/ค้นหา HN/i), {
       target: { value: "111111" },
     });
@@ -459,7 +470,12 @@ describe("CompletedPage re-consult failed drafts", () => {
     await screen.findAllByText("111111");
 
     // 1. Filter by HN 111111
-    mockSearchCompletedConsults.mockResolvedValueOnce([caseA]);
+    mockSearchCompletedConsults.mockResolvedValueOnce({
+      consults: [caseA],
+      truncated: false,
+      hasMore: false,
+      lastDoc: null,
+    });
     fireEvent.change(screen.getByLabelText(/ค้นหา HN/i), {
       target: { value: "111111" },
     });
@@ -475,7 +491,12 @@ describe("CompletedPage re-consult failed drafts", () => {
       target: { value: "Recovery search race" },
     });
 
-    const deferredRecovery = createDeferred<Consult[]>();
+    const deferredRecovery = createDeferred<{
+      consults: Consult[];
+      truncated: boolean;
+      hasMore: boolean;
+      lastDoc: null;
+    }>();
     mockSearchCompletedConsults.mockReturnValueOnce(deferredRecovery.promise);
     mockUpdateConsult.mockResolvedValueOnce({
       consult: null,
@@ -491,7 +512,12 @@ describe("CompletedPage re-consult failed drafts", () => {
 
     // Close modal so table assertions are unobstructed, then switch filter to 222222
     fireEvent.click(screen.getByRole("button", { name: "ปิดหน้าต่าง Re-consult" }));
-    mockSearchCompletedConsults.mockResolvedValueOnce([caseB]);
+    mockSearchCompletedConsults.mockResolvedValueOnce({
+      consults: [caseB],
+      truncated: false,
+      hasMore: false,
+      lastDoc: null,
+    });
     fireEvent.change(screen.getByLabelText(/ค้นหา HN/i), {
       target: { value: "222222" },
     });
@@ -507,7 +533,12 @@ describe("CompletedPage re-consult failed drafts", () => {
 
     // Stale recovery search resolves with caseA — must NOT overwrite active 222222 search state
     await act(async () => {
-      deferredRecovery.resolve([caseA]);
+      deferredRecovery.resolve({
+        consults: [caseA],
+        truncated: false,
+        hasMore: false,
+        lastDoc: null,
+      });
       await Promise.resolve();
     });
 
@@ -522,7 +553,12 @@ describe("CompletedPage re-consult failed drafts", () => {
       target: { value: "Recovery reject race" },
     });
 
-    const deferredRecoveryErr = createDeferred<Consult[]>();
+    const deferredRecoveryErr = createDeferred<{
+      consults: Consult[];
+      truncated: boolean;
+      hasMore: boolean;
+      lastDoc: null;
+    }>();
     mockSearchCompletedConsults.mockReturnValueOnce(deferredRecoveryErr.promise);
     mockUpdateConsult.mockResolvedValueOnce({
       consult: null,
@@ -548,5 +584,137 @@ describe("CompletedPage re-consult failed drafts", () => {
 
     expect(screen.queryByText("การค้นหาล้มเหลว")).not.toBeInTheDocument();
     consoleErrorSpy.mockRestore();
+  });
+
+  it("keeps modal open with draft intact when reconsultHistory reaches 50 entries", async () => {
+    const maxedHistory = Array.from({ length: 50 }, (_, idx) => ({
+      at: "2026-11-18T08:00:00.000Z",
+      departments: ["Gen Sx"],
+      problem: `Prev ${idx}`,
+    }));
+    const fullHistoryCase = makeConsult({
+      id: "case-max-history",
+      hn: "333333",
+      reconsultHistory: maxedHistory,
+    });
+    mockFetchCompletedConsultsPage.mockResolvedValueOnce({
+      consults: [fullHistoryCase],
+      lastDoc: undefined,
+      hasMore: false,
+    });
+
+    render(<CompletedPage />);
+    await screen.findAllByText("333333");
+
+    clickRowReConsult("333333");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: /^Ortho/ }));
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "51st consult reason" },
+    });
+
+    mockUpdateConsult.mockImplementationOnce(async (_id, updater: (c: Consult) => unknown) => {
+      const updates = updater(fullHistoryCase);
+      return {
+        consult: null,
+        isQueued: false,
+        backgroundPromise: null,
+        applied: updates !== null,
+      };
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+
+    await waitFor(() => {
+      expect(mockAddToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "error",
+          message: expect.stringContaining("50"),
+        })
+      );
+    });
+    expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("51st consult reason");
+    expect(mockFetchCompletedConsultsPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps modal open with draft intact when combined problem exceeds 10,000 characters", async () => {
+    const longProblemCase = makeConsult({
+      id: "case-long-problem",
+      hn: "444444",
+      problem: "x".repeat(9990),
+    });
+    mockFetchCompletedConsultsPage.mockResolvedValueOnce({
+      consults: [longProblemCase],
+      lastDoc: undefined,
+      hasMore: false,
+    });
+
+    render(<CompletedPage />);
+    await screen.findAllByText("444444");
+
+    clickRowReConsult("444444");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: /^Ortho/ }));
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "y".repeat(50) },
+    });
+
+    mockUpdateConsult.mockImplementationOnce(async (_id, updater: (c: Consult) => unknown) => {
+      const updates = updater(longProblemCase);
+      return {
+        consult: null,
+        isQueued: false,
+        backgroundPromise: null,
+        applied: updates !== null,
+      };
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+
+    await waitFor(() => {
+      expect(mockAddToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "error",
+          message: expect.stringContaining("10,000"),
+        })
+      );
+    });
+    expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("y".repeat(50));
+    expect(mockFetchCompletedConsultsPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats whitespace-only searchHN as inactive for pagination and result-count label and shows truncation notice", async () => {
+    mockFetchCompletedConsultsPage.mockResolvedValueOnce({
+      consults: [caseA, caseB],
+      lastDoc: { id: "cursor-1" },
+      hasMore: true,
+    });
+
+    render(<CompletedPage />);
+    await screen.findAllByText("111111");
+
+    fireEvent.change(screen.getByLabelText(/ค้นหา HN/i), {
+      target: { value: "   " },
+    });
+
+    expect(screen.getByText(/หน้า 1 — แสดง 2 เคส/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ถัดไป/i })).toBeInTheDocument();
+
+    mockSearchCompletedConsults.mockResolvedValueOnce({
+      consults: [caseA],
+      truncated: true,
+      hasMore: true,
+      lastDoc: null,
+    });
+
+    fireEvent.change(screen.getByLabelText(/ค้นหา HN/i), {
+      target: { value: "111" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/จำกัดสูงสุด 100 เคส/)).toBeInTheDocument();
+    });
   });
 });

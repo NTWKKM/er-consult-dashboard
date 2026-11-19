@@ -574,5 +574,29 @@ describe("RoomTransferButton", () => {
       Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalInnerWidth });
       Object.defineProperty(window, "innerHeight", { writable: true, configurable: true, value: originalInnerHeight });
     });
+
+    it("clears open state when disabled so re-enabling keeps menu closed until clicked", () => {
+      const { rerender } = render(
+        <RoomTransferButton consultId="test-consult-1" currentRoom="NT" disabled={false} />
+      );
+
+      const trigger = screen.getByTitle("เปลี่ยนห้อง");
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+      rerender(
+        <RoomTransferButton consultId="test-consult-1" currentRoom="NT" disabled={true} />
+      );
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      rerender(
+        <RoomTransferButton consultId="test-consult-1" currentRoom="NT" disabled={false} />
+      );
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
   });
 });

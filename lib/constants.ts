@@ -32,3 +32,10 @@ export const ACTION_STATUSES = [ACCEPT_STATUS, ...POST_ACCEPT_STATUSES] as const
 export type DepartmentName = (typeof ALL_DEPARTMENTS)[number];
 export type RoomName = (typeof ROOMS)[number];
 export type ActionStatus = (typeof ACTION_STATUSES)[number];
+
+// Field length and collection bounds enforced by firestore.rules
+export const MAX_HN_LENGTH = 32;
+export const MAX_PATIENT_NAME_LENGTH = 200;
+export const MAX_PROBLEM_CREATE_LENGTH = 5000;
+export const MAX_PROBLEM_UPDATE_LENGTH = 10000;
+export const MAX_RECONSULT_HISTORY = 50;

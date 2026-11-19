@@ -936,6 +936,83 @@ describe("useConsultActions", () => {
       expect(result.current.actions.isSyncing).toBe(false);
       consoleErrorSpy.mockRestore();
     });
+
+    it("defers accept and terminal success toasts until server commit confirms without background errors", async () => {
+      let resolveBackground!: () => void;
+      const backgroundPromise = new Promise<void>((resolve) => {
+        resolveBackground = resolve;
+      });
+
+      mockTransactionalUpdateConsult.mockResolvedValueOnce({
+        consult: makePendingConsult(),
+        isQueued: true,
+        backgroundPromise,
+        applied: true,
+      });
+
+      const { result } = renderHook(
+        () => ({
+          actions: useConsultActions("consult-1", "Gen Sx", "123456"),
+          toast: useToast(),
+        }),
+        { wrapper }
+      );
+
+      await act(async () => {
+        await result.current.actions.handleAccept();
+      });
+
+      // Toast must NOT appear while background transaction is still pending
+      expect(result.current.toast.toasts.some((t) => t.type === "success")).toBe(false);
+
+      await act(async () => {
+        resolveBackground();
+        await backgroundPromise;
+      });
+
+      expect(result.current.toast.toasts.some((t) => t.type === "success")).toBe(true);
+    });
+
+    it("suppresses success toast when transactional onBackgroundError fires before backgroundPromise resolves", async () => {
+      let resolveBackground!: () => void;
+      const backgroundPromise = new Promise<void>((resolve) => {
+        resolveBackground = resolve;
+      });
+      let capturedOnBgError: ((err: unknown) => void) | undefined;
+
+      mockTransactionalUpdateConsult.mockImplementationOnce(async (_id, _updater, opts) => {
+        capturedOnBgError = opts?.onBackgroundError;
+        return {
+          consult: makePendingConsult(),
+          isQueued: true,
+          backgroundPromise,
+          applied: true,
+        };
+      });
+
+      const { result } = renderHook(
+        () => ({
+          actions: useConsultActions("consult-1", "Gen Sx", "123456"),
+          toast: useToast(),
+        }),
+        { wrapper }
+      );
+
+      await act(async () => {
+        await result.current.actions.handleComplete();
+      });
+
+      expect(result.current.toast.toasts.some((t) => t.type === "success")).toBe(false);
+
+      await act(async () => {
+        capturedOnBgError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
+        resolveBackground();
+        await backgroundPromise;
+      });
+
+      expect(result.current.toast.toasts.some((t) => t.type === "success")).toBe(false);
+      expect(result.current.toast.toasts.some((t) => t.type === "warning")).toBe(true);
+    });
   });
 
   // -------------------------------------------------------------------------

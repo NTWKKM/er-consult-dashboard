@@ -2,8 +2,15 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { addConsult } from "@/lib/db";
-import { ALL_DEPARTMENTS, ROOMS, RoomName } from "@/lib/constants";
+import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft } from "@/lib/db";
+import {
+  ALL_DEPARTMENTS,
+  MAX_HN_LENGTH,
+  MAX_PATIENT_NAME_LENGTH,
+  MAX_PROBLEM_CREATE_LENGTH,
+  ROOMS,
+  RoomName,
+} from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 import { usePendingConsults } from "../contexts/ConsultsContext";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
@@ -17,6 +24,7 @@ export default function SubmitPage() {
   const submitInFlightRef = useRef(false);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
+  const retriedDraftIdRef = useRef<string | null>(null);
 
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -49,27 +57,39 @@ export default function SubmitPage() {
 
   const validateForm = useCallback(() => {
     const newErrors: { [key: string]: string } = {};
+    const trimmedHn = hn.trim();
+    const trimmedFirstName = firstName.trim();
+    const trimmedLastName = lastName.trim();
+    const trimmedProblem = problem.trim();
 
-    if (!hn.trim()) {
+    if (!trimmedHn) {
       newErrors.hn = "กรุณากรอก HN";
-    } else if (!/^\d+$/.test(hn.trim())) {
+    } else if (!/^\d+$/.test(trimmedHn)) {
       newErrors.hn = "HN ต้องเป็นตัวเลขเท่านั้น";
+    } else if (trimmedHn.length > MAX_HN_LENGTH) {
+      newErrors.hn = `HN ต้องไม่เกิน ${MAX_HN_LENGTH} หลัก`;
     }
 
-    if (!firstName.trim()) {
+    if (!trimmedFirstName) {
       newErrors.firstName = "กรุณากรอกชื่อ";
+    } else if (trimmedFirstName.length > MAX_PATIENT_NAME_LENGTH) {
+      newErrors.firstName = `ชื่อต้องไม่เกิน ${MAX_PATIENT_NAME_LENGTH} ตัวอักษร`;
     }
 
-    if (!lastName.trim()) {
+    if (!trimmedLastName) {
       newErrors.lastName = "กรุณากรอกนามสกุล";
+    } else if (trimmedLastName.length > MAX_PATIENT_NAME_LENGTH) {
+      newErrors.lastName = `นามสกุลต้องไม่เกิน ${MAX_PATIENT_NAME_LENGTH} ตัวอักษร`;
     }
 
     if (!room) {
       newErrors.room = "กรุณาเลือกห้องตรวจ";
     }
 
-    if (!problem.trim()) {
+    if (!trimmedProblem) {
       newErrors.problem = "กรุณากรอกรายละเอียดปัญหา";
+    } else if (trimmedProblem.length > MAX_PROBLEM_CREATE_LENGTH) {
+      newErrors.problem = `รายละเอียดปัญหาต้องไม่เกิน ${MAX_PROBLEM_CREATE_LENGTH.toLocaleString()} ตัวอักษร`;
     }
 
     if (selectedDepts.length === 0) {
@@ -117,7 +137,19 @@ export default function SubmitPage() {
 
     const currentErrors = validateForm();
     if (Object.keys(currentErrors).length > 0) {
-      addToast({ type: "error", message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+      const hasMissingRequired =
+        !hn.trim() ||
+        !firstName.trim() ||
+        !lastName.trim() ||
+        !room ||
+        !problem.trim() ||
+        selectedDepts.length === 0;
+      addToast({
+        type: "error",
+        message: hasMissingRequired
+          ? "กรุณากรอกข้อมูลให้ครบถ้วน"
+          : Object.values(currentErrors)[0],
+      });
       
       // UX Improvement: Auto-focus and scroll to the first error field
       const firstErrorKey = Object.keys(currentErrors)[0];
@@ -139,26 +171,66 @@ export default function SubmitPage() {
       departmentsMap[dept] = { status: "pending", completedAt: null };
     });
 
+    const submittedDraft = {
+      hn: hn.trim(),
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      room: room as RoomName,
+      problem: problem.trim(),
+      selectedDepts: [...selectedDepts],
+    };
+    const previousFailedDraftId = retriedDraftIdRef.current;
+
     try {
       const payload = {
-        hn: hn.trim(),
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        room: room as RoomName,
-        problem: problem.trim(),
+        hn: submittedDraft.hn,
+        firstName: submittedDraft.firstName,
+        lastName: submittedDraft.lastName,
+        room: submittedDraft.room,
+        problem: submittedDraft.problem,
         isUrgent,
         departments: departmentsMap,
         status: "pending" as const,
       };
       if (isOnline) {
         await addConsult(payload);
+        if (previousFailedDraftId && typeof clearRetainedSubmitDraft === "function") {
+          clearRetainedSubmitDraft(previousFailedDraftId);
+          retriedDraftIdRef.current = null;
+        }
       } else {
         await addConsult(payload, {
           awaitRemote: false,
-          onBackgroundError: () => {
+          onBackgroundSuccess: () => {
+            if (previousFailedDraftId && typeof clearRetainedSubmitDraft === "function") {
+              clearRetainedSubmitDraft(previousFailedDraftId);
+              if (retriedDraftIdRef.current === previousFailedDraftId) {
+                retriedDraftIdRef.current = null;
+              }
+            }
+          },
+          onBackgroundError: (_err, failedConsult) => {
+            if (!isMountedRef.current) return;
+            if (redirectTimerRef.current !== null) {
+              clearTimeout(redirectTimerRef.current);
+              redirectTimerRef.current = null;
+            }
+            if (failedConsult?.id) {
+              retriedDraftIdRef.current = failedConsult.id;
+            }
+            setHn(submittedDraft.hn);
+            setFirstName(submittedDraft.firstName);
+            setLastName(submittedDraft.lastName);
+            setRoom(submittedDraft.room);
+            setProblem(submittedDraft.problem);
+            setSelectedDepts(submittedDraft.selectedDepts);
+            setErrors({});
+            submitInFlightRef.current = false;
+            setIsLoading(false);
             addToast({
               type: "error",
-              message: "ซิงค์เคสที่บันทึกขณะออฟไลน์ไม่สำเร็จ กรุณาตรวจสอบบนหน้าหลัก",
+              message: "ซิงค์เคสที่บันทึกขณะออฟไลน์ไม่สำเร็จ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
+              duration: 5000,
             });
           },
         });
@@ -176,6 +248,7 @@ export default function SubmitPage() {
 
       if (!isMountedRef.current) return;
 
+      // Reset only visible form inputs; any optimistic write draft remains retained in lib/db.ts until settled.
       setHn("");
       setFirstName("");
       setLastName("");
@@ -204,6 +277,24 @@ export default function SubmitPage() {
 
   useEffect(() => {
     isMountedRef.current = true;
+    const failedDraft = typeof getLatestFailedSubmitDraft === "function" ? getLatestFailedSubmitDraft() : null;
+    if (failedDraft) {
+      void Promise.resolve().then(() => {
+        if (!isMountedRef.current) return;
+        retriedDraftIdRef.current = failedDraft.id;
+        setHn(failedDraft.hn);
+        setFirstName(failedDraft.firstName);
+        setLastName(failedDraft.lastName);
+        setRoom(failedDraft.room);
+        setProblem(failedDraft.problem);
+        setSelectedDepts(Object.keys(failedDraft.departments));
+        addToast({
+          type: "error",
+          message: "พบเคสที่ซิงค์ไม่สำเร็จก่อนหน้านี้ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
+          duration: 5000,
+        });
+      });
+    }
     return () => {
       isMountedRef.current = false;
       if (redirectTimerRef.current !== null) {
@@ -211,7 +302,7 @@ export default function SubmitPage() {
         redirectTimerRef.current = null;
       }
     };
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -473,8 +564,7 @@ export default function SubmitPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-2">
                     <button
-                      type="button"
-                      onClick={() => handleSubmit(false)}
+                      type="submit"
                       disabled={isLoading}
                       className={`w-full font-medium py-3 px-2.5 sm:px-4 rounded-[6px] transition-opacity duration-200 text-sm flex items-center justify-center gap-1.5 sm:gap-2 tap-feedback whitespace-nowrap ${
                         isLoading

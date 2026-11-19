@@ -96,6 +96,7 @@ export default function Dashboard() {
   const isInitialLoadRef = useRef(true);
   const deptRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const audioContextRef = useRef<AudioContext | null>(null);
+  const pendingAlertRef = useRef(false);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const tableHeadRef = useRef<HTMLTableSectionElement>(null);
 
@@ -128,74 +129,16 @@ export default function Dashboard() {
     (Object.hasOwn(deptRefs.current, deptName) ? deptRefs.current[deptName] : null)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const initAudioContext = useCallback(() => {
-    if (typeof window !== "undefined") {
-      if (!audioContextRef.current) {
-        const AudioCtx =
-          window.AudioContext ||
-          (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        if (AudioCtx) {
-          audioContextRef.current = new AudioCtx();
-        }
-      }
-      if (audioContextRef.current?.state === "suspended") {
-        audioContextRef.current
-          .resume()
-          .then(() => {
-            if (audioContextRef.current?.state === "running") {
-              setAudioBlocked(false);
-            }
-          })
-          .catch(() => {
-            setAudioBlocked(true);
-          });
-      } else if (audioContextRef.current?.state === "running") {
-        setAudioBlocked(false);
-      }
-    }
-  }, []);
-
+  const soundEnabledRef = useRef(soundEnabled);
   useEffect(() => {
-    const unlockAudio = () => {
-      initAudioContext();
-      document.removeEventListener("click", unlockAudio);
-      document.removeEventListener("touchstart", unlockAudio);
-      document.removeEventListener("keydown", unlockAudio);
-    };
-
-    document.addEventListener("click", unlockAudio);
-    document.addEventListener("touchstart", unlockAudio);
-    document.addEventListener("keydown", unlockAudio);
-
-    return () => {
-      document.removeEventListener("click", unlockAudio);
-      document.removeEventListener("touchstart", unlockAudio);
-      document.removeEventListener("keydown", unlockAudio);
-    };
-  }, [initAudioContext]);
-
-  const playNotificationSound = useCallback(() => {
-    if (!soundEnabled) return;
-
-    if (!audioContextRef.current) {
-      initAudioContext();
+    soundEnabledRef.current = soundEnabled;
+    if (!soundEnabled) {
+      pendingAlertRef.current = false;
     }
-    if (!audioContextRef.current) return;
+  }, [soundEnabled]);
 
-    const audioContext = audioContextRef.current;
-
-    if (audioContext.state === "suspended") {
-      setAudioBlocked(true);
-      void audioContext
-        .resume()
-        .then(() => {
-          if (audioContext.state === "running") {
-            setAudioBlocked(false);
-          }
-        })
-        .catch(() => {});
-      return;
-    }
+  const scheduleAlertBeeps = useCallback((audioContext: AudioContext) => {
+    if (audioContext.state !== "running") return;
 
     const playBeep = (startTime: number) => {
       const oscillator = audioContext.createOscillator();
@@ -218,7 +161,117 @@ export default function Dashboard() {
     playBeep(now);
     playBeep(now + 0.6);
     playBeep(now + 1.2);
-  }, [soundEnabled, initAudioContext]);
+  }, []);
+
+  const flushPendingAlert = useCallback(
+    (audioContext: AudioContext) => {
+      if (!pendingAlertRef.current || audioContext.state !== "running") return;
+      pendingAlertRef.current = false;
+      if (soundEnabledRef.current) {
+        scheduleAlertBeeps(audioContext);
+      }
+    },
+    [scheduleAlertBeeps]
+  );
+
+  const initAudioContext = useCallback(() => {
+    if (typeof window !== "undefined") {
+      if (!audioContextRef.current) {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) {
+          audioContextRef.current = new AudioCtx();
+        }
+      }
+      const audioContext = audioContextRef.current;
+      if (!audioContext) return;
+
+      if (audioContext.state === "suspended") {
+        audioContext
+          .resume()
+          .then(() => {
+            if (audioContextRef.current !== audioContext) return;
+            if (audioContext.state === "running") {
+              setAudioBlocked(false);
+              flushPendingAlert(audioContext);
+            } else {
+              setAudioBlocked(true);
+            }
+          })
+          .catch(() => {
+            if (audioContextRef.current === audioContext) {
+              setAudioBlocked(true);
+            }
+          });
+      } else if (audioContext.state === "running") {
+        setAudioBlocked(false);
+        flushPendingAlert(audioContext);
+      }
+    }
+  }, [flushPendingAlert]);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      initAudioContext();
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("keydown", unlockAudio);
+    };
+
+    document.addEventListener("click", unlockAudio);
+    document.addEventListener("touchstart", unlockAudio);
+    document.addEventListener("keydown", unlockAudio);
+
+    return () => {
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("keydown", unlockAudio);
+    };
+  }, [initAudioContext]);
+
+  const playNotificationSound = useCallback(() => {
+    if (!soundEnabled) {
+      pendingAlertRef.current = false;
+      return;
+    }
+
+    if (!audioContextRef.current) {
+      pendingAlertRef.current = true;
+      initAudioContext();
+      if (audioContextRef.current && (audioContextRef.current as AudioContext).state === "suspended") {
+        setAudioBlocked(true);
+      }
+      return;
+    }
+
+    const audioContext = audioContextRef.current;
+
+    if (audioContext.state === "suspended") {
+      pendingAlertRef.current = true;
+      setAudioBlocked(true);
+      void audioContext
+        .resume()
+        .then(() => {
+          if (audioContextRef.current !== audioContext) return;
+          if (audioContext.state === "running") {
+            setAudioBlocked(false);
+            flushPendingAlert(audioContext);
+          }
+        })
+        .catch(() => {
+          if (audioContextRef.current === audioContext) {
+            setAudioBlocked(true);
+          }
+        });
+      return;
+    }
+
+    if (audioContext.state === "running") {
+      pendingAlertRef.current = false;
+      scheduleAlertBeeps(audioContext);
+    }
+  }, [soundEnabled, initAudioContext, flushPendingAlert, scheduleAlertBeeps]);
 
   useEffect(() => {
     // Wait for the initial snapshot before establishing the baseline so existing cases never trigger an alert
@@ -236,6 +289,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     return () => {
+      pendingAlertRef.current = false;
       if (audioContextRef.current) {
         void audioContextRef.current.close().catch(() => {});
         audioContextRef.current = null;

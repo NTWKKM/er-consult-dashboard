@@ -60,6 +60,12 @@ vi.mock("firebase/firestore", () => ({
 // Now import the module under test
 // ---------------------------------------------------------------------------
 import {
+  addConsult,
+  clearRetainedSubmitDraft,
+  getLatestFailedSubmitDraft,
+  getRetainedSubmitDraft,
+  hasPendingOptimisticWrites,
+  MAX_HN_SEARCH_RESULTS,
   updateConsult,
   transactionalUpdateConsult,
   fetchCompletedConsultsPage,
@@ -633,15 +639,25 @@ describe("transactionalUpdateConsult", () => {
 // searchCompletedConsults
 // ===========================================================================
 describe("searchCompletedConsults", () => {
-  it("returns empty array when both searchHN and filterDate are omitted", async () => {
+  it("returns empty result when both searchHN and filterDate are omitted", async () => {
     const result = await searchCompletedConsults();
-    expect(result).toEqual([]);
+    expect(result).toEqual({
+      consults: [],
+      truncated: false,
+      hasMore: false,
+      lastDoc: null,
+    });
     expect(mockGetDocs).not.toHaveBeenCalled();
   });
 
-  it("returns empty array when both searchHN and filterDate are empty strings", async () => {
+  it("returns empty result when both searchHN and filterDate are empty strings", async () => {
     const result = await searchCompletedConsults("", "");
-    expect(result).toEqual([]);
+    expect(result).toEqual({
+      consults: [],
+      truncated: false,
+      hasMore: false,
+      lastDoc: null,
+    });
     expect(mockGetDocs).not.toHaveBeenCalled();
   });
 
@@ -668,8 +684,11 @@ describe("searchCompletedConsults", () => {
     expect(hnCalls.length).toBe(2);
     expect(hnCalls[0][1]).toBe(">=");
     expect(hnCalls[1][1]).toBe("<");
-    expect(result).toHaveLength(1);
-    expect(result[0].hn).toBe("123456");
+    expect(result.consults).toHaveLength(1);
+    expect(result.consults[0].hn).toBe("123456");
+    expect(result.truncated).toBe(false);
+    expect(result.hasMore).toBe(false);
+    expect(result.lastDoc).toBeNull();
   });
 
   it("filters out documents without hn", async () => {
@@ -702,8 +721,8 @@ describe("searchCompletedConsults", () => {
     );
 
     const result = await searchCompletedConsults("111");
-    expect(result).toHaveLength(1);
-    expect(result[0].hn).toBe("111");
+    expect(result.consults).toHaveLength(1);
+    expect(result.consults[0].hn).toBe("111");
   });
 
   it("sorts results by createdAt descending when searching by HN", async () => {
@@ -734,8 +753,8 @@ describe("searchCompletedConsults", () => {
     );
 
     const result = await searchCompletedConsults("555");
-    expect(result[0].createdAt).toBe("2024-06-01T00:00:00.000Z");
-    expect(result[1].createdAt).toBe("2024-01-01T00:00:00.000Z");
+    expect(result.consults[0].createdAt).toBe("2024-06-01T00:00:00.000Z");
+    expect(result.consults[1].createdAt).toBe("2024-01-01T00:00:00.000Z");
   });
 
   it("queries by date range when only filterDate is provided", async () => {
@@ -748,7 +767,7 @@ describe("searchCompletedConsults", () => {
     expect(whereCalls.some((c) => c[0] === "createdAt" && c[1] === "<")).toBe(true);
   });
 
-  it("applies date filter client-side when both HN and filterDate are provided", async () => {
+  it("applies date bounds in server query with inequality ordering when both HN and filterDate are provided", async () => {
     // Doc inside the date range (UTC: 2024-05-10 midnight, offset 0)
     const inside = {
       hn: "789",
@@ -782,14 +801,129 @@ describe("searchCompletedConsults", () => {
 
     try {
       const result = await searchCompletedConsults("789", "2024-05-10");
-      expect(result.length).toBe(1);
-      expect(result[0].createdAt).toBe("2024-05-10T12:00:00.000Z");
-      const outsideIncluded = result.find((c) => c.createdAt === "2024-05-11T12:00:00.000Z");
+      expect(result.consults.length).toBe(1);
+      expect(result.consults[0].createdAt).toBe("2024-05-10T12:00:00.000Z");
+      const outsideIncluded = result.consults.find((c) => c.createdAt === "2024-05-11T12:00:00.000Z");
       expect(outsideIncluded).toBeUndefined();
+
+      // Verify server-side date bounds and inequality ordering before limit(MAX_HN_SEARCH_RESULTS + 1)
+      const whereCalls = (mockWhere as Mock).mock.calls;
+      expect(whereCalls.some((c) => c[0] === "createdAt" && c[1] === ">=")).toBe(true);
+      expect(whereCalls.some((c) => c[0] === "createdAt" && c[1] === "<")).toBe(true);
+      expect(mockOrderBy).toHaveBeenNthCalledWith(1, "hn", "asc");
+      expect(mockOrderBy).toHaveBeenNthCalledWith(2, "createdAt", "desc");
+      expect(mockLimit).toHaveBeenCalledWith(MAX_HN_SEARCH_RESULTS + 1);
     } finally {
       // Restore timezone offset
       offsetSpy.mockRestore();
     }
+  });
+
+  it("exposes truncated, hasMore, and continuation lastDoc when HN search exceeds MAX_HN_SEARCH_RESULTS", async () => {
+    const docs = Array.from({ length: MAX_HN_SEARCH_RESULTS + 1 }, (_, idx) =>
+      makeDocSnapshot(`c-${idx}`, {
+        hn: `100${idx}`,
+        firstName: "A",
+        lastName: "B",
+        room: "NT",
+        problem: "P",
+        createdAt: `2024-05-10T00:${String(idx % 60).padStart(2, "0")}:00.000Z`,
+        status: "completed",
+        isUrgent: false,
+        departments: {},
+      })
+    );
+    mockGetDocs.mockResolvedValueOnce(makeQuerySnapshot(docs));
+
+    const firstPage = await searchCompletedConsults("100");
+    expect(firstPage.consults).toHaveLength(MAX_HN_SEARCH_RESULTS);
+    expect(firstPage.truncated).toBe(true);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.lastDoc?.id).toBe(`c-${MAX_HN_SEARCH_RESULTS - 1}`);
+
+    mockGetDocs.mockResolvedValueOnce(makeQuerySnapshot([docs[MAX_HN_SEARCH_RESULTS]]));
+    const nextPage = await searchCompletedConsults("100", undefined, firstPage.lastDoc!);
+    expect(mockStartAfter).toHaveBeenCalledWith(firstPage.lastDoc);
+    expect(nextPage.consults).toHaveLength(1);
+    expect(nextPage.truncated).toBe(false);
+    expect(nextPage.hasMore).toBe(false);
+    expect(nextPage.lastDoc).toBeNull();
+  });
+});
+
+describe("addConsult optimistic draft retention", () => {
+  beforeEach(() => {
+    clearRetainedSubmitDraft();
+  });
+
+  it("retains retryable draft until background write settles, clears on resolve, and preserves on reject", async () => {
+    let resolveWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveWrite = resolve;
+      })
+    );
+
+    const onBackgroundError = vi.fn();
+    const onBackgroundSuccess = vi.fn();
+    const created = await addConsult(
+      {
+        hn: "123456",
+        firstName: "สมชาย",
+        lastName: "ใจดี",
+        room: "NT",
+        problem: "Pain",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, onBackgroundError, onBackgroundSuccess }
+    );
+
+    expect(hasPendingOptimisticWrites()).toBe(true);
+    expect(getRetainedSubmitDraft(created.id)?.status).toBe("pending");
+    expect(getLatestFailedSubmitDraft()).toBeNull();
+
+    resolveWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(hasPendingOptimisticWrites()).toBe(false);
+    expect(getRetainedSubmitDraft(created.id)).toBeUndefined();
+    expect(onBackgroundSuccess).toHaveBeenCalledWith(created);
+
+    // Rejection retains retryable failed draft and invokes onBackgroundError with the draft
+    let rejectWrite!: (err: unknown) => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectWrite = reject;
+      })
+    );
+
+    const failedConsult = await addConsult(
+      {
+        hn: "654321",
+        firstName: "สมหญิง",
+        lastName: "ใจดี",
+        room: "Urgent",
+        problem: "Fever",
+        isUrgent: true,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, onBackgroundError }
+    );
+
+    const writeError = new Error("permission-denied");
+    rejectWrite(writeError);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onBackgroundError).toHaveBeenCalledWith(writeError, failedConsult);
+    expect(getRetainedSubmitDraft(failedConsult.id)?.status).toBe("failed");
+    expect(getLatestFailedSubmitDraft()?.id).toBe(failedConsult.id);
+    clearRetainedSubmitDraft(failedConsult.id);
+    expect(getLatestFailedSubmitDraft()).toBeNull();
   });
 });
 

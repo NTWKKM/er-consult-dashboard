@@ -60,9 +60,26 @@ describe("QA Remediation Regressions (Sprints 1-3)", () => {
 
       const badge = screen.getByText("+2");
       expect(badge).toBeInTheDocument();
+      expect(badge.tagName).toBe("BUTTON");
+      expect(badge).toHaveAttribute("aria-expanded", "false");
       expect(badge.getAttribute("title")).toContain("ย้าย Urgent");
       expect(badge.getAttribute("title")).toContain("รับ");
       expect(badge.getAttribute("title")).toContain("D/C");
+
+      // Clicking +2 opens the full trail disclosure while keeping latest 3 milestones inline
+      fireEvent.click(badge);
+      expect(badge).toHaveAttribute("aria-expanded", "true");
+      const region = screen.getByRole("region", { name: "ประวัติขั้นตอนทั้งหมด" });
+      expect(region).toHaveTextContent("ย้าย Urgent");
+      expect(region).toHaveTextContent("รับ");
+      expect(region).toHaveTextContent("Admit");
+      expect(region).toHaveTextContent("คืน ER");
+      expect(region).toHaveTextContent("D/C");
+
+      // Clicking again collapses the disclosure
+      fireEvent.click(badge);
+      expect(badge).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("region", { name: "ประวัติขั้นตอนทั้งหมด" })).not.toBeInTheDocument();
     });
 
     it("does NOT show +N badge when 3 or fewer milestones exist", () => {
