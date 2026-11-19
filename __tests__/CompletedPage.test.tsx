@@ -216,4 +216,155 @@ describe("CompletedPage re-consult failed drafts", () => {
     expect(screen.getByRole("button", { name: "Gen Sx" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Neuro Sx" })).toHaveAttribute("aria-pressed", "false");
   });
+
+  it("retains draft when onBackgroundError fires even if backgroundPromise resolves (TRANSACTION_CONDITION_NOT_MET)", async () => {
+    render(<CompletedPage />);
+
+    await screen.findAllByText("111111");
+
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Draft preserved on background conflict" },
+    });
+
+    const deferred = createDeferred<void>();
+    let onBackgroundError: ((err: unknown) => void) | undefined;
+    mockUpdateConsult.mockImplementationOnce(async (_id, _updater, options) => {
+      onBackgroundError = options?.onBackgroundError;
+      return {
+        consult: { ...caseA, status: "pending" },
+        isQueued: true,
+        backgroundPromise: deferred.promise,
+        applied: true,
+      };
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+    });
+
+    // Simulate real lib/db.ts behavior: onBackgroundError fires and backgroundPromise still resolves
+    await act(async () => {
+      onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
+      deferred.resolve();
+      await Promise.resolve();
+    });
+
+    await screen.findAllByText("111111");
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Draft preserved on background conflict");
+  });
+
+  it("shows conflict toast, refreshes list, and preserves draft when result.applied is false", async () => {
+    render(<CompletedPage />);
+
+    await screen.findAllByText("111111");
+    expect(mockFetchCompletedConsultsPage).toHaveBeenCalledTimes(1);
+
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Precondition conflict draft" },
+    });
+
+    mockUpdateConsult.mockResolvedValueOnce({
+      consult: null,
+      isQueued: false,
+      backgroundPromise: null,
+      applied: false,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+
+    await waitFor(() => {
+      expect(mockFetchCompletedConsultsPage).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mockAddToast).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "warning" })
+    );
+    expect(mockAddToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "success" })
+    );
+    // Modal remains open with entered draft intact
+    expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Precondition conflict draft");
+  });
+
+  it("does not advance currentPage or scroll when a superseded page fetch resolves late", async () => {
+    const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    mockFetchCompletedConsultsPage.mockResolvedValueOnce({
+      consults: [caseA, caseB],
+      lastDoc: { id: "cursor-1" },
+      hasMore: true,
+    });
+
+    render(<CompletedPage />);
+    await screen.findAllByText("111111");
+
+    const deferredPage2 = createDeferred<{
+      consults: Consult[];
+      lastDoc: undefined;
+      hasMore: boolean;
+    }>();
+    const deferredRefresh = createDeferred<{
+      consults: Consult[];
+      lastDoc: { id: string };
+      hasMore: boolean;
+    }>();
+
+    mockFetchCompletedConsultsPage
+      .mockReturnValueOnce(deferredPage2.promise)
+      .mockReturnValueOnce(deferredRefresh.promise);
+
+    // Start navigating to page 2 (slow)
+    fireEvent.click(screen.getByRole("button", { name: /ถัดไป/i }));
+
+    // Before page 2 completes, trigger a newer fetch (via re-consult precondition rejection refresh)
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Conflict triggers newer fetch" },
+    });
+    mockUpdateConsult.mockResolvedValueOnce({
+      consult: null,
+      isQueued: false,
+      backgroundPromise: null,
+      applied: false,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+
+    await waitFor(() => {
+      expect(mockFetchCompletedConsultsPage).toHaveBeenCalledTimes(3);
+    });
+
+    // Newer page 1 refresh commits first
+    await act(async () => {
+      deferredRefresh.resolve({
+        consults: [caseA, caseB],
+        lastDoc: { id: "cursor-1-new" },
+        hasMore: true,
+      });
+      await Promise.resolve();
+    });
+
+    // Superseded page 2 response resolves afterward — must NOT set page to 2 or scroll
+    await act(async () => {
+      deferredPage2.resolve({
+        consults: [caseB],
+        lastDoc: undefined,
+        hasMore: false,
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/หน้า 1 — แสดง 2 เคส/)).toBeInTheDocument();
+    expect(scrollToSpy).not.toHaveBeenCalled();
+    scrollToSpy.mockRestore();
+  });
 });

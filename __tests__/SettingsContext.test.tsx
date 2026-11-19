@@ -7,16 +7,23 @@ import { SettingsProvider, useSettings } from "@/app/contexts/SettingsContext";
 // Helper component that exposes the context values for testing
 // ---------------------------------------------------------------------------
 function SettingsConsumer() {
-  const { darkMode, soundEnabled, toggleDarkMode, toggleSound } = useSettings();
+  const { darkMode, soundEnabled, displayMode, toggleDarkMode, toggleSound, setDisplayMode } = useSettings();
   return (
     <div>
       <span data-testid="dark-mode">{String(darkMode)}</span>
       <span data-testid="sound-enabled">{String(soundEnabled)}</span>
+      <span data-testid="display-mode">{displayMode}</span>
       <button data-testid="toggle-dark" onClick={toggleDarkMode}>
         Toggle Dark
       </button>
       <button data-testid="toggle-sound" onClick={toggleSound}>
         Toggle Sound
+      </button>
+      <button data-testid="set-table" onClick={() => setDisplayMode("table")}>
+        Set Table
+      </button>
+      <button data-testid="set-card" onClick={() => setDisplayMode("card")}>
+        Set Card
       </button>
     </div>
   );
@@ -278,7 +285,7 @@ describe("SettingsContext", () => {
       expect(screen.getByTestId("dark-mode").textContent).toBe("true");
     });
 
-    it("regression B15: does not crash when localStorage throws SecurityError", () => {
+    it("regression B15: retains in-memory settings when localStorage throws SecurityError or QuotaExceededError", () => {
       const getSpy = vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
         throw new Error("SecurityError");
       });
@@ -293,9 +300,51 @@ describe("SettingsContext", () => {
           </SettingsProvider>
         );
         expect(screen.getByTestId("dark-mode").textContent).toBe("false");
-        expect(() => fireEvent.click(screen.getByTestId("toggle-dark"))).not.toThrow();
+        expect(screen.getByTestId("sound-enabled").textContent).toBe("false");
+        expect(screen.getByTestId("display-mode").textContent).toBe("card");
+
+        act(() => {
+          fireEvent.click(screen.getByTestId("toggle-dark"));
+          fireEvent.click(screen.getByTestId("toggle-sound"));
+          fireEvent.click(screen.getByTestId("set-table"));
+        });
+
+        expect(screen.getByTestId("dark-mode").textContent).toBe("true");
+        expect(screen.getByTestId("sound-enabled").textContent).toBe("true");
+        expect(screen.getByTestId("display-mode").textContent).toBe("table");
+
+        act(() => {
+          fireEvent.click(screen.getByTestId("toggle-dark"));
+          fireEvent.click(screen.getByTestId("set-card"));
+        });
+
+        expect(screen.getByTestId("dark-mode").textContent).toBe("false");
+        expect(screen.getByTestId("display-mode").textContent).toBe("card");
       } finally {
         getSpy.mockRestore();
+        setSpy.mockRestore();
+      }
+    });
+
+    it("retains session updates in memory when setItem fails with QuotaExceededError while getItem returns stale data", () => {
+      storage.store["darkMode"] = "false";
+      const setSpy = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+        throw new Error("QuotaExceededError");
+      });
+
+      try {
+        render(
+          <SettingsProvider>
+            <SettingsConsumer />
+          </SettingsProvider>
+        );
+
+        expect(screen.getByTestId("dark-mode").textContent).toBe("false");
+        act(() => {
+          fireEvent.click(screen.getByTestId("toggle-dark"));
+        });
+        expect(screen.getByTestId("dark-mode").textContent).toBe("true");
+      } finally {
         setSpy.mockRestore();
       }
     });

@@ -54,46 +54,9 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       setIsUpdating(true);
       beginSync();
 
+      let result: UpdateResults;
       try {
-        const result = await run();
-
-        if (!result.applied) {
-          endSync();
-          setIsUpdating(false);
-          inFlightRef.current = false;
-          return false;
-        }
-
-        if (holdLockUntilRemote) {
-          if (result.backgroundPromise) {
-            // Hold transactional lock until server transaction settles to prevent concurrent duplicate writes
-            const release = () => {
-              endSync();
-              setIsUpdating(false);
-              inFlightRef.current = false;
-            };
-            void result.backgroundPromise.then(release, release);
-          } else {
-            endSync();
-            setIsUpdating(false);
-            inFlightRef.current = false;
-          }
-        } else {
-          setIsUpdating(false);
-          if (result.backgroundPromise) {
-            void result.backgroundPromise.then(
-              () => endSync(),
-              () => endSync()
-            );
-          } else {
-            endSync();
-          }
-          inFlightRef.current = false;
-        }
-
-        addToast({ type: "success", message: getSuccessMessage() });
-        onUpdate?.();
-        return true;
+        result = await run();
       } catch (error) {
         console.error(errorLogLabel, error);
         addToast({ type: "error", message: errorMessage });
@@ -102,6 +65,54 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         inFlightRef.current = false;
         return false;
       }
+
+      if (!result.applied) {
+        endSync();
+        setIsUpdating(false);
+        inFlightRef.current = false;
+        return false;
+      }
+
+      if (holdLockUntilRemote) {
+        if (result.backgroundPromise) {
+          // Hold transactional lock until server transaction settles to prevent concurrent duplicate writes
+          const release = () => {
+            endSync();
+            setIsUpdating(false);
+            inFlightRef.current = false;
+          };
+          void result.backgroundPromise.then(release, release);
+        } else {
+          endSync();
+          setIsUpdating(false);
+          inFlightRef.current = false;
+        }
+      } else {
+        setIsUpdating(false);
+        if (result.backgroundPromise) {
+          void result.backgroundPromise.then(
+            () => endSync(),
+            () => endSync()
+          );
+        } else {
+          endSync();
+        }
+        inFlightRef.current = false;
+      }
+
+      try {
+        addToast({ type: "success", message: getSuccessMessage() });
+      } catch (error) {
+        console.error(errorLogLabel, error);
+      }
+
+      try {
+        onUpdate?.();
+      } catch (error) {
+        console.error(errorLogLabel, error);
+      }
+
+      return true;
     },
     [addToast, onUpdate, beginSync, endSync]
   );
@@ -130,10 +141,12 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
 
           const updates: Record<string, string | null> = {};
           Object.keys(current.departments).forEach((dept) => {
-            if ((targetDepts as readonly string[]).includes(dept) && current.departments[dept].status === "pending") {
-              if (!current.departments[dept].acceptedAt) {
-                updates[`departments.${dept}.acceptedAt`] = now;
-              }
+            if (
+              (targetDepts as readonly string[]).includes(dept) &&
+              current.departments[dept].status === "pending" &&
+              !current.departments[dept].acceptedAt
+            ) {
+              updates[`departments.${dept}.acceptedAt`] = now;
               updates[`departments.${dept}.actionStatus`] = ACCEPT_STATUS;
             }
           });

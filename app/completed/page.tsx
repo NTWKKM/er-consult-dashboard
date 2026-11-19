@@ -80,14 +80,14 @@ export default function CompletedPage() {
   const fetchRequestIdRef = useRef(0);
 
   // Fetch a specific page of completed cases using Firestore cursors
-  const fetchPage = useCallback(async (page: number) => {
+  const fetchPage = useCallback(async (page: number): Promise<boolean> => {
     const requestId = ++fetchRequestIdRef.current;
     setLoadingMore(true);
     try {
       // For page 1, no cursor is needed. For subsequent pages, use the stored cursor.
       const cursor = page > 1 ? cursorMapRef.current.get(page - 1) : undefined;
       const result = await fetchCompletedConsultsPage(ITEMS_PER_PAGE, cursor);
-      if (fetchRequestIdRef.current !== requestId) return;
+      if (fetchRequestIdRef.current !== requestId) return false;
 
       setCases(result.consults);
       setHasMore(result.hasMore);
@@ -99,9 +99,12 @@ export default function CompletedPage() {
       // Store the lastDoc as cursor for the next page
       if (result.lastDoc) {
         cursorMapRef.current.set(page, result.lastDoc);
+      } else {
+        cursorMapRef.current.delete(page);
       }
+      return true;
     } catch (err) {
-      if (fetchRequestIdRef.current !== requestId) return;
+      if (fetchRequestIdRef.current !== requestId) return false;
       console.error("Fetch error:", err);
       setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
       throw err;
@@ -120,11 +123,9 @@ export default function CompletedPage() {
 
   // Navigate to a specific page
   const goToPage = useCallback((page: number) => {
-    if (historyTableContainerRef.current) {
-      historyTableContainerRef.current.scrollTop = 0;
-    }
     void fetchPage(page)
-      .then(() => {
+      .then((committed) => {
+        if (!committed) return;
         setCurrentPage(page);
         window.scrollTo({ top: 0, behavior: "smooth" });
       })
@@ -171,6 +172,28 @@ export default function CompletedPage() {
     setSelectedCase(null);
   }, []);
 
+  const refreshCompletedList = useCallback(() => {
+    const { searchHN: activeSearchHN, filterDate: activeFilterDate, currentPage: activePage } =
+      viewStateRef.current;
+    if (activeSearchHN || activeFilterDate) {
+      setSearchStatus("loading");
+      void searchCompletedConsults(activeSearchHN, activeFilterDate)
+        .then((res) => {
+          setSearchResults(res);
+          setSearchStatus("ready");
+        })
+        .catch((err) => {
+          console.error("Recovery refresh failed:", err);
+          setSearchStatus("error");
+        });
+    } else {
+      setLoading(true);
+      void fetchPage(activePage).catch((err) => {
+        console.error("Recovery refresh failed:", err);
+      });
+    }
+  }, [fetchPage]);
+
   const handleReConsult = async () => {
     if (reconsultInFlightRef.current) return;
     if (!selectedCase || !newProblem.trim()) {
@@ -187,6 +210,7 @@ export default function CompletedPage() {
     const caseId = selectedCase.id;
     const submittedProblem = newProblem;
     const submittedDepartments = [...selectedDepartments];
+    let backgroundFailed = false;
     
     try {
       const result = await transactionalUpdateConsult(caseId, (current) => {
@@ -207,36 +231,27 @@ export default function CompletedPage() {
       }, { 
         awaitRemote: false,
         onBackgroundError: () => {
+          backgroundFailed = true;
           addToast({ 
             type: "error", 
             message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
           });
           
           // Refetch directly instead of rolling back with stale snapshot
-          const { searchHN, filterDate, currentPage } = viewStateRef.current;
-          if (searchHN || filterDate) {
-            setSearchStatus("loading");
-            void searchCompletedConsults(searchHN, filterDate)
-              .then((res) => {
-                setSearchResults(res);
-                setSearchStatus("ready");
-              })
-              .catch((err) => {
-                console.error("Recovery refresh failed:", err);
-                setSearchStatus("error");
-              });
-          } else {
-            setLoading(true);
-            void fetchPage(currentPage).catch((err) => {
-               console.error("Recovery refresh failed:", err);
-            });
-          }
+          refreshCompletedList();
         }
       }); // OPTIMISTIC UPDATE
 
       if (!result.applied) {
-          setIsUpdating(false);
-          reconsultInFlightRef.current = false;
+          reconsultFailedDraftsRef.current.set(caseId, {
+              problem: submittedProblem,
+              selectedDepartments: submittedDepartments,
+          });
+          addToast({
+              type: "warning",
+              message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช",
+          });
+          refreshCompletedList();
           return;
       }
 
@@ -256,6 +271,7 @@ export default function CompletedPage() {
           });
           void result.backgroundPromise.then(
               () => {
+                  if (backgroundFailed) return;
                   reconsultFailedDraftsRef.current.delete(caseId);
                   if (reconsultAttemptRef.current === attemptId) {
                       setNewProblem("");
@@ -266,7 +282,7 @@ export default function CompletedPage() {
                   // Retained in state and reconsultFailedDraftsRef for this caseId; onBackgroundError notifies user.
               }
           );
-      } else {
+      } else if (!backgroundFailed) {
           reconsultFailedDraftsRef.current.delete(caseId);
           setNewProblem("");
           setSelectedDepartments([]);

@@ -4,8 +4,24 @@ import { makeConsult, makeDepartment } from "./helpers/fixtures";
 
 describe("ConsultSchema", () => {
   it("accepts a valid consult document", () => {
-    const valid = makeConsult();
-    expect(ConsultSchema.parse(valid)).toEqual(valid);
+    const raw = {
+      id: "case-1",
+      hn: "123456",
+      firstName: "สมชาย",
+      lastName: "ใจดี",
+      room: "Resus Team 1",
+      problem: "Acute abdomen",
+      createdAt: "2026-01-15T08:00:00.000Z",
+      status: "pending",
+      isUrgent: false,
+      departments: {
+        "Gen Sx": {
+          status: "pending",
+          completedAt: null,
+        },
+      },
+    };
+    expect(ConsultSchema.parse(raw)).toEqual(raw);
   });
 
   it("defaults missing firstName and lastName to empty strings for legacy documents", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import React from "react";
-import { ToastProvider } from "@/app/contexts/ToastContext";
+import { ToastProvider, useToast } from "@/app/contexts/ToastContext";
 import { ACCEPT_STATUS, SURGERY_DEPTS, ORTHO_DEPTS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
@@ -235,7 +235,7 @@ describe("useConsultActions", () => {
       expect(updated![`departments.${deptName}.actionStatus`]).toBe(ACCEPT_STATUS);
     });
 
-    it("preserves existing acceptedAt if already set", async () => {
+    it("skips already-accepted departments and returns null when no unaccepted target departments remain", async () => {
       mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
       const { result } = renderHook(
         () => useConsultActions("consult-1", "Gen Sx", "123456"),
@@ -252,13 +252,47 @@ describe("useConsultActions", () => {
           "Gen Sx": {
             status: "pending",
             acceptedAt: existingAcceptedAt,
+            actionStatus: "Admit",
+          } as never,
+        },
+      });
+
+      const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult);
+      expect(updated).toBeNull();
+    });
+
+    it("skips already-accepted departments while accepting unaccepted pending siblings in the same group", async () => {
+      mockTransactionalUpdateConsult.mockResolvedValue(makeSuccessResult());
+      const { result } = renderHook(
+        () => useConsultActions("consult-1", "Gen Sx", "123456"),
+        { wrapper }
+      );
+
+      await act(async () => {
+        await result.current.handleAccept();
+      });
+
+      const existingAcceptedAt = "2024-01-15T08:00:00.000Z";
+      const snapshot = makePendingConsult({
+        departments: {
+          "Gen Sx": {
+            status: "pending",
+            acceptedAt: existingAcceptedAt,
+            actionStatus: "Admit",
+          } as never,
+          "Neuro Sx": {
+            status: "pending",
+            completedAt: null,
           } as never,
         },
       });
 
       const updated = captureAndRunUpdater(snapshot, mockTransactionalUpdateConsult) as Record<string, unknown> | null;
-      // acceptedAt should NOT be overwritten — the key should not appear in the update payload
-      expect(updated![`departments.Gen Sx.acceptedAt`]).toBeUndefined();
+      expect(updated).not.toBeNull();
+      expect(updated!["departments.Gen Sx.acceptedAt"]).toBeUndefined();
+      expect(updated!["departments.Gen Sx.actionStatus"]).toBeUndefined();
+      expect(updated!["departments.Neuro Sx.acceptedAt"]).toEqual(expect.any(String));
+      expect(updated!["departments.Neuro Sx.actionStatus"]).toBe(ACCEPT_STATUS);
     });
 
     it("returns early and does not call transactionalUpdateConsult when already updating", async () => {
@@ -802,6 +836,105 @@ describe("useConsultActions", () => {
       });
       expect(secondOk).toBe(true);
       expect(mockUpdateConsult).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps transactional lock and sync state intact when onUpdate throws after run succeeds", async () => {
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      let resolveBackground!: () => void;
+      const backgroundPromise = new Promise<void>((resolve) => {
+        resolveBackground = resolve;
+      });
+
+      mockTransactionalUpdateConsult.mockResolvedValue({
+        consult: makePendingConsult(),
+        isQueued: true,
+        backgroundPromise,
+        applied: true,
+      });
+
+      const onUpdate = vi.fn(() => {
+        throw new Error("onUpdate callback error");
+      });
+
+      const { result } = renderHook(
+        () => ({
+          actions: useConsultActions("consult-1", "Gen Sx", "123456", onUpdate),
+          toast: useToast(),
+        }),
+        { wrapper }
+      );
+
+      let ok = false;
+      await act(async () => {
+        ok = await result.current.actions.handleAccept();
+      });
+
+      expect(ok).toBe(true);
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith("Error accepting case:", expect.any(Error));
+      expect(result.current.actions.isUpdating).toBe(true);
+      expect(result.current.actions.isSyncing).toBe(true);
+      expect(result.current.toast.toasts.some((t) => t.type === "error")).toBe(false);
+
+      let secondAttempt = true;
+      await act(async () => {
+        secondAttempt = await result.current.actions.handleAccept();
+      });
+      expect(secondAttempt).toBe(false);
+
+      await act(async () => {
+        resolveBackground();
+        await backgroundPromise;
+      });
+
+      expect(result.current.actions.isUpdating).toBe(false);
+      expect(result.current.actions.isSyncing).toBe(false);
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("preserves pending sync counter on offline updates when onUpdate throws", async () => {
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      let resolveBackground!: () => void;
+      const backgroundPromise = new Promise<void>((resolve) => {
+        resolveBackground = resolve;
+      });
+
+      mockUpdateConsult.mockResolvedValue({
+        consult: makePendingConsult({ isUrgent: true }),
+        isQueued: true,
+        backgroundPromise,
+        applied: true,
+      });
+
+      const onUpdate = vi.fn(() => {
+        throw new Error("onUpdate callback error");
+      });
+
+      const { result } = renderHook(
+        () => ({
+          actions: useConsultActions("consult-1", "Gen Sx", "123456", onUpdate),
+          toast: useToast(),
+        }),
+        { wrapper }
+      );
+
+      let ok = false;
+      await act(async () => {
+        ok = await result.current.actions.handleToggleUrgency(false);
+      });
+
+      expect(ok).toBe(true);
+      expect(result.current.actions.isUpdating).toBe(false);
+      expect(result.current.actions.isSyncing).toBe(true);
+      expect(result.current.toast.toasts.some((t) => t.type === "error")).toBe(false);
+
+      await act(async () => {
+        resolveBackground();
+        await backgroundPromise;
+      });
+
+      expect(result.current.actions.isSyncing).toBe(false);
+      consoleErrorSpy.mockRestore();
     });
   });
 

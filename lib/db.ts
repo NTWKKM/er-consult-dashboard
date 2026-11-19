@@ -101,25 +101,37 @@ export async function fetchCompletedConsultsPage(
     pageSize: number,
     lastDoc?: QueryDocumentSnapshot<DocumentData>
 ): Promise<{ consults: Consult[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
+    if (pageSize <= 0) {
+        return { consults: [], lastDoc: null, hasMore: false };
+    }
+
     const database = requireDb();
     // Track both valid consults and their corresponding Firestore docs.
     // validDocs[i] is the snapshot for validConsults[i], enabling correct cursor tracking.
     const validConsults: Consult[] = [];
     const validDocs: QueryDocumentSnapshot<DocumentData>[] = [];
     let currentCursor = lastDoc;
-    let hasMore = false;
 
     const MAX_SCAN_DOCS = Math.max(250, pageSize * 10);
+    const MAX_REFILL_BATCH = Math.max(50, pageSize + 1);
     let totalScanned = 0;
+    let isFirstBatch = true;
+    let refillBatchFloor = 10;
+    let lastScannedDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+    let overflowContinuationDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+    let reachedEndOfData = false;
 
     // ดึงข้อมูลไปเรื่อยๆ จนกว่าจะได้เอกสารที่ถูกต้องครบ pageSize + 1 (เพื่อเช็ค hasMore)
     while (validConsults.length <= pageSize && totalScanned < MAX_SCAN_DOCS) {
         const needed = pageSize + 1 - validConsults.length;
+        const remainingScan = MAX_SCAN_DOCS - totalScanned;
+        const requestedBatch = isFirstBatch ? needed : Math.max(needed, refillBatchFloor);
+        const batchSize = Math.min(remainingScan, requestedBatch);
         let q = query(
             collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             orderBy("createdAt", "desc"),
-            limit(needed)
+            limit(batchSize)
         );
 
         if (currentCursor) {
@@ -127,28 +139,54 @@ export async function fetchCompletedConsultsPage(
         }
 
         const snapshot = await getDocs(q);
-        if (snapshot.empty) break;
+        if (snapshot.empty) {
+            reachedEndOfData = true;
+            break;
+        }
 
         totalScanned += snapshot.docs.length;
 
-        snapshot.docs.forEach((doc) => {
-            if (validConsults.length <= pageSize) {
-                const c = mapDocToConsult(doc);
-                if (c !== null && Boolean(c.hn)) {
+        for (const docSnap of snapshot.docs) {
+            const c = mapDocToConsult(docSnap);
+            if (c !== null && Boolean(c.hn)) {
+                if (validConsults.length === pageSize) {
+                    overflowContinuationDoc = lastScannedDoc ?? validDocs[pageSize - 1];
                     validConsults.push(c);
-                    validDocs.push(doc);
+                    validDocs.push(docSnap);
+                    break;
                 }
+                validConsults.push(c);
+                validDocs.push(docSnap);
             }
-        });
+            lastScannedDoc = docSnap;
+        }
 
         currentCursor = snapshot.docs[snapshot.docs.length - 1];
+        if (validConsults.length > pageSize) break;
         // No more documents in Firestore — avoid a wasted extra read
-        if (snapshot.docs.length < needed) break;
+        if (snapshot.docs.length < batchSize) {
+            reachedEndOfData = true;
+            break;
+        }
+
+        if (!isFirstBatch) {
+            refillBatchFloor = Math.min(MAX_REFILL_BATCH, refillBatchFloor * 2);
+        }
+        isFirstBatch = false;
     }
 
-    hasMore = validConsults.length > pageSize;
-    const pageConsults = hasMore ? validConsults.slice(0, pageSize) : validConsults;
-    const pageLastDoc = pageConsults.length > 0 ? validDocs[pageConsults.length - 1] : null;
+    const hasOverflow = validConsults.length > pageSize;
+    const reachedScanLimit =
+        !hasOverflow && !reachedEndOfData && totalScanned >= MAX_SCAN_DOCS && lastScannedDoc !== null;
+    const hasMore = hasOverflow || reachedScanLimit;
+    const pageConsults = hasOverflow ? validConsults.slice(0, pageSize) : validConsults;
+    const pageLastDoc = hasOverflow
+        ? overflowContinuationDoc
+        : reachedScanLimit
+          ? lastScannedDoc
+          : pageConsults.length > 0
+            ? validDocs[pageConsults.length - 1]
+            : null;
 
     return {
         consults: pageConsults,

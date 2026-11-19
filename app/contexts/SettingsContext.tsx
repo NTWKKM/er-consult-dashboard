@@ -20,32 +20,74 @@ const SettingsContext = createContext<SettingsContextType>({
   setDisplayMode: () => {},
 });
 
+const memoryFallbackByStorage = new WeakMap<object, Map<string, string>>();
+const restrictedMemoryFallback = new Map<string, string>();
+
+function getStorageAndFallback(): { storage: Storage | null; fallback: Map<string, string> } {
+  if (typeof window === "undefined") {
+    return { storage: null, fallback: restrictedMemoryFallback };
+  }
+  try {
+    const storage = window.localStorage;
+    if (!storage || typeof storage !== "object") {
+      return { storage: null, fallback: restrictedMemoryFallback };
+    }
+    let fallback = memoryFallbackByStorage.get(storage);
+    if (!fallback) {
+      fallback = new Map<string, string>();
+      memoryFallbackByStorage.set(storage, fallback);
+    }
+    return { storage, fallback };
+  } catch {
+    return { storage: null, fallback: restrictedMemoryFallback };
+  }
+}
+
 // For subscribing to window events (both cross-tab and same-tab)
 const subscribe = (callback: () => void) => {
   if (typeof window === "undefined") return () => {};
-  window.addEventListener("storage", callback);
+  const handleStorage = (event: StorageEvent) => {
+    const { fallback } = getStorageAndFallback();
+    if (event.key === null) {
+      fallback.clear();
+    } else {
+      fallback.delete(event.key);
+    }
+    callback();
+  };
+  window.addEventListener("storage", handleStorage);
   window.addEventListener("settings-change", callback);
   return () => {
-    window.removeEventListener("storage", callback);
+    window.removeEventListener("storage", handleStorage);
     window.removeEventListener("settings-change", callback);
   };
 };
 
 function safeGetItem(key: string): string | null {
-  if (typeof window === "undefined") return null;
+  const { storage, fallback } = getStorageAndFallback();
+  if (fallback.has(key)) {
+    return fallback.get(key) ?? null;
+  }
+  if (!storage) return null;
   try {
-    return localStorage.getItem(key);
+    return storage.getItem(key);
   } catch {
     return null;
   }
 }
 
 function safeSetItem(key: string, value: string): void {
-  if (typeof window === "undefined") return;
+  const { storage, fallback } = getStorageAndFallback();
+  if (!storage) {
+    fallback.set(key, value);
+    return;
+  }
   try {
-    localStorage.setItem(key, value);
+    storage.setItem(key, value);
+    fallback.delete(key);
   } catch {
-    // Ignore storage quota/security errors in restricted or private browsing contexts
+    // Retain setting in session memory when storage quota/security restrictions block writes
+    fallback.set(key, value);
   }
 }
 

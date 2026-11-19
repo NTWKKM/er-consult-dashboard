@@ -138,8 +138,16 @@ describe("Real-use contract: useConsultActions <-> lib/db.ts", () => {
     });
     expect(result.current.isUpdating).toBe(false);
 
-    // Offline updateDoc never resolves — offline urgency toggle must NOT deadlock
-    mockUpdateDoc.mockReturnValue(new Promise(() => {}));
+    // Offline writes stay queued until reconnected — urgency toggle must NOT deadlock
+    let resolveWrite1!: () => void;
+    let resolveWrite2!: () => void;
+    mockGetDoc
+      .mockResolvedValueOnce(makeSnap({ ...consult, isUrgent: false } as unknown as Record<string, unknown>))
+      .mockResolvedValueOnce(makeSnap({ ...consult, isUrgent: true } as unknown as Record<string, unknown>));
+    mockUpdateDoc
+      .mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite1 = resolve; }))
+      .mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite2 = resolve; }));
+
     await act(async () => {
       const firstToggle = await result.current.handleToggleUrgency(false);
       expect(firstToggle).toBe(true);
@@ -150,7 +158,17 @@ describe("Real-use contract: useConsultActions <-> lib/db.ts", () => {
       const secondToggle = await result.current.handleToggleUrgency(true);
       expect(secondToggle).toBe(true);
     });
+    expect(result.current.isUpdating).toBe(false);
     expect(mockUpdateDoc).toHaveBeenCalledTimes(2);
+    expect(mockUpdateDoc).toHaveBeenNthCalledWith(1, expect.anything(), { isUrgent: true });
+    expect(mockUpdateDoc).toHaveBeenNthCalledWith(2, expect.anything(), { isUrgent: false });
+
+    await act(async () => {
+      resolveWrite1();
+      resolveWrite2();
+      await Promise.resolve();
+    });
+    expect(result.current.isSyncing).toBe(false);
   });
 
   it("Completing the last pending department transitions root status to completed", async () => {

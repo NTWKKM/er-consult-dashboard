@@ -62,6 +62,7 @@ vi.mock("firebase/firestore", () => ({
 import {
   updateConsult,
   transactionalUpdateConsult,
+  fetchCompletedConsultsPage,
   searchCompletedConsults,
   fetchAllCompletedConsultsForExport,
   getConsultById,
@@ -1296,5 +1297,132 @@ describe("subscribeToConsultsByStatus", () => {
     const onError = vi.fn();
     subscribeToConsultsByStatus("pending", vi.fn(), onError);
     expect(onError).toHaveBeenCalledWith(err);
+  });
+});
+
+// ===========================================================================
+// fetchCompletedConsultsPage
+// ===========================================================================
+
+describe("fetchCompletedConsultsPage", () => {
+  const validPayload = (hn: string) => ({
+    hn,
+    firstName: "A",
+    lastName: "B",
+    room: "Urgent",
+    problem: "P",
+    createdAt: "2026-01-15T08:00:00.000Z",
+    status: "completed",
+    isUrgent: false,
+    departments: {
+      "Gen Sx": { status: "completed", completedAt: "2026-01-15T09:00:00.000Z" },
+    },
+  });
+
+  const invalidPayload = () => ({
+    // Missing required fields / invalid HN fails ConsultSchema
+    hn: "INVALID",
+    status: "completed",
+  });
+
+  it("uses bounded batch refills instead of sequential limit(1) queries and anchors lastDoc before undisplayed valid rows", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Page size = 2. First batch requests 3: 2 valid + 1 invalid.
+    const v1 = makeDocSnapshot("v1", validPayload("1001"));
+    const v2 = makeDocSnapshot("v2", validPayload("1002"));
+    const inv1 = makeDocSnapshot("inv1", invalidPayload());
+
+    // Second batch (refillFloor = 10) contains 8 invalid docs, then v3, then v4.
+    const invBatch = Array.from({ length: 8 }, (_, idx) =>
+      makeDocSnapshot(`inv-b-${idx}`, invalidPayload())
+    );
+    const lastInvalidBeforeV3 = invBatch[invBatch.length - 1];
+    const v3 = makeDocSnapshot("v3", validPayload("1003"));
+    const v4 = makeDocSnapshot("v4", validPayload("1004"));
+
+    mockGetDocs
+      .mockResolvedValueOnce(makeQuerySnapshot([v1, v2, inv1]))
+      .mockResolvedValueOnce(makeQuerySnapshot([...invBatch, v3, v4]));
+
+    const res = await fetchCompletedConsultsPage(2);
+
+    expect(mockGetDocs).toHaveBeenCalledTimes(2);
+    expect(mockLimit.mock.calls.map((c) => c[0])).toEqual([3, 10]);
+    expect(res.consults.map((c) => c.id)).toEqual(["v1", "v2"]);
+    expect(res.hasMore).toBe(true);
+    // Continuation must sit immediately before v3 so v3 and v4 are not skipped on the next page
+    expect(res.lastDoc).toBe(lastInvalidBeforeV3);
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("returns hasMore=true and lastScannedDoc when MAX_SCAN_DOCS is hit with zero valid docs", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let seq = 0;
+
+    // For pageSize = 2, MAX_SCAN_DOCS = 250. Return full batches of invalid docs matching requested limit.
+    mockGetDocs.mockImplementation(async () => {
+      const requestedLimit = mockLimit.mock.calls[mockLimit.mock.calls.length - 1]?.[0] ?? 1;
+      const docs = Array.from({ length: requestedLimit }, () => {
+        seq += 1;
+        return makeDocSnapshot(`bad-${seq}`, invalidPayload());
+      });
+      return makeQuerySnapshot(docs);
+    });
+
+    const res = await fetchCompletedConsultsPage(2);
+
+    expect(res.consults).toEqual([]);
+    expect(res.hasMore).toBe(true);
+    expect(res.lastDoc?.id).toBe("bad-250");
+    expect(seq).toBe(250);
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("returns hasMore=true and lastScannedDoc when MAX_SCAN_DOCS is hit with partial valid docs", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let seq = 0;
+
+    mockGetDocs.mockImplementation(async () => {
+      const requestedLimit = mockLimit.mock.calls[mockLimit.mock.calls.length - 1]?.[0] ?? 1;
+      const docs = Array.from({ length: requestedLimit }, () => {
+        seq += 1;
+        if (seq === 1) {
+          return makeDocSnapshot("valid-1", validPayload("2001"));
+        }
+        return makeDocSnapshot(`bad-${seq}`, invalidPayload());
+      });
+      return makeQuerySnapshot(docs);
+    });
+
+    const res = await fetchCompletedConsultsPage(2);
+
+    expect(res.consults.map((c) => c.id)).toEqual(["valid-1"]);
+    expect(res.hasMore).toBe(true);
+    expect(res.lastDoc?.id).toBe("bad-250");
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("returns hasMore=false and lastDoc=null when confirmed end-of-data yields zero valid docs", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Requested batch = 3, only 2 invalid docs exist -> short snapshot confirms end of collection
+    mockGetDocs.mockResolvedValueOnce(
+      makeQuerySnapshot([
+        makeDocSnapshot("bad-1", invalidPayload()),
+        makeDocSnapshot("bad-2", invalidPayload()),
+      ])
+    );
+
+    const res = await fetchCompletedConsultsPage(2);
+
+    expect(res.consults).toEqual([]);
+    expect(res.lastDoc).toBeNull();
+    expect(res.hasMore).toBe(false);
+
+    consoleErrorSpy.mockRestore();
   });
 });

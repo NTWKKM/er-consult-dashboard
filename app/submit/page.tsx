@@ -12,6 +12,7 @@ export default function SubmitPage() {
   const hnRef = useRef<HTMLInputElement>(null);
   const submitInFlightRef = useRef(false);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -126,6 +127,8 @@ export default function SubmitPage() {
         duration: 3000,
       });
 
+      if (!isMountedRef.current) return;
+
       setHn("");
       setFirstName("");
       setLastName("");
@@ -135,10 +138,13 @@ export default function SubmitPage() {
       setErrors({});
 
       redirectTimerRef.current = setTimeout(() => {
-        router.push("/");
+        if (isMountedRef.current) {
+          router.push("/");
+        }
       }, 1500);
     } catch (error) {
       console.error("Submit consult error:", error instanceof Error ? error.message : "unknown");
+      if (!isMountedRef.current) return;
       addToast({
         type: "error",
         message: error instanceof Error ? `เกิดข้อผิดพลาด: ${error.message}` : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
@@ -150,7 +156,9 @@ export default function SubmitPage() {
   }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (redirectTimerRef.current !== null) {
         clearTimeout(redirectTimerRef.current);
         redirectTimerRef.current = null;
