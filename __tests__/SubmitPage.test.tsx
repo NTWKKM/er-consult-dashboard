@@ -9,6 +9,7 @@ const mockAddConsult = vi.fn();
 const mockClearRetainedSubmitDraft = vi.fn();
 const mockGetLatestFailedSubmitDraft = vi.fn<() => Consult | null>(() => null);
 const mockReconcileReloadedSubmitDrafts = vi.fn<() => Promise<Consult | null>>(async () => null);
+const mockSubscribeToFailedSubmitDrafts = vi.fn<() => () => void>(() => () => {});
 const mockAddToast = vi.fn();
 let mockPendingCases: Consult[] = [];
 let mockIsOnline = true;
@@ -22,6 +23,7 @@ vi.mock("@/lib/db", () => ({
   clearRetainedSubmitDraft: (...args: unknown[]) => mockClearRetainedSubmitDraft(...args),
   getLatestFailedSubmitDraft: () => mockGetLatestFailedSubmitDraft(),
   reconcileReloadedSubmitDrafts: () => mockReconcileReloadedSubmitDrafts(),
+  subscribeToFailedSubmitDrafts: () => mockSubscribeToFailedSubmitDrafts(),
 }));
 
 vi.mock("@/app/contexts/ToastContext", () => ({

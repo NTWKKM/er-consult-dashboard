@@ -1005,6 +1005,112 @@ describe("addConsult optimistic draft retention", () => {
     await Promise.resolve();
     window.sessionStorage.clear();
   });
+
+  it("monitors reloaded pending drafts after reload and surfaces failure when a pending write is later rejected", async () => {
+    window.sessionStorage.clear();
+    let resolvePendingWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolvePendingWrite = resolve;
+      })
+    );
+
+    const pendingConsult = await addConsult(
+      {
+        hn: "554433",
+        firstName: "Offline",
+        lastName: "Reload",
+        room: "Resus Team 1",
+        problem: "Chest pain",
+        isUrgent: true,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    // Simulate reload while write is still queued in persistentLocalCache
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+
+    const unsubMock = vi.fn();
+    let snapshotNext!: (snap: { exists: () => boolean; metadata?: { hasPendingWrites?: boolean } }) => void;
+    let snapshotError!: (err: unknown) => void;
+    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext, onErr) => {
+      snapshotNext = onNext;
+      snapshotError = onErr;
+      return unsubMock;
+    });
+
+    const onFailed = vi.fn();
+    const stopMonitoring = reloadedDb.monitorReloadedPendingSubmitDrafts(onFailed);
+    expect(mockOnSnapshot).toHaveBeenCalledTimes(1);
+
+    // Initial cache snapshot shows hasPendingWrites: true -> stays pending
+    snapshotNext({ exists: () => true, metadata: { hasPendingWrites: true } });
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
+
+    // Server later rejects the queued write -> transitions to failed, notifies caller, remains retryable
+    const rulesErr = new Error("permission-denied");
+    snapshotError(rulesErr);
+
+    expect(onFailed).toHaveBeenCalledWith(
+      expect.objectContaining({ id: pendingConsult.id, hn: "554433" }),
+      rulesErr
+    );
+    expect(unsubMock).toHaveBeenCalledTimes(1);
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("failed");
+    expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(pendingConsult.id);
+
+    // Also verify rollback snapshot (!exists && !hasPendingWrites) marks draft failed
+    stopMonitoring();
+    window.sessionStorage.clear();
+    vi.resetModules();
+    const reloadedDb2 = await import("@/lib/db");
+    let resolveWrite2!: () => void;
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite2 = resolve; }));
+    const rollbackConsult = await reloadedDb2.addConsult(
+      {
+        hn: "665544",
+        firstName: "Rollback",
+        lastName: "Case",
+        room: "NT",
+        problem: "Sync rollback",
+        isUrgent: false,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    vi.resetModules();
+    const afterReload2 = await import("@/lib/db");
+    const unsubMock2 = vi.fn();
+    let snapshotNext2!: (snap: { exists: () => boolean; metadata?: { hasPendingWrites?: boolean } }) => void;
+    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
+      snapshotNext2 = onNext;
+      return unsubMock2;
+    });
+
+    const onFailed2 = vi.fn();
+    afterReload2.monitorReloadedPendingSubmitDrafts(onFailed2);
+    snapshotNext2({ exists: () => true, metadata: { hasPendingWrites: true } });
+    expect(onFailed2).not.toHaveBeenCalled();
+
+    snapshotNext2({ exists: () => false, metadata: { hasPendingWrites: false } });
+    expect(onFailed2).toHaveBeenCalledWith(
+      expect.objectContaining({ id: rollbackConsult.id, hn: "665544" }),
+      undefined
+    );
+    expect(afterReload2.getLatestFailedSubmitDraft()?.id).toBe(rollbackConsult.id);
+
+    resolvePendingWrite();
+    resolveWrite2();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.sessionStorage.clear();
+  });
 });
 
 // ===========================================================================

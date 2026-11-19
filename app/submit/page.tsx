@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft, reconcileReloadedSubmitDrafts } from "@/lib/db";
+import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft, reconcileReloadedSubmitDrafts, subscribeToFailedSubmitDrafts } from "@/lib/db";
 import {
   ALL_DEPARTMENTS,
   MAX_HN_LENGTH,
@@ -285,7 +285,10 @@ export default function SubmitPage() {
 
   useEffect(() => {
     isMountedRef.current = true;
-    const restoreDraft = (draft: { id: string; hn: string; firstName: string; lastName: string; room: RoomName; problem: string; departments: Record<string, unknown> }) => {
+    const restoreDraft = (
+      draft: { id: string; hn: string; firstName: string; lastName: string; room: RoomName; problem: string; departments: Record<string, unknown> },
+      options?: { silentToast?: boolean }
+    ) => {
       if (!isMountedRef.current) return;
       retriedDraftIdRef.current = draft.id;
       setHn(draft.hn);
@@ -294,11 +297,13 @@ export default function SubmitPage() {
       setRoom(draft.room);
       setProblem(draft.problem);
       setSelectedDepts(Object.keys(draft.departments));
-      addToast({
-        type: "error",
-        message: "พบเคสที่ซิงค์ไม่สำเร็จก่อนหน้านี้ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
-        duration: 5000,
-      });
+      if (!options?.silentToast) {
+        addToast({
+          type: "error",
+          message: "พบเคสที่ซิงค์ไม่สำเร็จก่อนหน้านี้ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
+          duration: 5000,
+        });
+      }
     };
 
     const failedDraft = typeof getLatestFailedSubmitDraft === "function" ? getLatestFailedSubmitDraft() : null;
@@ -311,8 +316,15 @@ export default function SubmitPage() {
         }
       });
     }
+    const unsubscribeFailed =
+      typeof subscribeToFailedSubmitDrafts === "function"
+        ? subscribeToFailedSubmitDrafts((draft) => {
+            restoreDraft(draft, { silentToast: true });
+          })
+        : () => {};
     return () => {
       isMountedRef.current = false;
+      unsubscribeFailed();
       if (redirectTimerRef.current !== null) {
         clearTimeout(redirectTimerRef.current);
         redirectTimerRef.current = null;

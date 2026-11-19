@@ -330,7 +330,27 @@ const PersistedSubmitDraftSchema = z.object({
 
 const retainedSubmitDrafts = new Map<string, RetainedSubmitDraft>();
 const activeSubmitWriteIds = new Set<string>();
+const failedDraftListeners = new Set<(draft: Consult, error?: unknown) => void>();
 let draftsHydrated = false;
+
+export function subscribeToFailedSubmitDrafts(
+    listener: (draft: Consult, error?: unknown) => void
+): () => void {
+    failedDraftListeners.add(listener);
+    return () => {
+        failedDraftListeners.delete(listener);
+    };
+}
+
+function notifyFailedDraftListeners(draft: Consult, error?: unknown): void {
+    for (const listener of failedDraftListeners) {
+        try {
+            listener(draft, error);
+        } catch {
+            // Isolate listener errors
+        }
+    }
+}
 
 function persistSubmitDrafts(): void {
     if (typeof window === "undefined") return;
@@ -432,6 +452,81 @@ export async function reconcileReloadedSubmitDrafts(): Promise<Consult | null> {
         persistSubmitDrafts();
     }
     return getLatestFailedSubmitDraft();
+}
+
+/**
+ * Monitors reloaded "pending" submit drafts across all routes via Firestore metadata-aware
+ * snapshot listeners until each draft either commits remotely or fails/rolls back.
+ * Invokes `onFailed` once per draft that fails after reload and keeps it retryable in sessionStorage.
+ */
+export function monitorReloadedPendingSubmitDrafts(
+    onFailed?: (draft: Consult, error?: unknown) => void
+): () => void {
+    ensureDraftsHydrated();
+    if (!db) return () => {};
+
+    const database = db;
+    const unsubscribers: Array<() => void> = [];
+
+    for (const [id, entry] of retainedSubmitDrafts.entries()) {
+        if (entry.status !== "pending" || activeSubmitWriteIds.has(id)) {
+            continue;
+        }
+
+        let settled = false;
+        let unsubscribe: (() => void) | null = null;
+        const finish = () => {
+            settled = true;
+            if (unsubscribe) {
+                unsubscribe();
+                unsubscribe = null;
+            }
+        };
+        const markFailed = (err?: unknown) => {
+            if (settled) return;
+            finish();
+            retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
+            persistSubmitDrafts();
+            onFailed?.(entry.consult, err);
+            notifyFailedDraftListeners(entry.consult, err);
+        };
+
+        unsubscribe = onSnapshot(
+            doc(database, COLLECTION_NAME, id),
+            { includeMetadataChanges: true },
+            (docSnap) => {
+                if (settled) return;
+                const hasPendingWrites = Boolean(docSnap.metadata?.hasPendingWrites);
+                if (docSnap.exists() && !hasPendingWrites) {
+                    // Server commit confirmed — remove retained draft
+                    finish();
+                    retainedSubmitDrafts.delete(id);
+                    persistSubmitDrafts();
+                    return;
+                }
+                if (!docSnap.exists() && !hasPendingWrites) {
+                    // Queued write was rejected/dropped or never reached local cache before reload
+                    markFailed();
+                }
+            },
+            (err) => {
+                markFailed(err);
+            }
+        );
+
+        unsubscribers.push(() => {
+            if (unsubscribe) {
+                unsubscribe();
+                unsubscribe = null;
+            }
+        });
+    }
+
+    return () => {
+        for (const unsub of unsubscribers) {
+            unsub();
+        }
+    };
 }
 
 function trackOptimisticWrite<T>(promise: Promise<T>): Promise<T> {
