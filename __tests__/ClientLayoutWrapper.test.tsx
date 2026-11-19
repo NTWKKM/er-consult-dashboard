@@ -138,7 +138,8 @@ describe("ClientLayoutWrapper reloaded pending submit draft monitor", () => {
     });
 
     // User sees the error toast on "/" and the draft is retained as retryable
-    expect(await screen.findByText(/ซิงค์เคส HN: 889900 ไม่สำเร็จ/)).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/ซิงค์เคส HN: 889900 ไม่สำเร็จ/);
     expect(freshDb.getLatestFailedSubmitDraft()?.id).toBe("reloaded-pending-1");
   });
 });
