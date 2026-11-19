@@ -14,7 +14,9 @@ service cloud.firestore {
     //   - lastName: string (required, non-empty on create, <= 200 chars, immutable)
     //   - room: string (required, 1..200 chars)
     //   - problem: string (required, 1..5000 chars on create, 1..10000 chars on update)
-    //   - createdAt: string (required, ISO-8601 UTC timestamp on create and re-consult; immutable otherwise, <= 64 chars)
+    //   - createdAt: string (required, ISO-8601 UTC timestamp on create, immutable, <= 64 chars)
+    //   - reconsultedAt: string (optional, ISO-8601 UTC timestamp)
+    //   - reconsultHistory: list (optional, <= 50 entries of ReconsultEntrySchema)
     //   - status: string (required, 'pending' on create; 'pending' | 'completed' | 'cancelled' on update)
     //   - isUrgent: bool (required)
     //   - departments: map (required, 1..20 entries of DepartmentSchema)
@@ -62,8 +64,12 @@ service cloud.firestore {
         );
     }
 
-    function allowedConsultFields() {
+    function requiredConsultFields() {
       return ['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'];
+    }
+
+    function allowedConsultFields() {
+      return ['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments', 'reconsultedAt', 'reconsultHistory'];
     }
 
     // ===============================================================
@@ -71,9 +77,8 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidConsult(data, consultId, maxProblemLength) {
-      let fields = allowedConsultFields();
-      return data.keys().hasOnly(fields)
-        && data.keys().hasAll(fields)
+      return data.keys().hasOnly(allowedConsultFields())
+        && data.keys().hasAll(requiredConsultFields())
         && data.id is string
         && data.id == consultId
         && data.hn is string
@@ -92,6 +97,8 @@ service cloud.firestore {
         && data.problem.size() <= maxProblemLength
         && data.createdAt is string
         && data.createdAt.size() <= 64
+        && (!('reconsultedAt' in data) || isIsoTimestamp(data.reconsultedAt))
+        && (!('reconsultHistory' in data) || (data.reconsultHistory is list && data.reconsultHistory.size() <= 50))
         && data.status in ["pending", "completed", "cancelled"]
         && data.isUrgent is bool
         && data.departments is map
@@ -103,15 +110,6 @@ service cloud.firestore {
       return data.hn == existing.hn
         && data.firstName == existing.firstName
         && data.lastName == existing.lastName;
-    }
-
-    function isValidCreatedAtUpdate(data, existing) {
-      return data.createdAt == existing.createdAt
-        || (
-          existing.status in ["completed", "cancelled"]
-          && data.status == "pending"
-          && isIsoTimestamp(data.createdAt)
-        );
     }
 
     match /consults/{consultId} {
@@ -127,7 +125,7 @@ service cloud.firestore {
       allow update: if isAuthorizedStaff()
         && isValidConsult(request.resource.data, consultId, 10000)
         && isPatientIdentityUnchanged(request.resource.data, resource.data)
-        && isValidCreatedAtUpdate(request.resource.data, resource.data);
+        && request.resource.data.createdAt == resource.data.createdAt;
 
       allow delete: if false;
     }

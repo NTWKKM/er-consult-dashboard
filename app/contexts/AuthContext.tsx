@@ -85,8 +85,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // Ignore if another tab holds an active Firestore connection
       }
-      // Full page reload is intentional after terminate(db) so a fresh Firestore instance initializes on next login
-      window.location.href = "/login";
+      // Full page reload after terminate(db) initializes a clean Firestore instance and redirects via ProtectedRoute
+      window.location.reload();
     }
   }, []);
 

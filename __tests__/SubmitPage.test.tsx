@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import React from "react";
+import type { Consult } from "@/lib/db";
+import { makeConsult } from "./helpers/fixtures";
 
 const mockPush = vi.fn();
 const mockAddConsult = vi.fn();
 const mockAddToast = vi.fn();
+let mockPendingCases: Consult[] = [];
+let mockIsOnline = true;
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
@@ -16,6 +20,14 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/app/contexts/ToastContext", () => ({
   useToast: () => ({ addToast: mockAddToast }),
+}));
+
+vi.mock("@/app/contexts/ConsultsContext", () => ({
+  usePendingConsults: () => ({ cases: mockPendingCases, loading: false, error: null }),
+}));
+
+vi.mock("@/app/hooks/useNetworkStatus", () => ({
+  useNetworkStatus: () => mockIsOnline,
 }));
 
 import SubmitPage from "@/app/submit/page";
@@ -32,6 +44,8 @@ function fillValidSubmitForm() {
 describe("SubmitPage mount and redirect safety", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPendingCases = [];
+    mockIsOnline = true;
     vi.useFakeTimers();
   });
 
@@ -115,5 +129,82 @@ describe("SubmitPage mount and redirect safety", () => {
       vi.advanceTimersByTime(1500);
     });
     expect(mockPush).toHaveBeenCalledWith("/");
+  });
+
+  it("sanitizes non-numeric HN characters and exposes aria-invalid + aria-describedby on validation errors", () => {
+    render(<SubmitPage />);
+
+    const hnInput = screen.getByLabelText(/HN/i);
+    fireEvent.change(hnInput, { target: { value: "abc123-45!@#" } });
+    expect(hnInput).toHaveValue("12345");
+
+    // Clear HN and submit empty form -> validation marks fields aria-invalid="true"
+    fireEvent.change(hnInput, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+
+    expect(hnInput).toHaveAttribute("aria-invalid", "true");
+    expect(hnInput).toHaveAttribute("aria-describedby", "hn-error");
+    expect(screen.getByText("กรุณากรอก HN")).toHaveAttribute("id", "hn-error");
+  });
+
+  it("displays duplicate pending consult warning banner with department and room (zero extra reads)", () => {
+    mockPendingCases = [
+      makeConsult({
+        id: "existing-1",
+        hn: "123456",
+        room: "Resus Team 2",
+        departments: {
+          "Gen Sx": { status: "pending", completedAt: null },
+        },
+      }),
+    ];
+
+    render(<SubmitPage />);
+    fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "123456" } });
+    fireEvent.click(screen.getByLabelText("Gen Sx"));
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("123456");
+    expect(alert).toHaveTextContent("Gen Sx (Resus Team 2)");
+  });
+
+  it("submits optimistically with awaitRemote=false when offline so form never freezes", async () => {
+    mockIsOnline = false;
+    mockAddConsult.mockResolvedValueOnce({ id: "offline-case" });
+
+    render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    expect(mockAddConsult).toHaveBeenCalledWith(
+      expect.objectContaining({ hn: "123456", isUrgent: false }),
+      expect.objectContaining({ awaitRemote: false })
+    );
+    expect(mockAddToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "success",
+        message: expect.stringContaining("บันทึกเคสในเครื่องแล้ว"),
+      })
+    );
+  });
+
+  it("triggers Fast Track submission on Cmd/Ctrl+Enter shortcut", async () => {
+    mockAddConsult.mockResolvedValueOnce({ id: "fast-case" });
+
+    render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Enter", metaKey: true });
+      await Promise.resolve();
+    });
+
+    expect(mockAddConsult).toHaveBeenCalledWith(
+      expect.objectContaining({ hn: "123456", isUrgent: true })
+    );
   });
 });

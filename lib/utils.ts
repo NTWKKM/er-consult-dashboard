@@ -16,14 +16,17 @@ export const formatTime = (iso: string) => {
 };
 
 /**
- * Sort consults by urgency first (urgent cases on top), then by creation date (newest first).
+ * Sort consults by urgency first (urgent cases on top), then by latest activity
+ * (`reconsultedAt ?? createdAt`, newest first) while preserving original `createdAt`.
  * Single source of truth for consult ordering — use this everywhere instead of inline sorts.
  */
 export function sortConsults(consults: Consult[]): Consult[] {
   return [...consults].sort((a, b) => {
     if (a.isUrgent && !b.isUrgent) return -1;
     if (!a.isUrgent && b.isUrgent) return 1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    const aTime = new Date(a.reconsultedAt ?? a.createdAt).getTime();
+    const bTime = new Date(b.reconsultedAt ?? b.createdAt).getTime();
+    return bTime - aTime;
   });
 }
 

@@ -20,6 +20,7 @@ export interface CompletedExportRow {
   Dx: string;
   แผนก: string;
   วันที่ส่ง: string;
+  "Re-consult ล่าสุด": string;
   รับเคส: string;
   Admit: string;
   "คืน ER": string;
@@ -75,6 +76,7 @@ export function buildCompletedExportRows(consults: Consult[]): CompletedExportRo
       Dx: c.problem ? sanitizeExcelCell(c.problem) : "-",
       แผนก: depts ? sanitizeExcelCell(depts) : "-",
       วันที่ส่ง: c.createdAt ? formatBangkokTimestamp(c.createdAt) : "-",
+      "Re-consult ล่าสุด": c.reconsultedAt ? formatBangkokTimestamp(c.reconsultedAt) : "-",
       รับเคส: acceptTimes ? sanitizeExcelCell(acceptTimes) : "-",
       Admit: admitTimes ? sanitizeExcelCell(admitTimes) : "-",
       "คืน ER": returnTimes ? sanitizeExcelCell(returnTimes) : "-",

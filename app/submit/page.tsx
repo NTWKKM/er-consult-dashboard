@@ -32,11 +32,19 @@ export default function SubmitPage() {
   useEffect(() => {
     hnRef.current?.focus();
     
+    let active = true;
     // Replace @ts-expect-error with a typed navigator narrow
     const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
     const platform = nav.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent;
     
-    setIsMac(platform.toUpperCase().indexOf('MAC') >= 0);
+    void Promise.resolve().then(() => {
+      if (active) {
+        setIsMac(platform.toUpperCase().indexOf('MAC') >= 0);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const validateForm = useCallback(() => {
@@ -87,19 +95,21 @@ export default function SubmitPage() {
   };
 
   // Zero-read duplicate consult detection against already-subscribed pending cases
-  const duplicatePendingDepts = useMemo(() => {
+  const duplicatePendingMatches = useMemo(() => {
     const trimmedHn = hn.trim();
     if (!trimmedHn || selectedDepts.length === 0) return [];
-    const matching = new Set<string>();
+    const matches: { dept: string; room: string }[] = [];
+    const seen = new Set<string>();
     for (const c of activePendingCases) {
       if (c.hn.trim() !== trimmedHn) continue;
       for (const dept of selectedDepts) {
-        if (c.departments[dept]?.status === "pending") {
-          matching.add(dept);
+        if (c.departments[dept]?.status === "pending" && !seen.has(dept)) {
+          seen.add(dept);
+          matches.push({ dept, room: c.room });
         }
       }
     }
-    return Array.from(matching);
+    return matches;
   }, [hn, selectedDepts, activePendingCases]);
 
   const handleSubmit = useCallback(async (isUrgent: boolean = false) => {
@@ -398,7 +408,6 @@ export default function SubmitPage() {
                   tabIndex={-1}
                   role="group"
                   aria-labelledby="departments-label"
-                  aria-invalid={Boolean(errors.departments)}
                   aria-describedby={errors.departments ? "departments-error" : undefined}
                   className="grid grid-cols-2 sm:grid-cols-4 gap-2"
                 >
@@ -446,11 +455,13 @@ export default function SubmitPage() {
                     </p>
                   </div>
                 )}
-                {duplicatePendingDepts.length > 0 && (
+                {duplicatePendingMatches.length > 0 && (
                   <div role="alert" className="mt-2 p-2.5 rounded-[6px] border bg-accent-soft border-accent/40">
                     <p className="text-xs font-medium text-accent">
                       คำเตือน: HN {hn.trim()} มีเคสรอปรึกษาค้างอยู่แล้วในแผนก{" "}
-                      <span className="font-semibold text-ink">{duplicatePendingDepts.join(", ")}</span>{" "}
+                      <span className="font-semibold text-ink">
+                        {duplicatePendingMatches.map((m) => `${m.dept} (${m.room})`).join(", ")}
+                      </span>{" "}
                       (กรุณาตรวจสอบก่อนส่งซ้ำ)
                     </p>
                   </div>

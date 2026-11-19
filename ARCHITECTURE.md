@@ -145,7 +145,7 @@ When a doctor triggers a Re-consult on a case from `/completed`:
   *(Note: Stale milestone timestamps like acceptedAt/admittedAt/dischargedAt are completely cleared for the re-consulted departments).*
 - It updates the patient problem description by appending the new consultation reason:
   `problem: "${current.problem}\n\n[Re-consult]: ${newProblem}"`
-- It updates `createdAt = new Date().toISOString()`, sorting it back to the top of the whiteboard. `firestore.rules` permits `createdAt` updates exclusively on transitions where `resource.data.status in ["completed", "cancelled"]` and `request.resource.data.status == "pending"`, keeping `createdAt` immutable for all other updates.
+- It preserves the original `createdAt` timestamp (immutable for accurate TAT/HA audit trails) and instead writes `reconsultedAt = new Date().toISOString()` plus appends a structured entry `{ at, departments, problem }` to `reconsultHistory`. The whiteboard sorts active cases by `reconsultedAt ?? createdAt` and resets the active wait timer to `reconsultedAt`. `firestore.rules` keeps `createdAt` strictly immutable on all updates while permitting optional `reconsultedAt` and `reconsultHistory` updates.
 
 ## 15. Excel Export Pipeline & Safeguards
 

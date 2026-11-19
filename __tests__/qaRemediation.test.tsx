@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import React from "react";
+import fs from "node:fs";
+import path from "node:path";
 import { MilestoneList } from "@/app/components/MilestoneList";
 import { ElapsedTime } from "@/app/components/ElapsedTime";
 import { buildCompletedExportRows } from "@/lib/excelExport";
+import { sortConsults } from "@/lib/utils";
+import { ConsultSchema } from "@/lib/schema";
 import { makeConsult } from "./helpers/fixtures";
 
 const mockPush = vi.fn();
@@ -153,6 +157,70 @@ describe("QA Remediation Regressions (Sprints 1-3)", () => {
       );
 
       expect(screen.getByText("Sensitive Whiteboard")).toBeInTheDocument();
+    });
+  });
+
+  describe("Sprint 4: Immutable createdAt + reconsultedAt + reconsultHistory", () => {
+    it("sortConsults orders by reconsultedAt ?? createdAt while preserving original createdAt", () => {
+      const olderReconsulted = makeConsult({
+        id: "old-reconsulted",
+        hn: "111111",
+        isUrgent: false,
+        createdAt: "2026-11-18T01:00:00.000Z",
+        reconsultedAt: "2026-11-19T06:30:00.000Z",
+      });
+      const newerNormal = makeConsult({
+        id: "newer-normal",
+        hn: "222222",
+        isUrgent: false,
+        createdAt: "2026-11-19T05:00:00.000Z",
+      });
+
+      const sorted = sortConsults([newerNormal, olderReconsulted]);
+      expect(sorted.map((c) => c.id)).toEqual(["old-reconsulted", "newer-normal"]);
+      expect(sorted[0].createdAt).toBe("2026-11-18T01:00:00.000Z");
+    });
+
+    it("ConsultSchema validates optional reconsultedAt and reconsultHistory and exports both timestamps", () => {
+      const parsed = ConsultSchema.parse({
+        id: "rc-1",
+        hn: "9990001",
+        firstName: "Test",
+        lastName: "Reconsult",
+        room: "Urgent",
+        problem: "Original Dx\n\n[Re-consult]: New eval",
+        createdAt: "2026-11-18T08:00:00.000Z",
+        reconsultedAt: "2026-11-19T06:00:00.000Z",
+        reconsultHistory: [
+          {
+            at: "2026-11-19T06:00:00.000Z",
+            departments: ["Neuro Sx"],
+            problem: "New eval",
+          },
+        ],
+        status: "completed",
+        isUrgent: false,
+        departments: {
+          "Neuro Sx": { status: "completed", completedAt: "2026-11-19T06:30:00.000Z" },
+        },
+      });
+
+      const [row] = buildCompletedExportRows([parsed]);
+      expect(row.วันที่ส่ง).not.toBe("-");
+      expect(row["Re-consult ล่าสุด"]).not.toBe("-");
+      expect(row.วันที่ส่ง).not.toBe(row["Re-consult ล่าสุด"]);
+    });
+
+    it("firestore.rules enforces immutable createdAt, immutable identity, numeric HN, delete deny, and no wildcards", () => {
+      const rulesText = fs.readFileSync(path.join(process.cwd(), "firestore.rules"), "utf8");
+      expect(rulesText).toContain("allow delete: if false;");
+      expect(rulesText).not.toContain("{document=**}");
+      expect(rulesText).toContain("request.resource.data.createdAt == resource.data.createdAt");
+      expect(rulesText).toContain("isPatientIdentityUnchanged(request.resource.data, resource.data)");
+      expect(rulesText).toContain("data.hn == existing.hn");
+      expect(rulesText).toContain("^[0-9]+$");
+      expect(rulesText).toContain("reconsultedAt");
+      expect(rulesText).toContain("reconsultHistory");
     });
   });
 });

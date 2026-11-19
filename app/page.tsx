@@ -29,23 +29,30 @@ export default function Dashboard() {
 
   const settingsLoadedRef = useRef(false);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount (deferred to microtask to avoid hydration mismatch and cascading effect renders)
   useEffect(() => {
-    try {
-      const savedView = localStorage.getItem("dashboard_view");
-      const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
-      
-      if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
-        setView(savedView);
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      try {
+        const savedView = localStorage.getItem("dashboard_view");
+        const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
+        
+        if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
+          setView(savedView);
+        }
+        if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
+          setRoomFilter(savedRoomFilter as RoomFilter);
+        }
+      } catch (e) {
+        console.warn("Failed to load settings from localStorage:", e);
+      } finally {
+        settingsLoadedRef.current = true;
       }
-      if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
-        setRoomFilter(savedRoomFilter as RoomFilter);
-      }
-    } catch (e) {
-      console.warn("Failed to load settings from localStorage:", e);
-    } finally {
-      settingsLoadedRef.current = true;
-    }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Save to localStorage when changed
@@ -691,7 +698,7 @@ function MobilePatientCard({ caseData }: { caseData: Consult }) {
            </svg>
            {sentTimeFull}
         </div>
-        <PatientTableElapsedTime createdAt={caseData.createdAt || ""} />
+        <PatientTableElapsedTime createdAt={caseData.reconsultedAt ?? caseData.createdAt ?? ""} />
       </div>
 
       {/* Management Actions */}
@@ -775,7 +782,7 @@ function PatientTableRow({ caseData }: { caseData: Consult }) {
              </svg>
              {sentTimeFull}
           </div>
-          <PatientTableElapsedTime createdAt={caseData.createdAt || ""} />
+          <PatientTableElapsedTime createdAt={caseData.reconsultedAt ?? caseData.createdAt ?? ""} />
         </div>
       </td>
       <td className="p-3">

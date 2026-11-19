@@ -19,6 +19,13 @@ export const DepartmentSchema = z.object({
   transfers: z.array(TransferSchema).optional(),
 });
 
+// Define the schema for a single re-consult event
+export const ReconsultEntrySchema = z.object({
+  at: z.string().datetime(),
+  departments: z.array(z.string()).min(1),
+  problem: z.string(),
+});
+
 // Define the schema for the main Consult document
 export const ConsultSchema = z.object({
   id: z.string(),
@@ -29,6 +36,8 @@ export const ConsultSchema = z.object({
   room: z.enum(ROOMS),
   problem: z.string(),
   createdAt: z.string().datetime(),
+  reconsultedAt: z.string().datetime().optional(),
+  reconsultHistory: z.array(ReconsultEntrySchema).optional(),
   status: z.enum(["pending", "completed", "cancelled"]),
   isUrgent: z.boolean(),
   // Allow dynamic keys but strictly enforce the DepartmentSchema shape
@@ -37,4 +46,5 @@ export const ConsultSchema = z.object({
 
 export type ConsultTransfer = z.infer<typeof TransferSchema>;
 export type ConsultDepartment = z.infer<typeof DepartmentSchema>;
+export type ConsultReconsultEntry = z.infer<typeof ReconsultEntrySchema>;
 export type Consult = z.infer<typeof ConsultSchema>;

@@ -122,9 +122,17 @@ export default function CompletedPage() {
     []
   );
 
-  // Initial load
+  // Initial load (microtask avoids synchronous setState inside effect body)
   useEffect(() => {
-    void fetchPage(1).catch(() => {});
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) {
+        void fetchPage(1).catch(() => {});
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, [fetchPage]);
 
   // Navigate to a specific page
@@ -238,11 +246,24 @@ export default function CompletedPage() {
         submittedDepartments.forEach((dept) => {
           updatedDepartments[dept] = { status: "pending", completedAt: null };
         });
+        const now = new Date().toISOString();
+        const existingHistory = Array.isArray(current.reconsultHistory)
+          ? current.reconsultHistory
+          : [];
         return {
           status: "pending",
           departments: updatedDepartments,
-          problem: `${current.problem}\n\n[Re-consult]: ${submittedProblem}`,
-          createdAt: new Date().toISOString(),
+          problem: `${current.problem}\n\n[Re-consult]: ${submittedProblem.trim()}`,
+          // Preserve original createdAt for clinical audit/TAT; use reconsultedAt for whiteboard sorting & wait timer
+          reconsultedAt: now,
+          reconsultHistory: [
+            ...existingHistory,
+            {
+              at: now,
+              departments: submittedDepartments,
+              problem: submittedProblem.trim(),
+            },
+          ],
         };
       }, { 
         awaitRemote: false,
@@ -504,18 +525,28 @@ export default function CompletedPage() {
     const trimmedSearchHN = searchHN.trim();
 
     if (!trimmedSearchHN && !filterDate) {
-      setSearchResults(null);
-      setSearchStatus("idle");
+      let active = true;
+      void Promise.resolve().then(() => {
+        if (active && searchRequestIdRef.current === requestId) {
+          setSearchResults(null);
+          setSearchStatus("idle");
+        }
+      });
       return () => {
+        active = false;
         searchRequestIdRef.current += 1;
       };
     }
 
-    // Reset results when starting a server-side search to avoid showing stale data
-    setSearchResults(null);
-    setSearchStatus("loading");
-
     let cancelled = false;
+    // Reset results via microtask before debounce fires to avoid showing stale data
+    void Promise.resolve().then(() => {
+      if (!cancelled && searchRequestIdRef.current === requestId) {
+        setSearchResults(null);
+        setSearchStatus("loading");
+      }
+    });
+
     const timer = setTimeout(async () => {
       if (cancelled || searchRequestIdRef.current !== requestId) return;
       try {
@@ -545,13 +576,21 @@ export default function CompletedPage() {
 
   useEffect(() => {
     if (!loading && !error) return;
-    if (showExportModal) {
-      closeExportModal();
-    }
-    if (showModal) {
-      setShowModal(false);
-      setSelectedCase(null);
-    }
+    if (!showExportModal && !showModal) return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      if (showExportModal) {
+        closeExportModal();
+      }
+      if (showModal) {
+        setShowModal(false);
+        setSelectedCase(null);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, [loading, error, showExportModal, showModal, closeExportModal]);
 
   // Mark shared layout shell (Navbar + main + BottomNav) inert while any modal is open
