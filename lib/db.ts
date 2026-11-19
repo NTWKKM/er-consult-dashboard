@@ -4,7 +4,7 @@ import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
 import { ConsultSchema, type Consult, type ConsultDepartment, type ConsultTransfer } from "./schema";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 export type { Consult, ConsultDepartment, ConsultTransfer };
 
@@ -322,9 +322,59 @@ export interface RetainedSubmitDraft {
     error?: unknown;
 }
 
+const SUBMIT_DRAFTS_STORAGE_KEY = "er_consult_submit_drafts_v1";
+const PersistedSubmitDraftSchema = z.object({
+    consult: ConsultSchema,
+    status: z.enum(["pending", "failed"]),
+});
+
 const retainedSubmitDrafts = new Map<string, RetainedSubmitDraft>();
+const activeSubmitWriteIds = new Set<string>();
+let draftsHydrated = false;
+
+function persistSubmitDrafts(): void {
+    if (typeof window === "undefined") return;
+    try {
+        if (!window.sessionStorage) return;
+        if (retainedSubmitDrafts.size === 0) {
+            window.sessionStorage.removeItem(SUBMIT_DRAFTS_STORAGE_KEY);
+            return;
+        }
+        const serialized = Array.from(retainedSubmitDrafts.values()).map(({ consult, status }) => ({
+            consult,
+            status,
+        }));
+        window.sessionStorage.setItem(SUBMIT_DRAFTS_STORAGE_KEY, JSON.stringify(serialized));
+    } catch {
+        // Ignore storage quota or private-browsing errors
+    }
+}
+
+function ensureDraftsHydrated(): void {
+    if (draftsHydrated) return;
+    draftsHydrated = true;
+    if (typeof window === "undefined") return;
+    try {
+        const raw = window.sessionStorage?.getItem(SUBMIT_DRAFTS_STORAGE_KEY);
+        if (!raw) return;
+        const parsed: unknown = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return;
+        for (const item of parsed) {
+            const validated = PersistedSubmitDraftSchema.safeParse(item);
+            if (validated.success && !retainedSubmitDrafts.has(validated.data.consult.id)) {
+                retainedSubmitDrafts.set(validated.data.consult.id, {
+                    consult: validated.data.consult,
+                    status: validated.data.status,
+                });
+            }
+        }
+    } catch {
+        // Ignore malformed storage entries
+    }
+}
 
 export function getLatestFailedSubmitDraft(): Consult | null {
+    ensureDraftsHydrated();
     let latest: Consult | null = null;
     for (const entry of retainedSubmitDrafts.values()) {
         if (entry.status === "failed") {
@@ -335,15 +385,53 @@ export function getLatestFailedSubmitDraft(): Consult | null {
 }
 
 export function getRetainedSubmitDraft(id: string): RetainedSubmitDraft | undefined {
+    ensureDraftsHydrated();
     return retainedSubmitDrafts.get(id);
 }
 
 export function clearRetainedSubmitDraft(id?: string): void {
+    ensureDraftsHydrated();
     if (id === undefined) {
         retainedSubmitDrafts.clear();
+        activeSubmitWriteIds.clear();
+        persistSubmitDrafts();
         return;
     }
     retainedSubmitDrafts.delete(id);
+    activeSubmitWriteIds.delete(id);
+    persistSubmitDrafts();
+}
+
+/**
+ * Reconciles submit drafts loaded from sessionStorage after a page reload before an
+ * optimistic write settled. Clears drafts already committed to Firestore and promotes
+ * unpersisted/errored drafts to "failed" so the user can retry them.
+ */
+export async function reconcileReloadedSubmitDrafts(): Promise<Consult | null> {
+    ensureDraftsHydrated();
+    if (!db) return getLatestFailedSubmitDraft();
+
+    const orphanedPending = Array.from(retainedSubmitDrafts.entries()).filter(
+        ([id, entry]) => entry.status === "pending" && !activeSubmitWriteIds.has(id)
+    );
+
+    for (const [id, entry] of orphanedPending) {
+        try {
+            const docSnap = await getDoc(doc(db, COLLECTION_NAME, id));
+            if (docSnap.exists() && !docSnap.metadata?.hasPendingWrites) {
+                retainedSubmitDrafts.delete(id);
+            } else if (!docSnap.exists()) {
+                retainedSubmitDrafts.set(id, { ...entry, status: "failed" });
+            }
+        } catch (err) {
+            retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
+        }
+    }
+
+    if (orphanedPending.length > 0) {
+        persistSubmitDrafts();
+    }
+    return getLatestFailedSubmitDraft();
 }
 
 function trackOptimisticWrite<T>(promise: Promise<T>): Promise<T> {
@@ -584,21 +672,28 @@ export async function addConsult(
     };
 
     if (!awaitRemote) {
-        // Optimistic offline-first write: retain a retryable draft until the Firestore write settles
-        // so hospital Wi-Fi drops never freeze the form or silently lose rejected submissions.
+        // Optimistic offline-first write: retain a retryable draft across navigation/reloads
+        // until the Firestore write settles so hospital Wi-Fi drops never lose submissions.
+        ensureDraftsHydrated();
+        activeSubmitWriteIds.add(newConsult.id);
         retainedSubmitDrafts.set(newConsult.id, { consult: newConsult, status: "pending" });
+        persistSubmitDrafts();
         const writePromise = trackOptimisticWrite(setDoc(newDocRef, newConsult));
         void writePromise.then(
             () => {
+                activeSubmitWriteIds.delete(newConsult.id);
                 retainedSubmitDrafts.delete(newConsult.id);
+                persistSubmitDrafts();
                 onBackgroundSuccess?.(newConsult);
             },
             (err) => {
+                activeSubmitWriteIds.delete(newConsult.id);
                 retainedSubmitDrafts.set(newConsult.id, {
                     consult: newConsult,
                     status: "failed",
                     error: err,
                 });
+                persistSubmitDrafts();
                 onBackgroundError?.(err, newConsult);
             }
         );

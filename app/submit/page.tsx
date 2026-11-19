@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft } from "@/lib/db";
+import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft, reconcileReloadedSubmitDrafts } from "@/lib/db";
 import {
   ALL_DEPARTMENTS,
   MAX_HN_LENGTH,
@@ -210,7 +210,15 @@ export default function SubmitPage() {
             }
           },
           onBackgroundError: (_err, failedConsult) => {
-            if (!isMountedRef.current) return;
+            if (!isMountedRef.current) {
+              // ToastProvider lives in the root layout, so users still receive failed-sync alerts after redirect
+              addToast({
+                type: "error",
+                message: `ซิงค์เคส HN: ${submittedDraft.hn} ไม่สำเร็จ กรุณากลับไปหน้า "ส่งเคสปรึกษา" เพื่อลองส่งใหม่`,
+                duration: 6000,
+              });
+              return;
+            }
             if (redirectTimerRef.current !== null) {
               clearTimeout(redirectTimerRef.current);
               redirectTimerRef.current = null;
@@ -277,22 +285,30 @@ export default function SubmitPage() {
 
   useEffect(() => {
     isMountedRef.current = true;
+    const restoreDraft = (draft: { id: string; hn: string; firstName: string; lastName: string; room: RoomName; problem: string; departments: Record<string, unknown> }) => {
+      if (!isMountedRef.current) return;
+      retriedDraftIdRef.current = draft.id;
+      setHn(draft.hn);
+      setFirstName(draft.firstName);
+      setLastName(draft.lastName);
+      setRoom(draft.room);
+      setProblem(draft.problem);
+      setSelectedDepts(Object.keys(draft.departments));
+      addToast({
+        type: "error",
+        message: "พบเคสที่ซิงค์ไม่สำเร็จก่อนหน้านี้ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
+        duration: 5000,
+      });
+    };
+
     const failedDraft = typeof getLatestFailedSubmitDraft === "function" ? getLatestFailedSubmitDraft() : null;
     if (failedDraft) {
-      void Promise.resolve().then(() => {
-        if (!isMountedRef.current) return;
-        retriedDraftIdRef.current = failedDraft.id;
-        setHn(failedDraft.hn);
-        setFirstName(failedDraft.firstName);
-        setLastName(failedDraft.lastName);
-        setRoom(failedDraft.room);
-        setProblem(failedDraft.problem);
-        setSelectedDepts(Object.keys(failedDraft.departments));
-        addToast({
-          type: "error",
-          message: "พบเคสที่ซิงค์ไม่สำเร็จก่อนหน้านี้ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
-          duration: 5000,
-        });
+      void Promise.resolve().then(() => restoreDraft(failedDraft));
+    } else if (typeof reconcileReloadedSubmitDrafts === "function") {
+      void reconcileReloadedSubmitDrafts().then((reconciledDraft) => {
+        if (reconciledDraft) {
+          restoreDraft(reconciledDraft);
+        }
       });
     }
     return () => {

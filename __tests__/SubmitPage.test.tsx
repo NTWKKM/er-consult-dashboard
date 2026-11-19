@@ -8,6 +8,7 @@ const mockPush = vi.fn();
 const mockAddConsult = vi.fn();
 const mockClearRetainedSubmitDraft = vi.fn();
 const mockGetLatestFailedSubmitDraft = vi.fn<() => Consult | null>(() => null);
+const mockReconcileReloadedSubmitDrafts = vi.fn<() => Promise<Consult | null>>(async () => null);
 const mockAddToast = vi.fn();
 let mockPendingCases: Consult[] = [];
 let mockIsOnline = true;
@@ -20,6 +21,7 @@ vi.mock("@/lib/db", () => ({
   addConsult: (...args: unknown[]) => mockAddConsult(...args),
   clearRetainedSubmitDraft: (...args: unknown[]) => mockClearRetainedSubmitDraft(...args),
   getLatestFailedSubmitDraft: () => mockGetLatestFailedSubmitDraft(),
+  reconcileReloadedSubmitDrafts: () => mockReconcileReloadedSubmitDrafts(),
 }));
 
 vi.mock("@/app/contexts/ToastContext", () => ({
@@ -277,5 +279,67 @@ describe("SubmitPage mount and redirect safety", () => {
     expect(screen.getByLabelText(/รายละเอียดปัญหา/i)).toHaveValue("Acute abdomen");
     expect(screen.getByRole("button", { name: /ส่ง Consult/i })).not.toBeDisabled();
     expect(mockAddToast).toHaveBeenCalledWith(expect.objectContaining({ type: "error" }));
+  });
+
+  it("reports failed sync toast after 1.5s redirect and restores failed draft when returning to /submit", async () => {
+    mockIsOnline = false;
+    let onBgError: ((err: unknown, draft: Consult) => void) | undefined;
+    const failedDraft = makeConsult({
+      id: "offline-post-nav-1",
+      hn: "123456",
+      firstName: "สมชาย",
+      lastName: "ใจดี",
+      room: "Resus Team 1",
+      problem: "Acute abdomen",
+      departments: { "Gen Sx": { status: "pending", completedAt: null } },
+    });
+
+    mockAddConsult.mockImplementationOnce(async (_payload, options) => {
+      onBgError = options?.onBackgroundError;
+      return failedDraft;
+    });
+
+    const { unmount } = render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(mockPush).toHaveBeenCalledWith("/");
+
+    // Simulate Next.js route transition unmounting SubmitPage before background write rejects
+    unmount();
+    mockAddToast.mockClear();
+
+    await act(async () => {
+      onBgError?.(new Error("permission-denied"), failedDraft);
+      await Promise.resolve();
+    });
+
+    // Global ToastContext still surfaces the failure alert after navigation
+    expect(mockAddToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "error",
+        message: expect.stringContaining("123456"),
+      })
+    );
+
+    // Returning to /submit (or reloading) restores the persisted draft into the form
+    mockGetLatestFailedSubmitDraft.mockReturnValueOnce(failedDraft);
+    render(<SubmitPage />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("123456");
+    expect(screen.getByPlaceholderText("ชื่อผู้ป่วย")).toHaveValue("สมชาย");
+    expect(screen.getByPlaceholderText("นามสกุลผู้ป่วย")).toHaveValue("ใจดี");
+    expect(screen.getByLabelText(/รายละเอียดปัญหา/i)).toHaveValue("Acute abdomen");
+    expect(screen.getByLabelText("Gen Sx")).toBeChecked();
   });
 });

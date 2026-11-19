@@ -925,6 +925,86 @@ describe("addConsult optimistic draft retention", () => {
     clearRetainedSubmitDraft(failedConsult.id);
     expect(getLatestFailedSubmitDraft()).toBeNull();
   });
+
+  it("persists pending and failed drafts in sessionStorage across simulated page reloads", async () => {
+    window.sessionStorage.clear();
+    let resolveOriginalWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveOriginalWrite = resolve;
+      })
+    );
+
+    const pendingConsult = await addConsult(
+      {
+        hn: "998877",
+        firstName: "Reload",
+        lastName: "Patient",
+        room: "NT",
+        problem: "Reload test",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    // Simulate page reload by resetting module cache and re-importing lib/db
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
+
+    // Reconcile orphaned pending draft when doc does not exist in Firestore -> promoted to failed
+    mockGetDoc.mockResolvedValueOnce(makeDocSnapshot(pendingConsult.id, null, false));
+    const recovered = await reloadedDb.reconcileReloadedSubmitDrafts();
+    expect(recovered?.id).toBe(pendingConsult.id);
+    expect(recovered?.hn).toBe("998877");
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("failed");
+
+    // Settle the original module's pending write so pendingOptimisticWrites is clean for subsequent tests
+    resolveOriginalWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // If reconciled when doc is already committed on server, draft is cleared cleanly
+    window.sessionStorage.clear();
+    vi.resetModules();
+    const freshDb = await import("@/lib/db");
+    let resolveFreshWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveFreshWrite = resolve;
+      })
+    );
+    const syncedConsult = await freshDb.addConsult(
+      {
+        hn: "776655",
+        firstName: "Synced",
+        lastName: "Patient",
+        room: "Urgent",
+        problem: "Already synced",
+        isUrgent: false,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    vi.resetModules();
+    const afterReloadDb = await import("@/lib/db");
+    mockGetDoc.mockResolvedValueOnce({
+      ...makeDocSnapshot(syncedConsult.id, { ...syncedConsult }, true),
+      metadata: { hasPendingWrites: false },
+    });
+    const afterReconcile = await afterReloadDb.reconcileReloadedSubmitDrafts();
+    expect(afterReconcile).toBeNull();
+    expect(afterReloadDb.getRetainedSubmitDraft(syncedConsult.id)).toBeUndefined();
+
+    resolveFreshWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.sessionStorage.clear();
+  });
 });
 
 // ===========================================================================
