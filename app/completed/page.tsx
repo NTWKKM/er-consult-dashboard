@@ -78,6 +78,7 @@ export default function CompletedPage() {
   const cursorMapRef = useRef<Map<number, QueryDocumentSnapshot<DocumentData>>>(new Map());
   const historyTableContainerRef = useRef<HTMLDivElement>(null);
   const fetchRequestIdRef = useRef(0);
+  const searchRequestIdRef = useRef(0);
 
   // Fetch a specific page of completed cases using Firestore cursors
   const fetchPage = useCallback(
@@ -181,13 +182,16 @@ export default function CompletedPage() {
     const { searchHN: activeSearchHN, filterDate: activeFilterDate, currentPage: activePage } =
       viewStateRef.current;
     if (activeSearchHN || activeFilterDate) {
+      const requestId = ++searchRequestIdRef.current;
       setSearchStatus("loading");
       void searchCompletedConsults(activeSearchHN, activeFilterDate)
         .then((res) => {
+          if (searchRequestIdRef.current !== requestId) return;
           setSearchResults(res);
           setSearchStatus("ready");
         })
         .catch((err) => {
+          if (searchRequestIdRef.current !== requestId) return;
           console.error("Recovery refresh failed:", err);
           setSearchStatus("error");
         });
@@ -482,10 +486,14 @@ export default function CompletedPage() {
 
   // Server-side search when searchHN or filterDate changes
   useEffect(() => {
+    const requestId = ++searchRequestIdRef.current;
+
     if (!searchHN && !filterDate) {
       setSearchResults(null);
       setSearchStatus("idle");
-      return;
+      return () => {
+        searchRequestIdRef.current += 1;
+      };
     }
 
     // Reset results when starting a server-side search to avoid showing stale data
@@ -494,15 +502,16 @@ export default function CompletedPage() {
 
     let cancelled = false;
     const timer = setTimeout(async () => {
+      if (cancelled || searchRequestIdRef.current !== requestId) return;
       try {
         const results = await searchCompletedConsults(searchHN, filterDate);
-        if (!cancelled) {
+        if (!cancelled && searchRequestIdRef.current === requestId) {
           setSearchResults(results);
           setSearchStatus("ready");
         }
       } catch (err) {
         console.error("Search error:", err);
-        if (!cancelled) {
+        if (!cancelled && searchRequestIdRef.current === requestId) {
           setSearchStatus("error");
         }
       }
@@ -510,6 +519,7 @@ export default function CompletedPage() {
 
     return () => {
       cancelled = true;
+      searchRequestIdRef.current += 1;
       clearTimeout(timer);
     };
   }, [searchHN, filterDate]);

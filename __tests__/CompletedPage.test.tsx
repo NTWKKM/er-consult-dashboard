@@ -442,4 +442,100 @@ describe("CompletedPage re-consult failed drafts", () => {
     expect(scrollToSpy).not.toHaveBeenCalled();
     scrollToSpy.mockRestore();
   });
+
+  it("ignores stale recovery search results and errors after filters change", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { container } = render(<CompletedPage />);
+
+    await screen.findAllByText("111111");
+
+    // 1. Filter by HN 111111
+    mockSearchCompletedConsults.mockResolvedValueOnce([caseA]);
+    fireEvent.change(screen.getByLabelText(/ค้นหา HN/i), {
+      target: { value: "111111" },
+    });
+    await waitFor(() => {
+      expect(mockSearchCompletedConsults).toHaveBeenCalledWith("111111", "");
+    });
+
+    // 2. Trigger conflict recovery search (deferred)
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Recovery search race" },
+    });
+
+    const deferredRecovery = createDeferred<Consult[]>();
+    mockSearchCompletedConsults.mockReturnValueOnce(deferredRecovery.promise);
+    mockUpdateConsult.mockResolvedValueOnce({
+      consult: null,
+      isQueued: false,
+      backgroundPromise: null,
+      applied: false,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+    await waitFor(() => {
+      expect(mockSearchCompletedConsults).toHaveBeenCalledTimes(2);
+    });
+
+    // Close modal so table assertions are unobstructed, then switch filter to 222222
+    fireEvent.click(screen.getByRole("button", { name: "ปิดหน้าต่าง Re-consult" }));
+    mockSearchCompletedConsults.mockResolvedValueOnce([caseB]);
+    fireEvent.change(screen.getByLabelText(/ค้นหา HN/i), {
+      target: { value: "222222" },
+    });
+
+    await waitFor(() => {
+      expect(mockSearchCompletedConsults).toHaveBeenCalledWith("222222", "");
+    });
+    const table = container.querySelector("table")!;
+    await waitFor(() => {
+      expect(within(table).getByText("222222")).toBeInTheDocument();
+      expect(within(table).queryByText("111111")).toBeNull();
+    });
+
+    // Stale recovery search resolves with caseA — must NOT overwrite active 222222 search state
+    await act(async () => {
+      deferredRecovery.resolve([caseA]);
+      await Promise.resolve();
+    });
+
+    expect(within(table).getByText("222222")).toBeInTheDocument();
+    expect(within(table).queryByText("111111")).toBeNull();
+
+    // 3. Also verify stale recovery rejection after clearing filters does not set searchStatus="error"
+    clickRowReConsult("222222");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Recovery reject race" },
+    });
+
+    const deferredRecoveryErr = createDeferred<Consult[]>();
+    mockSearchCompletedConsults.mockReturnValueOnce(deferredRecoveryErr.promise);
+    mockUpdateConsult.mockResolvedValueOnce({
+      consult: null,
+      isQueued: false,
+      backgroundPromise: null,
+      applied: false,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+    await waitFor(() => {
+      expect(mockSearchCompletedConsults).toHaveBeenCalledTimes(4);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ปิดหน้าต่าง Re-consult" }));
+    fireEvent.change(screen.getByLabelText(/ค้นหา HN/i), {
+      target: { value: "" },
+    });
+
+    await act(async () => {
+      deferredRecoveryErr.reject(new Error("Stale recovery failure"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("การค้นหาล้มเหลว")).not.toBeInTheDocument();
+    consoleErrorSpy.mockRestore();
+  });
 });
