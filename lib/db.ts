@@ -199,22 +199,25 @@ export async function fetchCompletedConsultsPage(
  * Search completed consults by exact HN or date range.
  * This provides server-side filtering to bypass pagination limitations.
  */
+export const MAX_HN_SEARCH_RESULTS = 100;
+
 export async function searchCompletedConsults(
     searchHN?: string,
     filterDate?: string
 ): Promise<Consult[]> {
     const database = requireDb();
+    const trimmedHN = searchHN?.trim() ?? "";
     let consults: Consult[] = [];
 
-    // If searching by HN, query by exact HN with server-side status filter.
-    // NOTE: Queries on "hn" may require a composite index if you later add ordering
-    // or additional where clauses beyond status filtering.
-    if (searchHN) {
+    // If searching by HN, query by prefix with server-side status filter and bounded limit
+    // to protect Firebase Spark Plan daily read quotas (50k reads/day).
+    if (trimmedHN) {
         const q = query(
             collection(database, COLLECTION_NAME),
-            where("hn", ">=", searchHN),
-            where("hn", "<", searchHN + "\uf8ff"),
-            where("status", "==", "completed")
+            where("hn", ">=", trimmedHN),
+            where("hn", "<", trimmedHN + "\uf8ff"),
+            where("status", "==", "completed"),
+            limit(MAX_HN_SEARCH_RESULTS)
         );
         const snapshot = await getDocs(q);
 
@@ -485,7 +488,16 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
     return undefined;
 }
 
-export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promise<Consult> {
+export interface AddConsultOptions {
+    awaitRemote?: boolean;
+    onBackgroundError?: (error: unknown) => void;
+}
+
+export async function addConsult(
+    data: Omit<Consult, "id" | "createdAt">,
+    options: AddConsultOptions = {}
+): Promise<Consult> {
+    const { awaitRemote = true, onBackgroundError } = options;
     const database = requireDb();
     // Generate an ID for the new document using Firestore native doc()
     const newDocRef = doc(collection(database, COLLECTION_NAME));
@@ -494,7 +506,17 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
         id: newDocRef.id,
         createdAt: new Date().toISOString(),
     };
-    
+
+    if (!awaitRemote) {
+        // Optimistic offline-first write: queues immediately in persistentLocalCache
+        // so hospital Wi-Fi drops never freeze the submission form.
+        const writePromise = trackOptimisticWrite(setDoc(newDocRef, newConsult));
+        void writePromise.catch((err) => {
+            onBackgroundError?.(err);
+        });
+        return newConsult;
+    }
+
     await setDoc(newDocRef, newConsult);
     return newConsult;
 }

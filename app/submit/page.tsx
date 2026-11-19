@@ -1,14 +1,18 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { addConsult } from "@/lib/db";
 import { ALL_DEPARTMENTS, ROOMS, RoomName } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
+import { usePendingConsults } from "../contexts/ConsultsContext";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
 
 export default function SubmitPage() {
   const router = useRouter();
   const { addToast } = useToast();
+  const { cases: activePendingCases } = usePendingConsults();
+  const isOnline = useNetworkStatus();
   const hnRef = useRef<HTMLInputElement>(null);
   const submitInFlightRef = useRef(false);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,6 +86,22 @@ export default function SubmitPage() {
     }
   };
 
+  // Zero-read duplicate consult detection against already-subscribed pending cases
+  const duplicatePendingDepts = useMemo(() => {
+    const trimmedHn = hn.trim();
+    if (!trimmedHn || selectedDepts.length === 0) return [];
+    const matching = new Set<string>();
+    for (const c of activePendingCases) {
+      if (c.hn.trim() !== trimmedHn) continue;
+      for (const dept of selectedDepts) {
+        if (c.departments[dept]?.status === "pending") {
+          matching.add(dept);
+        }
+      }
+    }
+    return Array.from(matching);
+  }, [hn, selectedDepts, activePendingCases]);
+
   const handleSubmit = useCallback(async (isUrgent: boolean = false) => {
     if (submitInFlightRef.current) return;
 
@@ -110,7 +130,7 @@ export default function SubmitPage() {
     });
 
     try {
-      await addConsult({
+      const payload = {
         hn: hn.trim(),
         firstName: firstName.trim(),
         lastName: lastName.trim(),
@@ -118,12 +138,29 @@ export default function SubmitPage() {
         problem: problem.trim(),
         isUrgent,
         departments: departmentsMap,
-        status: "pending",
-      });
+        status: "pending" as const,
+      };
+      if (isOnline) {
+        await addConsult(payload);
+      } else {
+        await addConsult(payload, {
+          awaitRemote: false,
+          onBackgroundError: () => {
+            addToast({
+              type: "error",
+              message: "ซิงค์เคสที่บันทึกขณะออฟไลน์ไม่สำเร็จ กรุณาตรวจสอบบนหน้าหลัก",
+            });
+          },
+        });
+      }
 
       addToast({
         type: "success",
-        message: isUrgent ? "✓ ส่งเคสปรึกษา FAST TRACK สำเร็จ!" : "✓ ส่งเคสปรึกษาสำเร็จ!",
+        message: !isOnline
+          ? "✓ บันทึกเคสในเครื่องแล้ว (จะซิงค์อัตโนมัติเมื่อกลับมาออนไลน์)"
+          : isUrgent
+            ? "✓ ส่งเคสปรึกษา FAST TRACK สำเร็จ!"
+            : "✓ ส่งเคสปรึกษาสำเร็จ!",
         duration: 3000,
       });
 
@@ -153,7 +190,7 @@ export default function SubmitPage() {
       submitInFlightRef.current = false;
       setIsLoading(false);
     }
-  }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router]);
+  }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router, isOnline]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -184,8 +221,8 @@ export default function SubmitPage() {
   const inputClasses = (fieldName: string) =>
     `w-full px-3 py-2.5 border rounded-[6px] focus:outline-none focus:ring-2 transition-colors duration-200 text-sm ${
       errors[fieldName]
-        ? "border-bad focus:border-bad focus:ring-bad/25 bg-bad-soft text-ink placeholder-muted"
-        : "border-rule-2 bg-paper-3 text-ink placeholder-muted focus:border-accent focus:ring-accent/25 hover:border-muted"
+        ? "border-bad focus:border-bad focus:ring-bad/25 bg-bad-soft text-ink placeholder:text-ink-2/70"
+        : "border-rule-2 bg-paper-3 text-ink placeholder:text-muted focus:border-accent focus:ring-accent/25 hover:border-muted"
     }`;
 
   const labelClasses = "flex items-center gap-1.5 text-xs font-medium mb-2 text-ink-2";
@@ -206,7 +243,14 @@ export default function SubmitPage() {
         </div>
 
         <div className="p-5 md:p-6 rounded-[10px] relative z-0 border border-rule bg-paper-2 transition-colors">
-          <form className="space-y-5">
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSubmit(false);
+            }}
+            className="space-y-5"
+          >
             <fieldset disabled={isLoading} className="space-y-5">
               {/* Step 1: HN + Name row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -222,16 +266,20 @@ export default function SubmitPage() {
                     type="text"
                     id="hn"
                     inputMode="numeric"
+                    pattern="[0-9]*"
                     value={hn}
+                    aria-invalid={Boolean(errors.hn)}
+                    aria-describedby={errors.hn ? "hn-error" : undefined}
                     onChange={(e) => {
-                      setHn(e.target.value);
+                      const digitsOnly = e.target.value.replace(/\D/g, "");
+                      setHn(digitsOnly);
                       if (errors.hn) setErrors((prev) => { const n = { ...prev }; delete n.hn; return n; });
                     }}
                     className={`${inputClasses("hn")} measured`}
                     placeholder="เช่น 1234567"
                     required
                   />
-                  {errors.hn && <p className="text-bad text-xs mt-1 font-medium">{errors.hn}</p>}
+                  {errors.hn && <p id="hn-error" className="text-bad text-xs mt-1 font-medium">{errors.hn}</p>}
                 </div>
                 <div>
                   <label htmlFor="firstName" className={labelClasses}>
@@ -244,6 +292,8 @@ export default function SubmitPage() {
                     type="text"
                     id="firstName"
                     value={firstName}
+                    aria-invalid={Boolean(errors.firstName)}
+                    aria-describedby={errors.firstName ? "firstName-error" : undefined}
                     onChange={(e) => {
                       setFirstName(e.target.value);
                       if (errors.firstName) setErrors((prev) => { const n = { ...prev }; delete n.firstName; return n; });
@@ -252,7 +302,7 @@ export default function SubmitPage() {
                     placeholder="ชื่อผู้ป่วย"
                     required
                   />
-                  {errors.firstName && <p className="text-bad text-xs mt-1 font-medium">{errors.firstName}</p>}
+                  {errors.firstName && <p id="firstName-error" className="text-bad text-xs mt-1 font-medium">{errors.firstName}</p>}
                 </div>
                 <div>
                   <label htmlFor="lastName" className={labelClasses}>
@@ -265,6 +315,8 @@ export default function SubmitPage() {
                     type="text"
                     id="lastName"
                     value={lastName}
+                    aria-invalid={Boolean(errors.lastName)}
+                    aria-describedby={errors.lastName ? "lastName-error" : undefined}
                     onChange={(e) => {
                       setLastName(e.target.value);
                       if (errors.lastName) setErrors((prev) => { const n = { ...prev }; delete n.lastName; return n; });
@@ -273,7 +325,7 @@ export default function SubmitPage() {
                     placeholder="นามสกุลผู้ป่วย"
                     required
                   />
-                  {errors.lastName && <p className="text-bad text-xs mt-1 font-medium">{errors.lastName}</p>}
+                  {errors.lastName && <p id="lastName-error" className="text-bad text-xs mt-1 font-medium">{errors.lastName}</p>}
                 </div>
               </div>
 
@@ -289,6 +341,8 @@ export default function SubmitPage() {
                 <select
                   id="room"
                   value={room}
+                  aria-invalid={Boolean(errors.room)}
+                  aria-describedby={errors.room ? "room-error" : undefined}
                   onChange={(e) => {
                     setRoom(e.target.value as RoomName | "");
                     if (errors.room) setErrors((prev) => { const n = { ...prev }; delete n.room; return n; });
@@ -296,14 +350,14 @@ export default function SubmitPage() {
                   className={inputClasses("room")}
                   required
                 >
-                  <option value="">เลือกห้องตรวจ</option>
+                  <option value="" className="bg-paper-2 text-muted">เลือกห้องตรวจ</option>
                   {ROOMS.map((r) => (
-                    <option key={r} value={r}>
+                    <option key={r} value={r} className="bg-paper-2 text-ink">
                       {r}
                     </option>
                   ))}
                 </select>
-                {errors.room && <p className="text-bad text-xs mt-1 font-medium">{errors.room}</p>}
+                {errors.room && <p id="room-error" className="text-bad text-xs mt-1 font-medium">{errors.room}</p>}
               </div>
 
               {/* Step 3: Problem */}
@@ -317,6 +371,8 @@ export default function SubmitPage() {
                 <textarea
                   id="problem"
                   value={problem}
+                  aria-invalid={Boolean(errors.problem)}
+                  aria-describedby={errors.problem ? "problem-error" : undefined}
                   onChange={(e) => {
                     setProblem(e.target.value);
                     if (errors.problem) setErrors((prev) => { const n = { ...prev }; delete n.problem; return n; });
@@ -326,7 +382,7 @@ export default function SubmitPage() {
                   placeholder="เช่น TBI with GCS 9, Blunt abdomen…"
                   required
                 />
-                {errors.problem && <p className="text-bad text-xs mt-1 font-medium">{errors.problem}</p>}
+                {errors.problem && <p id="problem-error" className="text-bad text-xs mt-1 font-medium">{errors.problem}</p>}
               </div>
 
               {/* Step 4: Departments */}
@@ -342,6 +398,7 @@ export default function SubmitPage() {
                   tabIndex={-1}
                   role="group"
                   aria-labelledby="departments-label"
+                  aria-invalid={Boolean(errors.departments)}
                   aria-describedby={errors.departments ? "departments-error" : undefined}
                   className="grid grid-cols-2 sm:grid-cols-4 gap-2"
                 >
@@ -360,10 +417,10 @@ export default function SubmitPage() {
                       />
                       <label
                         htmlFor={dept}
-                        className={`flex items-center justify-center gap-1.5 p-2.5 rounded-[6px] border cursor-pointer transition-colors duration-200 font-medium text-xs whitespace-nowrap peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus ${
+                        className={`flex items-center justify-center gap-1.5 p-2.5 min-h-[42px] rounded-[6px] border cursor-pointer transition-colors duration-200 font-medium text-xs whitespace-nowrap peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus ${
                           selectedDepts.includes(dept)
                             ? "bg-ok text-paper border-ok"
-                            : "bg-paper-3 text-ink-2 border-rule-2 hover:border-ok/60 hover:text-ink"
+                            : "bg-paper-3 text-ink border-rule-2 hover:border-ok/60 hover:bg-paper-2"
                         }`}
                       >
                         {selectedDepts.includes(dept) && (
@@ -386,6 +443,15 @@ export default function SubmitPage() {
                     <p className="text-xs font-medium text-ok">
                       เลือกแล้ว {selectedDepts.length} แผนก:{" "}
                       <span className="font-semibold text-ink">{selectedDepts.join(", ")}</span>
+                    </p>
+                  </div>
+                )}
+                {duplicatePendingDepts.length > 0 && (
+                  <div role="alert" className="mt-2 p-2.5 rounded-[6px] border bg-accent-soft border-accent/40">
+                    <p className="text-xs font-medium text-accent">
+                      คำเตือน: HN {hn.trim()} มีเคสรอปรึกษาค้างอยู่แล้วในแผนก{" "}
+                      <span className="font-semibold text-ink">{duplicatePendingDepts.join(", ")}</span>{" "}
+                      (กรุณาตรวจสอบก่อนส่งซ้ำ)
                     </p>
                   </div>
                 )}

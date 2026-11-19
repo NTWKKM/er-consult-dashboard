@@ -7,21 +7,21 @@ import SkeletonLoading from "@/app/components/SkeletonLoading";
 import ErrorState from "@/app/components/ErrorState";
 import ConfirmModal from "@/app/components/ConfirmModal";
 import { RoomTransferButton } from "@/app/components/RoomTransferButton";
-import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
+import { Consult } from "@/lib/db";
 import { formatTime } from "@/lib/utils";
 import { ElapsedTime as PatientTableElapsedTime } from "@/app/components/ElapsedTime";
 import { MilestoneList } from "@/app/components/MilestoneList";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
+import { usePendingConsults } from "./contexts/ConsultsContext";
 import { buildDepartmentCasesMap, type RoomFilter, matchesRoomFilter } from "@/lib/departmentCasesMap";
 
 
 
 export default function Dashboard() {
-  const [allCases, setAllCases] = useState<Consult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { cases: allCases, loading, error } = usePendingConsults();
+  const [audioBlocked, setAudioBlocked] = useState(false);
   
   // Persistence logic for filters and view modes
   const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
@@ -132,7 +132,18 @@ export default function Dashboard() {
         }
       }
       if (audioContextRef.current?.state === "suspended") {
-        audioContextRef.current.resume().catch(() => {});
+        audioContextRef.current
+          .resume()
+          .then(() => {
+            if (audioContextRef.current?.state === "running") {
+              setAudioBlocked(false);
+            }
+          })
+          .catch(() => {
+            setAudioBlocked(true);
+          });
+      } else if (audioContextRef.current?.state === "running") {
+        setAudioBlocked(false);
       }
     }
   }, []);
@@ -165,6 +176,19 @@ export default function Dashboard() {
     if (!audioContextRef.current) return;
 
     const audioContext = audioContextRef.current;
+
+    if (audioContext.state === "suspended") {
+      setAudioBlocked(true);
+      void audioContext
+        .resume()
+        .then(() => {
+          if (audioContext.state === "running") {
+            setAudioBlocked(false);
+          }
+        })
+        .catch(() => {});
+      return;
+    }
 
     const playBeep = (startTime: number) => {
       const oscillator = audioContext.createOscillator();
@@ -212,23 +236,6 @@ export default function Dashboard() {
     };
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToConsultsByStatus(
-      "pending",
-      (data) => {
-        setAllCases(data);
-        setLoading(false);
-        setError(null);
-      },
-      (err) => {
-        console.error("Subscription error:", err);
-        setError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
-        setLoading(false);
-      }
-    );
-    return () => unsubscribe();
-  }, []);
-
   const filteredAllCases = useMemo(() => {
     return allCases.filter((caseData) => matchesRoomFilter(caseData, roomFilter));
   }, [allCases, roomFilter]);
@@ -249,7 +256,17 @@ export default function Dashboard() {
     return (Object.hasOwn(departmentCasesMap, deptName) ? departmentCasesMap[deptName] : undefined) || [];
   };
 
-  const totalPendingCases = visibleTableCases.length;
+  const totalPendingCases = useMemo(() => {
+    if (displayMode === "table" || view === "both") {
+      return visibleTableCases.length;
+    }
+    const targetDepts: readonly string[] = view === "surgery" ? SURGERY_DEPTS : ORTHO_DEPTS;
+    return visibleTableCases.filter((c) =>
+      Object.entries(c.departments).some(
+        ([deptName, dept]) => dept.status === "pending" && targetDepts.includes(deptName)
+      )
+    ).length;
+  }, [displayMode, view, visibleTableCases]);
 
   if (loading) {
     return <SkeletonLoading />;
@@ -262,6 +279,25 @@ export default function Dashboard() {
   return (
     <div className="min-h-[calc(100dvh-3.5rem)] pb-24 lg:pb-8 bg-paper transition-colors duration-200">
       <div className="max-w-[1600px] mx-auto p-3 lg:p-5">
+        {/* Audio Autoplay Unlock Banner for Wall-Mounted ER Monitors */}
+        {soundEnabled && audioBlocked && (
+          <div className="mb-3 flex justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                initAudioContext();
+                setAudioBlocked(false);
+              }}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-[6px] text-xs font-medium bg-accent-soft border border-accent/40 text-accent hover:opacity-90 transition-opacity tap-feedback"
+            >
+              <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              </svg>
+              เบราว์เซอร์บล็อกเสียงแจ้งเตือนอัตโนมัติ — คลิกเพื่อปลดล็อกเสียง
+            </button>
+          </div>
+        )}
+
         {/* --- Toolbar --- */}
         <div className="mb-4 slide-in w-full flex justify-center">
           <div className="inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-[10px] border border-rule bg-paper-2 transition-colors max-w-full">
@@ -848,20 +884,20 @@ function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; dept
               </>
             ) : (
               <>
-                <div className="flex-1 min-w-0 relative">
+                <div className="flex-1 min-w-[92px] relative">
                   <select
                     aria-label={`เลือกสถานะสำหรับ ${deptName}`}
                     value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                     onChange={(e) => onStatusChange(e.target.value as PostAcceptStatus)}
                     disabled={isUpdating}
-                    className={`w-full h-full rounded-[6px] text-xs font-medium border appearance-none cursor-pointer pl-2 pr-6 focus:outline-none focus:ring-2 focus:ring-focus transition-colors ${
+                    className={`w-full h-full rounded-[6px] text-xs font-medium border appearance-none cursor-pointer pl-2.5 pr-7 focus:outline-none focus:ring-2 focus:ring-focus transition-colors ${
                       actionStatus && actionStatus !== ACCEPT_STATUS
                         ? "bg-accent-soft text-accent border-accent"
                         : "bg-paper-3 text-ink border-rule-2"
                     }`}
                   >
-                    <option value="" disabled>สถานะ</option>
-                    {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    <option value="" disabled className="bg-paper-2 text-muted">สถานะ</option>
+                    {POST_ACCEPT_STATUSES.map(s => <option key={s} value={s} className="bg-paper-2 text-ink">{s}</option>)}
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 text-muted">
                     <svg aria-hidden="true" className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
@@ -901,7 +937,7 @@ function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; dept
             </button>
           </div>
 
-          <MilestoneList dept={dept} isAccepted={true} variant="inline" />
+          <MilestoneList dept={dept} isAccepted={isAccepted} variant="inline" />
         </div>
       </div>
 

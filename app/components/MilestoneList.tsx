@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { ConsultDepartment } from "@/lib/db";
-import { getMilestones, formatTime } from "@/lib/utils";
+import { getAllMilestones, formatTime } from "@/lib/utils";
 
 interface MilestoneListProps {
   dept: ConsultDepartment | undefined;
@@ -20,15 +20,22 @@ function getMilestoneTone(label: string): string {
 
 /**
  * Renders chronological department milestones (Accept, Admit, คืน ER, D/C, Transfers).
+ * Shows up to 3 most recent milestones inline with a +N badge tooltip when older milestones exist.
  * Shared between ConsultCard and Dashboard table DepartmentActionPanel.
  */
 export function MilestoneList({ dept, isAccepted, variant = "inline" }: MilestoneListProps) {
-  const allMilestones = getMilestones(dept, formatTime);
-  const milestonesToRender = isAccepted
-    ? allMilestones
-    : allMilestones.filter((m) => m.icon === "transfer");
+  const fullMilestones = getAllMilestones(dept, formatTime);
+  const eligibleMilestones = isAccepted
+    ? fullMilestones
+    : fullMilestones.filter((m) => m.icon === "transfer");
 
-  if (milestonesToRender.length === 0) return null;
+  if (eligibleMilestones.length === 0) return null;
+
+  const hiddenCount = Math.max(0, eligibleMilestones.length - 3);
+  const milestonesToRender = eligibleMilestones.slice(-3);
+  const fullTrailSummary = eligibleMilestones
+    .map((m) => `${m.label} ${m.time}`)
+    .join(" → ");
 
   const containerClass =
     variant === "bordered"
@@ -37,6 +44,18 @@ export function MilestoneList({ dept, isAccepted, variant = "inline" }: Mileston
 
   return (
     <div className={containerClass}>
+      {hiddenCount > 0 && (
+        <>
+          <span
+            title={`ประวัติทั้งหมด: ${fullTrailSummary}`}
+            aria-label={`มีประวัติก่อนหน้าอีก ${hiddenCount} รายการ: ${fullTrailSummary}`}
+            className="px-1.5 py-0.5 rounded-[4px] bg-paper-3 border border-rule text-muted text-[10px] font-medium cursor-help"
+          >
+            +{hiddenCount}
+          </span>
+          <span className="text-muted text-[10px]">•</span>
+        </>
+      )}
       {milestonesToRender.map((m, idx, arr) => (
         <React.Fragment key={`${m.label}-${m.raw}`}>
           <div className="flex items-center gap-1">

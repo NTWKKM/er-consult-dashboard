@@ -33,6 +33,16 @@ vi.mock("@/app/contexts/ToastContext", () => ({
   useToast: () => ({ addToast: vi.fn() }),
 }));
 
+vi.mock("@/app/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    user: { uid: "staff-1", email: "er@mnrh.com", emailVerified: true },
+    loading: false,
+    isAuthorizedStaff: true,
+    logout: vi.fn(),
+  }),
+}));
+
+import { ConsultsProvider } from "@/app/contexts/ConsultsContext";
 import Dashboard from "@/app/page";
 
 describe("Dashboard new-case sound alert (regression B2)", () => {
@@ -83,7 +93,11 @@ describe("Dashboard new-case sound alert (regression B2)", () => {
   });
 
   it("does NOT beep on initial snapshot load, then beeps once when a new case arrives, and closes AudioContext on unmount", () => {
-    const { unmount } = render(<Dashboard />);
+    const { unmount } = render(
+      <ConsultsProvider>
+        <Dashboard />
+      </ConsultsProvider>
+    );
     expect(capturedOnData).not.toBeNull();
 
     // First snapshot delivers 2 existing cases -> must NOT trigger alarm

@@ -118,6 +118,14 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
   );
 
   const handleAccept = useCallback(async (): Promise<boolean> => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      addToast({
+        type: "error",
+        message: "ไม่สามารถรับเคสขณะออฟไลน์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต",
+      });
+      return false;
+    }
+
     return executeAction({
       holdLockUntilRemote: true,
       errorLogLabel: "Error accepting case:",
@@ -226,6 +234,14 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       errorMessage: string,
       errorLogLabel: string
     ) => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        addToast({
+          type: "error",
+          message: "ไม่สามารถทำรายการนี้ขณะออฟไลน์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต",
+        });
+        return;
+      }
+
       await executeAction({
         holdLockUntilRemote: true,
         errorLogLabel,
@@ -265,7 +281,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
               } else {
                 addToast({
                   type: "error",
-                  message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช",
+                  message: "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล กรุณาลองใหม่อีกครั้ง",
                 });
               }
             },

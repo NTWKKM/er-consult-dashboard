@@ -139,7 +139,8 @@ export default function CompletedPage() {
   }, [fetchPage]);
 
   const filteredCases = useMemo(() => {
-    const isSearchActive = Boolean(searchHN || filterDate);
+    const trimmedSearchHN = searchHN.trim();
+    const isSearchActive = Boolean(trimmedSearchHN || filterDate);
     let baseCases = cases;
 
     // เลือกอาร์เรย์เริ่มต้นที่จะนำมากรอง
@@ -154,9 +155,9 @@ export default function CompletedPage() {
     }
 
     // กรองด้วย HN และแผนกอย่างสม่ำเสมอในทุก ๆ กรณี
-    const lowerSearchHN = searchHN.toLowerCase();
+    const lowerSearchHN = trimmedSearchHN.toLowerCase();
     return baseCases.filter((c) => {
-      if (searchHN && !c.hn.toLowerCase().startsWith(lowerSearchHN)) return false;
+      if (trimmedSearchHN && !c.hn.toLowerCase().startsWith(lowerSearchHN)) return false;
       if (filterDept && !Object.keys(c.departments).includes(filterDept)) return false;
       return true;
     });
@@ -212,6 +213,13 @@ export default function CompletedPage() {
       addToast({ type: "error", message: "กรุณาเลือกอย่างน้อย 1 แผนก" });
       return;
     }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      addToast({
+        type: "error",
+        message: "ไม่สามารถส่งปรึกษาใหม่ขณะออฟไลน์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต",
+      });
+      return;
+    }
     reconsultInFlightRef.current = true;
     setIsUpdating(true);
     const attemptId = ++reconsultAttemptRef.current;
@@ -238,11 +246,15 @@ export default function CompletedPage() {
         };
       }, { 
         awaitRemote: false,
-        onBackgroundError: () => {
+        onBackgroundError: (error: unknown) => {
           backgroundFailed = true;
+          const errMsg = error instanceof Error ? error.message : "";
           addToast({ 
             type: "error", 
-            message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช" 
+            message:
+              errMsg === "TRANSACTION_CONDITION_NOT_MET"
+                ? "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช"
+                : "ส่งปรึกษาใหม่ไม่สำเร็จ: เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล กรุณาลองใหม่อีกครั้ง"
           });
           
           // Refetch directly instead of rolling back with stale snapshot
@@ -315,7 +327,9 @@ export default function CompletedPage() {
       setSelectedDepartments(savedDraft.selectedDepartments);
     } else {
       setNewProblem("");
-      setSelectedDepartments(Object.keys(caseData.departments));
+      // Start with empty selection so clinicians explicitly pick target departments
+      // and never accidentally reset/reopen previously completed departments.
+      setSelectedDepartments([]);
     }
     setShowModal(true);
   };
@@ -487,8 +501,9 @@ export default function CompletedPage() {
   // Server-side search when searchHN or filterDate changes
   useEffect(() => {
     const requestId = ++searchRequestIdRef.current;
+    const trimmedSearchHN = searchHN.trim();
 
-    if (!searchHN && !filterDate) {
+    if (!trimmedSearchHN && !filterDate) {
       setSearchResults(null);
       setSearchStatus("idle");
       return () => {
@@ -504,7 +519,7 @@ export default function CompletedPage() {
     const timer = setTimeout(async () => {
       if (cancelled || searchRequestIdRef.current !== requestId) return;
       try {
-        const results = await searchCompletedConsults(searchHN, filterDate);
+        const results = await searchCompletedConsults(trimmedSearchHN, filterDate);
         if (!cancelled && searchRequestIdRef.current === requestId) {
           setSearchResults(results);
           setSearchStatus("ready");
@@ -1194,24 +1209,38 @@ export default function CompletedPage() {
                 แผนกที่ต้องการส่งปรึกษา <span className="text-bad">*</span>
               </div>
               <div role="group" aria-labelledby="reconsult-depts-label" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {ALL_DEPARTMENTS.map((dept) => (
-                  <button
-                    key={dept}
-                    type="button"
-                    aria-pressed={selectedDepartments.includes(dept)}
-                    onClick={() => toggleDepartment(dept)}
-                    className={`px-3 py-2 rounded-[6px] font-medium text-sm transition-colors duration-200 border whitespace-nowrap ${
-                      selectedDepartments.includes(dept)
-                        ? "bg-ok text-paper border-ok"
-                        : "bg-paper-3 text-ink-2 hover:text-ink border-rule-2"
-                    }`}
-                  >
-                    {dept}
-                  </button>
-                ))}
+                {ALL_DEPARTMENTS.map((dept) => {
+                  const isPreviousDept = Boolean(selectedCase?.departments && Object.hasOwn(selectedCase.departments, dept));
+                  const isSelected = selectedDepartments.includes(dept);
+                  return (
+                    <button
+                      key={dept}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => toggleDepartment(dept)}
+                      className={`px-3 py-2 rounded-[6px] font-medium text-sm transition-colors duration-200 border whitespace-nowrap flex items-center justify-center gap-1 ${
+                        isSelected
+                          ? "bg-ok text-paper border-ok"
+                          : "bg-paper-3 text-ink-2 hover:text-ink border-rule-2"
+                      }`}
+                    >
+                      <span>{dept}</span>
+                      {isPreviousDept && (
+                        <span className={`text-[10px] font-normal ${isSelected ? "text-paper/80" : "text-muted"}`}>
+                          (เดิม)
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
+              {selectedCase && selectedDepartments.some((d) => Object.hasOwn(selectedCase.departments, d)) && (
+                <p role="note" className="text-xs mt-2 px-2.5 py-1.5 rounded-[6px] bg-accent-soft border border-accent/35 text-accent font-medium">
+                  หมายเหตุ: การเลือกแผนกเดิมจะรีเซ็ตเวลาและสถานะของแผนกนั้นใหม่บนบอร์ด (แผนกอื่นที่ไม่ได้เลือกจะยังคงประวัติเดิมไว้)
+                </p>
+              )}
               <p className="text-xs mt-2 text-muted">
-                เลือกได้หลายแผนก (คลิกเพื่อเลือก/ยกเลิก)
+                เลือกเฉพาะแผนกที่ต้องการส่งปรึกษาใหม่ (คลิกเพื่อเลือก/ยกเลิก)
               </p>
             </div>
             <div className="mb-4">
@@ -1318,7 +1347,7 @@ export default function CompletedPage() {
                   <svg aria-hidden="true" className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <span>Export range is restricted to a maximum of 31 days to preserve database bandwidth.</span>
+                  <span>จำกัดช่วงเวลา Export สูงสุดไม่เกิน {MAX_EXPORT_DAYS} วัน เพื่อรักษาโควต้าฐานข้อมูล</span>
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

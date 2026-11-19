@@ -1,6 +1,30 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: consults
+    // Document ID: {consultId} (auto-generated Firestore document ID)
+    // Fields:
+    //   - id: string (required, must equal {consultId}, immutable)
+    //   - hn: string (required, numeric digits '^[0-9]+$', 1..32 chars, immutable)
+    //   - firstName: string (required, non-empty on create, <= 200 chars, immutable)
+    //   - lastName: string (required, non-empty on create, <= 200 chars, immutable)
+    //   - room: string (required, 1..200 chars)
+    //   - problem: string (required, 1..5000 chars on create, 1..10000 chars on update)
+    //   - createdAt: string (required, ISO-8601 UTC timestamp on create and re-consult; immutable otherwise, <= 64 chars)
+    //   - status: string (required, 'pending' on create; 'pending' | 'completed' | 'cancelled' on update)
+    //   - isUrgent: bool (required)
+    //   - departments: map (required, 1..20 entries of DepartmentSchema)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
     function isAuthorizedStaff() {
       return request.auth != null
         && (
@@ -38,45 +62,73 @@ service cloud.firestore {
         );
     }
 
+    function allowedConsultFields() {
+      return ['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'];
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidConsult(data, consultId, maxProblemLength) {
+      let fields = allowedConsultFields();
+      return data.keys().hasOnly(fields)
+        && data.keys().hasAll(fields)
+        && data.id is string
+        && data.id == consultId
+        && data.hn is string
+        && data.hn.size() >= 1
+        && data.hn.size() <= 32
+        && data.hn.matches('^[0-9]+$')
+        && data.firstName is string
+        && data.firstName.size() <= 200
+        && data.lastName is string
+        && data.lastName.size() <= 200
+        && data.room is string
+        && data.room.size() > 0
+        && data.room.size() <= 200
+        && data.problem is string
+        && data.problem.size() > 0
+        && data.problem.size() <= maxProblemLength
+        && data.createdAt is string
+        && data.createdAt.size() <= 64
+        && data.status in ["pending", "completed", "cancelled"]
+        && data.isUrgent is bool
+        && data.departments is map
+        && data.departments.size() > 0
+        && data.departments.size() <= 20;
+    }
+
+    function isPatientIdentityUnchanged(data, existing) {
+      return data.hn == existing.hn
+        && data.firstName == existing.firstName
+        && data.lastName == existing.lastName;
+    }
+
+    function isValidCreatedAtUpdate(data, existing) {
+      return data.createdAt == existing.createdAt
+        || (
+          existing.status in ["completed", "cancelled"]
+          && data.status == "pending"
+          && isIsoTimestamp(data.createdAt)
+        );
+    }
+
     match /consults/{consultId} {
       allow read: if isAuthorizedStaff();
+
       allow create: if isAuthorizedStaff()
-        && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
-        && request.resource.data.id is string
-        && request.resource.data.id == consultId
-        && request.resource.data.hn is string
-        && request.resource.data.hn.size() > 0
-        && request.resource.data.firstName is string
-        && request.resource.data.lastName is string
-        && request.resource.data.room is string
-        && request.resource.data.problem is string
-        && request.resource.data.createdAt is string
+        && isValidConsult(request.resource.data, consultId, 5000)
+        && request.resource.data.firstName.size() > 0
+        && request.resource.data.lastName.size() > 0
         && isIsoTimestamp(request.resource.data.createdAt)
-        && request.resource.data.status == "pending"
-        && request.resource.data.isUrgent is bool
-        && request.resource.data.departments is map;
+        && request.resource.data.status == "pending";
+
       allow update: if isAuthorizedStaff()
-        && request.resource.data.keys().hasOnly(['id', 'hn', 'firstName', 'lastName', 'room', 'problem', 'createdAt', 'status', 'isUrgent', 'departments'])
-        && request.resource.data.id is string
-        && request.resource.data.id == consultId
-        && request.resource.data.hn is string
-        && request.resource.data.hn.size() > 0
-        && request.resource.data.firstName is string
-        && request.resource.data.lastName is string
-        && request.resource.data.room is string
-        && request.resource.data.problem is string
-        && request.resource.data.createdAt is string
-        && (
-          request.resource.data.createdAt == resource.data.createdAt
-          || (
-            resource.data.status in ["completed", "cancelled"]
-            && request.resource.data.status == "pending"
-            && isIsoTimestamp(request.resource.data.createdAt)
-          )
-        )
-        && request.resource.data.status in ["pending", "completed", "cancelled"]
-        && request.resource.data.isUrgent is bool
-        && request.resource.data.departments is map;
+        && isValidConsult(request.resource.data, consultId, 10000)
+        && isPatientIdentityUnchanged(request.resource.data, resource.data)
+        && isValidCreatedAtUpdate(request.resource.data, resource.data);
+
       allow delete: if false;
     }
   }

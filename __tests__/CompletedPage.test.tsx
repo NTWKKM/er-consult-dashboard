@@ -103,17 +103,23 @@ describe("CompletedPage re-consult failed drafts", () => {
     await screen.findAllByText("111111");
     await screen.findAllByText("222222");
 
-    // 1. Open Case A modal, customize reason + departments, and fail background write
+    // 1. Open Case A modal, verify previous departments start unselected (preventing accidental resets),
+    // select Neuro Sx, enter reason, and fail background write
     clickRowReConsult("111111");
     const modalHeadingA = await screen.findByRole("heading", { name: /Re-consult เคส/i });
     expect(modalHeadingA).toHaveTextContent("111111");
 
-    const genSxBtnA = screen.getByRole("button", { name: "Gen Sx" });
-    const neuroSxBtnA = screen.getByRole("button", { name: "Neuro Sx" });
-    expect(genSxBtnA).toHaveAttribute("aria-pressed", "true");
+    const genSxBtnA = screen.getByRole("button", { name: /^Gen Sx/ });
+    const neuroSxBtnA = screen.getByRole("button", { name: /^Neuro Sx/ });
+    expect(genSxBtnA).toHaveAttribute("aria-pressed", "false");
     expect(neuroSxBtnA).toHaveAttribute("aria-pressed", "false");
 
+    // Selecting a previous department shows the reset warning note; deselecting removes it
     fireEvent.click(genSxBtnA);
+    expect(screen.getByRole("note")).toHaveTextContent(/รีเซ็ตเวลาและสถานะ/);
+    fireEvent.click(genSxBtnA);
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+
     fireEvent.click(neuroSxBtnA);
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Case A draft reason" },
@@ -146,14 +152,16 @@ describe("CompletedPage re-consult failed drafts", () => {
     // Wait for recovery refresh to bring Case A back into the list
     await screen.findAllByText("111111");
 
-    // 2. Open Case B modal, verify it starts clean, and submit successfully
+    // 2. Open Case B modal, verify it starts clean with no departments pre-selected, select Ortho, and submit successfully
     clickRowReConsult("222222");
     const modalHeadingB = await screen.findByRole("heading", { name: /Re-consult เคส/i });
     expect(modalHeadingB).toHaveTextContent("222222");
     expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Ortho" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Neuro Sx" })).toHaveAttribute("aria-pressed", "false");
+    const orthoBtnB = screen.getByRole("button", { name: /^Ortho/ });
+    expect(orthoBtnB).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Neuro Sx/ })).toHaveAttribute("aria-pressed", "false");
 
+    fireEvent.click(orthoBtnB);
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Case B clean reason" },
     });
@@ -182,8 +190,8 @@ describe("CompletedPage re-consult failed drafts", () => {
     const modalHeadingA2 = await screen.findByRole("heading", { name: /Re-consult เคส/i });
     expect(modalHeadingA2).toHaveTextContent("111111");
     expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Case A draft reason");
-    expect(screen.getByRole("button", { name: "Neuro Sx" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Gen Sx" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Neuro Sx/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Gen Sx/ })).toHaveAttribute("aria-pressed", "false");
 
     // 4. Submit Case A cleanly until completion and confirm Case A's draft is then cleared
     const deferredA2 = createDeferred<void>();
@@ -213,8 +221,8 @@ describe("CompletedPage re-consult failed drafts", () => {
     clickRowReConsult("111111");
     await screen.findByRole("heading", { name: /Re-consult เคส/i });
     expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Gen Sx" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Neuro Sx" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Gen Sx/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Neuro Sx/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("retains draft when onBackgroundError fires even if backgroundPromise resolves (TRANSACTION_CONDITION_NOT_MET)", async () => {
@@ -225,6 +233,7 @@ describe("CompletedPage re-consult failed drafts", () => {
     clickRowReConsult("111111");
     await screen.findByRole("heading", { name: /Re-consult เคส/i });
 
+    fireEvent.click(screen.getByRole("button", { name: /^Gen Sx/ }));
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Draft preserved on background conflict" },
     });
@@ -268,9 +277,7 @@ describe("CompletedPage re-consult failed drafts", () => {
     clickRowReConsult("111111");
     await screen.findByRole("heading", { name: /Re-consult เคส/i });
 
-    const genSxBtn = screen.getByRole("button", { name: "Gen Sx" });
-    const neuroSxBtn = screen.getByRole("button", { name: "Neuro Sx" });
-    fireEvent.click(genSxBtn);
+    const neuroSxBtn = screen.getByRole("button", { name: /^Neuro Sx/ });
     fireEvent.click(neuroSxBtn);
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Precondition conflict draft" },
@@ -306,8 +313,8 @@ describe("CompletedPage re-consult failed drafts", () => {
     // While refresh is still pending, modal and draft remain open and accessible
     expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Precondition conflict draft");
-    expect(screen.getByRole("button", { name: "Gen Sx" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Neuro Sx" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Gen Sx/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Neuro Sx/ })).toHaveAttribute("aria-pressed", "true");
 
     // Resolve the refresh omitting caseA (moved to pending by another user)
     await act(async () => {
@@ -327,8 +334,8 @@ describe("CompletedPage re-consult failed drafts", () => {
     // Even though caseA is no longer in the completed list, the modal stays open with the draft accessible
     expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/ปัญหาใหม่/i)).toHaveValue("Precondition conflict draft");
-    expect(screen.getByRole("button", { name: "Gen Sx" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Neuro Sx" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Gen Sx/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Neuro Sx/ })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps conflict draft modal accessible if the deferred refresh rejects", async () => {
@@ -339,6 +346,7 @@ describe("CompletedPage re-consult failed drafts", () => {
     clickRowReConsult("111111");
     await screen.findByRole("heading", { name: /Re-consult เคส/i });
 
+    fireEvent.click(screen.getByRole("button", { name: /^Gen Sx/ }));
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Draft surviving failed refresh" },
     });
@@ -403,6 +411,7 @@ describe("CompletedPage re-consult failed drafts", () => {
     // Before page 2 completes, trigger a newer fetch (via re-consult precondition rejection refresh)
     clickRowReConsult("111111");
     await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: /^Gen Sx/ }));
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Conflict triggers newer fetch" },
     });
@@ -461,6 +470,7 @@ describe("CompletedPage re-consult failed drafts", () => {
     // 2. Trigger conflict recovery search (deferred)
     clickRowReConsult("111111");
     await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: /^Gen Sx/ }));
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Recovery search race" },
     });
@@ -507,6 +517,7 @@ describe("CompletedPage re-consult failed drafts", () => {
     // 3. Also verify stale recovery rejection after clearing filters does not set searchStatus="error"
     clickRowReConsult("222222");
     await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: /^Ortho/ }));
     fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
       target: { value: "Recovery reject race" },
     });

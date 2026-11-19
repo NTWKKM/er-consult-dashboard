@@ -60,20 +60,27 @@ export function buildCompletedExportRows(consults: Consult[]): CompletedExportRo
         .join("\n");
     };
 
+    const acceptTimes = getTimesFor("acceptedAt");
+    const admitTimes = getTimesFor("admittedAt");
+    const returnTimes = getTimesFor("returnedAt");
+    const dcTimes = getTimesFor("dischargedAt");
+    const completeTimes = getTimesFor("completedAt", "cancelled");
+    const cancelTimes = getCancelledTimesFor("completedAt");
+
     return {
       HN: c.hn || "-",
-      ชื่อ: sanitizeExcelCell(c.firstName || "-"),
-      นามสกุล: sanitizeExcelCell(c.lastName || "-"),
+      ชื่อ: c.firstName ? sanitizeExcelCell(c.firstName) : "-",
+      นามสกุล: c.lastName ? sanitizeExcelCell(c.lastName) : "-",
       ห้อง: c.room || "-",
-      Dx: sanitizeExcelCell(c.problem || "-"),
-      แผนก: depts,
+      Dx: c.problem ? sanitizeExcelCell(c.problem) : "-",
+      แผนก: depts ? sanitizeExcelCell(depts) : "-",
       วันที่ส่ง: c.createdAt ? formatBangkokTimestamp(c.createdAt) : "-",
-      รับเคส: getTimesFor("acceptedAt") || "-",
-      Admit: getTimesFor("admittedAt") || "-",
-      "คืน ER": getTimesFor("returnedAt") || "-",
-      "D/C": getTimesFor("dischargedAt") || "-",
-      ปิดเคส: getTimesFor("completedAt", "cancelled") || "-", // excluded cancelled
-      ยกเลิก: getCancelledTimesFor("completedAt") || "-", // cancelled only
+      รับเคส: acceptTimes ? sanitizeExcelCell(acceptTimes) : "-",
+      Admit: admitTimes ? sanitizeExcelCell(admitTimes) : "-",
+      "คืน ER": returnTimes ? sanitizeExcelCell(returnTimes) : "-",
+      "D/C": dcTimes ? sanitizeExcelCell(dcTimes) : "-",
+      ปิดเคส: completeTimes ? sanitizeExcelCell(completeTimes) : "-", // excluded cancelled
+      ยกเลิก: cancelTimes ? sanitizeExcelCell(cancelTimes) : "-", // cancelled only
     };
   });
 }

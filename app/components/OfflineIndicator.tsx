@@ -5,26 +5,34 @@ import { useEffect, useRef, useState } from "react";
 
 export default function OfflineIndicator() {
   const isOnline = useNetworkStatus();
-  const [show, setShow] = useState(false);
+  const [showReconnected, setShowReconnected] = useState(false);
   const wasOfflineRef = useRef(false);
 
   useEffect(() => {
     if (!isOnline) {
       wasOfflineRef.current = true;
-      setShow(true);
-    } else if (wasOfflineRef.current) {
+      return;
+    }
+    if (wasOfflineRef.current) {
       wasOfflineRef.current = false;
-      setShow(true);
+      const showTimer = setTimeout(() => setShowReconnected(true), 0);
       // Hide after a brief moment when coming back online
-      const timer = setTimeout(() => setShow(false), 3000);
-      return () => clearTimeout(timer);
+      const hideTimer = setTimeout(() => setShowReconnected(false), 3000);
+      return () => {
+        clearTimeout(showTimer);
+        clearTimeout(hideTimer);
+      };
     }
   }, [isOnline]);
 
-  if (!show) return null;
+  if (isOnline && !showReconnected) return null;
 
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-fade-in"
+    >
       <div 
         className={`px-4 py-1.5 rounded-full border flex items-center gap-2 transition-colors duration-200 ${
           isOnline 
@@ -36,8 +44,8 @@ export default function OfflineIndicator() {
           {!isOnline && <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-bad opacity-75"></span>}
           <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? "bg-ok" : "bg-bad"}`}></span>
         </span>
-        <span className="text-xs font-medium">
-          {isOnline ? "Connected (Syncing…)" : "Offline (Changes saved locally)"}
+        <span className="text-xs font-medium whitespace-nowrap">
+          {isOnline ? "กลับมาเชื่อมต่อแล้ว (กำลังซิงค์…)" : "ออฟไลน์ (การเปลี่ยนแปลงจะซิงค์เมื่อกลับมาออนไลน์)"}
         </span>
       </div>
     </div>

@@ -106,7 +106,7 @@ Consult cards progress through specific lifecycle milestones represented as time
 2. **Case Acceptance ("รับเคส"):**
    - Doctor accepts the case via the `handleAccept` callback (invoking `transactionalUpdateConsult` with `awaitRemote: false` for instant UI update).
    - This writes `acceptedAt = timestamp` and `actionStatus = "รับเคส"` to Firestore.
-   - Surgery departments automatically accept co-consulted Surgery sub-departments (Surgery, Colo, Vascular, Plastic, Neuro, Pediatric, Trauma, Urology, Ortho) to minimize overhead.
+   - Surgery departments automatically accept co-consulted Surgery sub-departments (`Gen Sx`, `Sx Trauma`, `Neuro Sx`, `Sx Vascular`, `Sx Plastic`, `Uro Sx`, `CVT`, `PED SX`) to minimize overhead; `Ortho` remains independent and is not auto-accepted.
    - Executed inside a transaction to prevent race conditions. If accepted by another physician concurrently, transaction aborts and UI rolls back with a Warning Toast.
 3. **Status Transitions ("สถานะ"):**
    - Doctors can shift department status through values: `"Admit"`, `"คืน ER"`, or `"D/C"`.
