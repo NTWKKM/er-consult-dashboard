@@ -38,12 +38,14 @@ export default function SubmitPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isMac, setIsMac] = useState(false);
-  const [pendingRecoverableDraft, setPendingRecoverableDraft] = useState<Consult | null>(null);
+  const [pendingRecoverableDraft, setPendingRecoverableDraftState] = useState<Consult | null>(null);
   const pendingRecoverableDraftRef = useRef<Consult | null>(null);
 
-  useEffect(() => {
-    pendingRecoverableDraftRef.current = pendingRecoverableDraft;
-  }, [pendingRecoverableDraft]);
+  const setPendingRecoverableDraft = useCallback((draft: Consult | null) => {
+    // Update the ref synchronously so in-flight submit continuations in the same batch see it immediately
+    pendingRecoverableDraftRef.current = draft;
+    setPendingRecoverableDraftState(draft);
+  }, []);
 
   useEffect(() => {
     formHasValuesRef.current = Boolean(
@@ -329,7 +331,6 @@ export default function SubmitPage() {
         return;
       }
 
-      pendingRecoverableDraftRef.current = null;
       setPendingRecoverableDraft(null);
 
       redirectTimerRef.current = setTimeout(() => {
@@ -348,7 +349,7 @@ export default function SubmitPage() {
       submitInFlightRef.current = false;
       setIsLoading(false);
     }
-  }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router, isOnline]);
+  }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router, isOnline, setPendingRecoverableDraft]);
 
   const restoreDraft = useCallback(
     (
@@ -374,7 +375,7 @@ export default function SubmitPage() {
         });
       }
     },
-    [addToast]
+    [addToast, setPendingRecoverableDraft]
   );
 
   useEffect(() => {
@@ -425,7 +426,7 @@ export default function SubmitPage() {
         redirectTimerRef.current = null;
       }
     };
-  }, [addToast, restoreDraft]);
+  }, [addToast, restoreDraft, setPendingRecoverableDraft]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

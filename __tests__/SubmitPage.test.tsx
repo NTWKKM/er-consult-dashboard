@@ -566,4 +566,60 @@ describe("SubmitPage mount and redirect safety", () => {
     expect(screen.getByLabelText(/HN/i)).toHaveValue("");
     expect(screen.getByRole("button", { name: /ส่ง Consult/i })).not.toBeDisabled();
   });
+
+  it("keeps recovery banner and stays on /submit when B fails and A completes in the same batch", async () => {
+    let failedListener: ((draft: Consult) => void) | null = null;
+    mockSubscribeToFailedSubmitDrafts.mockImplementation((listener: (draft: Consult) => void) => {
+      failedListener = listener;
+      return () => {
+        if (failedListener === listener) {
+          failedListener = null;
+        }
+      };
+    });
+
+    let resolveConsultA!: (consult: Consult) => void;
+    mockAddConsult.mockImplementationOnce(
+      () =>
+        new Promise<Consult>((resolve) => {
+          resolveConsultA = resolve;
+        })
+    );
+
+    render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    const draftB = makeConsult({
+      id: "same-batch-recovery-b",
+      hn: "909090",
+      firstName: "เคสค้าง",
+      lastName: "ชุดเดียวกัน",
+      room: "Resus Team 1",
+      problem: "Queued in same batch",
+      departments: { Med: { status: "pending", completedAt: null } },
+    });
+
+    // Queue B's recovery and resolve A in the exact same batch before any intermediate effect flush
+    await act(async () => {
+      failedListener?.(draftB);
+      resolveConsultA(makeConsult({ id: "same-batch-case-a", hn: "123456" }));
+      await Promise.resolve();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "กู้คืนข้อมูลร่างเคส" })).toBeInTheDocument();
+    expect(screen.getByText("909090")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /กู้คืนข้อมูลร่าง/ })).toBeInTheDocument();
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("");
+    expect(screen.getByRole("button", { name: /ส่ง Consult/i })).not.toBeDisabled();
+  });
 });

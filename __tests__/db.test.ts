@@ -1360,6 +1360,133 @@ describe("addConsult optimistic draft retention", () => {
       window.sessionStorage.clear();
     }
   });
+
+  it("retires superseded failed draft A when replacement B commits successfully after reload", async () => {
+    window.sessionStorage.clear();
+    let rejectFirst!: (err: unknown) => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-commit-a" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
+
+    const draftA = await addConsult(
+      {
+        hn: "232323",
+        firstName: "Commit",
+        lastName: "First",
+        room: "NT",
+        problem: "Draft A before commit",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+    rejectFirst(new Error("offline-1"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
+
+    let resolveB!: () => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-commit-b" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveB = resolve; }));
+    const draftB = await addConsult(
+      {
+        hn: "232323",
+        firstName: "Commit",
+        lastName: "Second",
+        room: "NT",
+        problem: "Draft B replacement",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, replacesDraftId: draftA.id }
+    );
+
+    try {
+      // Simulate reload while B is still pending -> monitor sees server commit for B -> retires A and clears B
+      vi.resetModules();
+      const reloadedDb = await import("@/lib/db");
+      let snapshotNext!: (snap: { exists: () => boolean; metadata?: { fromCache?: boolean; hasPendingWrites?: boolean } }) => void;
+      mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
+        snapshotNext = onNext;
+        return vi.fn();
+      });
+
+      reloadedDb.monitorReloadedPendingSubmitDrafts();
+      snapshotNext({ exists: () => true, metadata: { fromCache: false, hasPendingWrites: false } });
+
+      expect(reloadedDb.getRetainedSubmitDraft(draftA.id)).toBeUndefined();
+      expect(reloadedDb.getRetainedSubmitDraft(draftB.id)).toBeUndefined();
+      expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
+    } finally {
+      resolveB();
+      await Promise.resolve();
+      await Promise.resolve();
+      window.sessionStorage.clear();
+    }
+  });
+
+  it("prevents replacement retry B from being queued when sessionStorage fails so A cannot duplicate after reload", async () => {
+    window.sessionStorage.clear();
+    let rejectFirst!: (err: unknown) => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-quota-a" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
+
+    const draftA = await addConsult(
+      {
+        hn: "454545",
+        firstName: "Quota",
+        lastName: "First",
+        room: "Urgent",
+        problem: "Draft A",
+        isUrgent: false,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+    rejectFirst(new Error("offline-1"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
+
+    const setDocCallsBeforeRetry = mockSetDoc.mock.calls.length;
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    });
+
+    try {
+      mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-quota-b" } as never);
+      await expect(
+        addConsult(
+          {
+            hn: "454545",
+            firstName: "Quota",
+            lastName: "Retry",
+            room: "Urgent",
+            problem: "Draft B blocked",
+            isUrgent: false,
+            status: "pending",
+            departments: { Ortho: { status: "pending", completedAt: null } },
+          },
+          { awaitRemote: false, replacesDraftId: draftA.id }
+        )
+      ).rejects.toThrow();
+
+      // Replacement B must not have been queued in Firestore or retained in memory
+      expect(mockSetDoc).toHaveBeenCalledTimes(setDocCallsBeforeRetry);
+      expect(getRetainedSubmitDraft("draft-quota-b")).toBeUndefined();
+      expect(getRetainedSubmitDraft(draftA.id)?.status).toBe("failed");
+
+      // Reload still retains only draft A with no hidden pending B
+      vi.resetModules();
+      const reloadedDb = await import("@/lib/db");
+      expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
+    } finally {
+      setItemSpy.mockRestore();
+      window.sessionStorage.clear();
+    }
+  });
 });
 
 // ===========================================================================

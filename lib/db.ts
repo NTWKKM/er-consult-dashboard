@@ -365,13 +365,13 @@ function notifyFailedDraftListeners(draft: Consult, error?: unknown): number {
     return notified;
 }
 
-function persistSubmitDrafts(): void {
-    if (typeof window === "undefined") return;
+function persistSubmitDrafts(): boolean {
+    if (typeof window === "undefined") return false;
     try {
-        if (!window.sessionStorage) return;
+        if (!window.sessionStorage) return false;
         if (retainedSubmitDrafts.size === 0) {
             window.sessionStorage.removeItem(SUBMIT_DRAFTS_STORAGE_KEY);
-            return;
+            return true;
         }
         const serialized = Array.from(retainedSubmitDrafts.values()).map(
             ({ consult, status, replacesDraftId }) => ({
@@ -381,8 +381,10 @@ function persistSubmitDrafts(): void {
             })
         );
         window.sessionStorage.setItem(SUBMIT_DRAFTS_STORAGE_KEY, JSON.stringify(serialized));
+        return true;
     } catch {
-        // Ignore storage quota or private-browsing errors
+        // Ignore storage quota or private-browsing errors unless the caller checks the return value
+        return false;
     }
 }
 
@@ -864,7 +866,16 @@ export async function addConsult(
             status: "pending",
             ...(replacesDraftId ? { replacesDraftId } : {}),
         });
-        persistSubmitDrafts();
+        const persisted = persistSubmitDrafts();
+        if (replacesDraftId && !persisted) {
+            // Abort queueing replacement write if the replacement link cannot be persisted across reloads
+            retainedSubmitDrafts.delete(newConsult.id);
+            activeSubmitWriteIds.delete(newConsult.id);
+            draftTokens.delete(newConsult.id);
+            throw new Error(
+                "ไม่สามารถบันทึกข้อมูลการส่งซ้ำลงในหน่วยความจำชั่วคราวได้ กรุณาลองใหม่อีกครั้งเมื่อกลับมาออนไลน์"
+            );
+        }
 
         const isStillOwned = () =>
             submitDraftGeneration === captureGeneration &&
