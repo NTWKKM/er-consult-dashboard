@@ -24,6 +24,6 @@ In a high-pressure ER, animations must serve a cognitive purpose, not just decor
 - **Browser Surfaces:** `::selection`, `caret-color`, custom scrollbars, and `dialog:modal` `overscroll-behavior: contain` are themed via CSS tokens.
 
 ## 6. Strict Development Guardrails
-- **Token-Only Styling:** All colors and typography in `app/` must resolve through `app/tokens.css` variables (`bg-paper`, `text-ink`, `border-rule`, etc.); raw hex literals and stock Tailwind color palettes are prohibited.
+- **Token-Only Styling:** All colors and typography in `app/` must resolve through `app/tokens.css` variables (`bg-paper`, `text-ink`, `border-rule`, etc.) driven by the root `.dark` class — never pass `darkMode` props to presentational components; raw hex literals and stock Tailwind color palettes are prohibited.
 - **Offline Resiliency Display:** Optimistic updates must provide immediate visual feedback. Network drops trigger the `OfflineIndicator` banner without obstructing the main clinical view, and failed background mutations trigger rollback + `ToastContext` notifications.
 - **Accessibility & Hallmark Floor:** All decorative `<svg>` elements carry `aria-hidden="true"`, keyboard focus rings (`:focus-visible`) appear immediately, and `sloplint.mjs app --scope app` must report `0 FAIL`.

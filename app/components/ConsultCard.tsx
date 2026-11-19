@@ -1,19 +1,18 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useConsultActions, PostAcceptStatus } from "../hooks/useConsultActions";
 import { Consult } from "@/lib/db";
 import { POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import ConfirmModal from "./ConfirmModal";
 import { RoomTransferButton } from "./RoomTransferButton";
-import { getMilestones, formatTime } from "@/lib/utils";
 import { ElapsedTime } from "./ElapsedTime";
+import { MilestoneList } from "./MilestoneList";
 
 interface ConsultCardProps {
   caseData: Consult;
   caseId: string;
   departmentName: string;
-  darkMode?: boolean;
   // Defensive programming: If you pass onUpdate, ensure it is wrapped in useCallback 
   // to prevent breaking the React.memo optimization of ConsultCard.
   onUpdate?: () => void;
@@ -22,12 +21,13 @@ interface ConsultCardProps {
 
 
 
-function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpdate, animationDelay = 0 }: ConsultCardProps) {
+function ConsultCard({ caseData, caseId, departmentName, onUpdate, animationDelay = 0 }: ConsultCardProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
   const [flashSuccess, setFlashSuccess] = useState(false);
   const [isRoomMenuOpen, setIsRoomMenuOpen] = useState(false);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hn = caseData.hn || "-";
   const firstName = caseData.firstName || "";
@@ -38,7 +38,9 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
   const isResusRoom = /\bresus\b/.test(normalizedRoom) && !/\bnon[-\s]?resus\b/.test(normalizedRoom);
   const problem = caseData.problem || "-";
   const isUrgent = caseData.isUrgent || false;
-  const dept = Reflect.get(caseData.departments, departmentName);
+  const dept = Object.hasOwn(caseData.departments, departmentName)
+    ? caseData.departments[departmentName]
+    : undefined;
   const isTerminal = dept?.status === "completed" || dept?.status === "cancelled";
   const isAccepted = dept?.acceptedAt;
   const completedTime = dept?.completedAt
@@ -48,7 +50,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
     ? new Date(caseData.createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })
     : "-";
 
-  const actionStatus = Reflect.get(Reflect.get(caseData.departments, departmentName) ?? {}, "actionStatus") || "";
+  const actionStatus = dept?.actionStatus || "";
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
 
   const {
@@ -81,9 +83,24 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
       } else {
         setFlashSuccess(true);
       }
-      setTimeout(() => setFlashSuccess(false), 700);
+      if (flashTimerRef.current !== null) {
+        clearTimeout(flashTimerRef.current);
+      }
+      flashTimerRef.current = setTimeout(() => {
+        flashTimerRef.current = null;
+        setFlashSuccess(false);
+      }, 700);
     }
   }, [handleAccept]);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current !== null) {
+        clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleCancelConsult = useCallback(async () => {
     setShowCancelConfirm(false);
@@ -206,19 +223,18 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
             <RoomTransferButton 
               consultId={caseId}
               currentRoom={room}
-              darkMode={darkMode}
               onOpenChange={setIsRoomMenuOpen}
               disabled={isUpdating}
             />
           </div>
           {Object.keys(caseData.departments).filter(
-            (d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending"
+            (d) => d !== departmentName && Object.hasOwn(caseData.departments, d) && caseData.departments[d]?.status === "pending"
           ).length > 0 && (
             <div className="flex items-baseline gap-1 text-xs mt-1 min-w-0 flex-wrap">
               <span className="text-muted whitespace-nowrap">{"แผนกอื่น:"}</span>
               <span className="font-medium underline text-ink-2 break-words">
                 {Object.keys(caseData.departments)
-                  .filter((d) => d !== departmentName && Reflect.get(caseData.departments[d as keyof typeof caseData.departments] ?? {}, "status") === "pending")
+                  .filter((d) => d !== departmentName && Object.hasOwn(caseData.departments, d) && caseData.departments[d]?.status === "pending")
                   .join(", ")}
               </span>
             </div>
@@ -246,46 +262,7 @@ function ConsultCard({ caseData, caseId, departmentName, darkMode = false, onUpd
                 <span className="font-medium">{dept?.status === "cancelled" ? "ยกเลิก" : "ปิด"}: {completedTime}</span>
               </div>
             )}
-            {(() => {
-              const allMilestones = getMilestones(dept, formatTime);
-              const milestonesToRender = isAccepted 
-                ? allMilestones 
-                : allMilestones.filter(m => m.icon === "transfer");
-                
-              if (milestonesToRender.length === 0) return null;
-
-              const getMilestoneTone = (label: string) => {
-                if (label === "รับ") return "text-ok";
-                if (label === "คืน ER") return "text-accent";
-                return "text-cool";
-              };
-
-              return (
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] measured">
-                  {milestonesToRender.map((m, idx, arr) => (
-                    <React.Fragment key={`${m.label}-${m.raw}`}>
-                      <div className="flex items-center gap-1">
-                        {m.icon === "check" ? (
-                          <svg aria-hidden="true" className="w-3 h-3 text-ok shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : m.icon === "transfer" ? (
-                          <svg aria-hidden="true" className="w-3 h-3 text-cool shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                          </svg>
-                        ) : null}
-                        <span className={`font-medium whitespace-nowrap ${getMilestoneTone(m.label)}`}>{m.label} {m.time}</span>
-                      </div>
-                      {idx < arr.length - 1 && (
-                        <svg aria-hidden="true" className="w-3 h-3 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              );
-            })()}
+            <MilestoneList dept={dept} isAccepted={Boolean(isAccepted)} variant="inline" />
           </div>
 
           {!isTerminal && (

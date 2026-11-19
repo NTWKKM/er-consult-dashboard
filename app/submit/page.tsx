@@ -4,15 +4,15 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { addConsult } from "@/lib/db";
 import { ALL_DEPARTMENTS, ROOMS, RoomName } from "@/lib/constants";
-import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
 
 export default function SubmitPage() {
   const router = useRouter();
-  const { darkMode } = useSettings();
   const { addToast } = useToast();
   const hnRef = useRef<HTMLInputElement>(null);
   const submitInFlightRef = useRef(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -127,6 +127,8 @@ export default function SubmitPage() {
         duration: 3000,
       });
 
+      if (!isMountedRef.current) return;
+
       setHn("");
       setFirstName("");
       setLastName("");
@@ -135,21 +137,34 @@ export default function SubmitPage() {
       setSelectedDepts([]);
       setErrors({});
 
-      setTimeout(() => {
-        router.push("/");
+      redirectTimerRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          router.push("/");
+        }
       }, 1500);
     } catch (error) {
       console.error("Submit consult error:", error instanceof Error ? error.message : "unknown");
+      if (!isMountedRef.current) return;
       addToast({
         type: "error",
         message: error instanceof Error ? `เกิดข้อผิดพลาด: ${error.message}` : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
         duration: 5000,
       });
-    } finally {
       submitInFlightRef.current = false;
       setIsLoading(false);
     }
   }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (redirectTimerRef.current !== null) {
+        clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

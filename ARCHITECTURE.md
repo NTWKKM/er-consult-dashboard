@@ -12,7 +12,7 @@
 
 - **Framework:** Next.js (App Router) with TypeScript.
 - **Database:** Firebase Firestore (`er-consult-mnrh-2026`, `asia-southeast1`, real-time sync initialized via `lib/firebase.ts` with secrets from `.env.local`, GitHub Actions Secrets, or Vercel Environment Variables). This project binding identifies the target database only and is **not** an access control; staff authorization is enforced in `firestore.rules` and Firebase Authentication settings.
-- **CI/CD:** `.github/workflows/ci.yml` runs Vitest unit tests, production Next.js builds, and conditional Firestore Rules, Indexes & Auth provider deployment (`firestore:rules,firestore:indexes,auth`) using repository secrets.
+- **CI/CD:** `.github/workflows/ci.yml` runs `npm run typecheck`, `npm run lint`, Vitest unit & contract tests (`npm test`), production Next.js builds, and conditional Firestore Rules, Indexes & Auth provider deployment (`firestore:rules,firestore:indexes,auth`) using repository secrets. Local pre-commit verification: `npm run verify`.
 - **UI:** Tailwind CSS v4 with Hallmark **Console** OKLCH design tokens (`app/tokens.css`) and high-contrast accessible components.
 - **State Management:** React Hooks + Context API for global settings.
 
@@ -150,8 +150,8 @@ When a doctor triggers a Re-consult on a case from `/completed`:
 ## 15. Excel Export Pipeline & Safeguards
 
 - **Export Trigger:** Triggered in `/completed` using date ranges `exportStartDate` and `exportEndDate`.
-- **Bandwidth Safeguard:** The frontend validates that the date range is at most 31 days. Ranges exceeding 31 days are rejected to protect against daily read quota exhaustions.
-- **Data Generation:** Dynamically imports the `xlsx` package. Map milestones for each department (e.g. Admit time, D/C time, Accept time, Cancel time) and formats them in local Thai Time strictly enforced to the server-side timezone (`toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })`) before exporting to prevent device-specific discrepancies.
+- **Bandwidth Safeguard:** The frontend validates that the inclusive date range is at most 31 calendar days (`inclusiveDayCount <= MAX_EXPORT_DAYS`, anchored to `Asia/Bangkok` UTC+7 via `lib/dateUtils.ts`). Ranges exceeding 31 inclusive days are rejected to protect against daily read quota exhaustions.
+- **Data Generation:** Dynamically imports the `xlsx` package, sanitizes leading formula characters (`=`, `+`, `-`, `@`) on patient names and clinical `Dx` notes, maps milestones for each department (e.g. Admit time, D/C time, Accept time, Cancel time), and formats them strictly in `Asia/Bangkok` (`toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })`).
 
 ## Core Components
 1. Whiteboard Dashboard (`app/page.tsx`) — Real-time display of active cases — Dependencies: `useConsults`, `useConsultActions`

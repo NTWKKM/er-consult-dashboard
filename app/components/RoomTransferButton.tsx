@@ -8,7 +8,6 @@ import { useToast } from "../contexts/ToastContext";
 interface RoomTransferButtonProps {
   consultId: string;
   currentRoom: RoomName;
-  darkMode: boolean;
   onTransferStart?: () => void;
   onTransferEnd?: (success?: boolean) => void;
   onOpenChange?: (isOpen: boolean) => void;
@@ -18,7 +17,6 @@ interface RoomTransferButtonProps {
 export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   consultId,
   currentRoom,
-  darkMode,
   onTransferStart,
   onTransferEnd,
   onOpenChange,
@@ -47,6 +45,8 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   useEffect(() => {
     if (isOpen) {
       setFocusedIndex(Math.max(0, sortedRooms.indexOf(currentRoom)));
+    } else {
+      setFocusedIndex(-1);
     }
   }, [isOpen, currentRoom, sortedRooms]);
 

@@ -2,37 +2,11 @@ import { db } from "./firebase";
 import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
-import { ROOMS, RoomName } from "./constants";
-import { ConsultSchema } from "./schema";
+import { RoomName } from "./constants";
+import { ConsultSchema, type Consult, type ConsultDepartment, type ConsultTransfer } from "./schema";
+import { ZodError } from "zod";
 
-export interface ConsultTransfer {
-    to: RoomName;
-    at?: string; // ISO string
-}
-
-export interface ConsultDepartment {
-    status: "pending" | "completed" | "cancelled";
-    completedAt: string | null;
-    acceptedAt?: string | null;
-    actionStatus?: string;
-    admittedAt?: string | null;
-    returnedAt?: string | null;
-    dischargedAt?: string | null;
-    transfers?: ConsultTransfer[];
-}
-
-export interface Consult {
-    id: string;
-    hn: string;
-    firstName: string;
-    lastName: string;
-    room: RoomName;
-    problem: string;
-    createdAt: string; // ISO string
-    status: "pending" | "completed" | "cancelled";
-    isUrgent: boolean;
-    departments: { [key: string]: ConsultDepartment };
-}
+export type { Consult, ConsultDepartment, ConsultTransfer };
 
 const COLLECTION_NAME = "consults";
 
@@ -54,12 +28,13 @@ function mapRawToConsult(id: string, data: DocumentData): Consult | null {
     try {
         const parsed = ConsultSchema.parse({ ...data, id });
         return parsed as Consult;
-    } catch (e: any) {
-        if (e.issues) {
-            const safeIssues = e.issues.map((i: any) => ({ path: i.path, message: i.message }));
+    } catch (e: unknown) {
+        if (e instanceof ZodError) {
+            const safeIssues = e.issues.map((i) => ({ path: i.path, message: i.message }));
             console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, safeIssues);
         } else {
-            console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, e.message || "Unknown error");
+            const message = e instanceof Error ? e.message : "Unknown error";
+            console.error(`[mapRawToConsult] Validation failed for consult ${id}:`, message);
         }
         return null; // Ignore malformed documents to prevent app crashes
     }
@@ -126,21 +101,37 @@ export async function fetchCompletedConsultsPage(
     pageSize: number,
     lastDoc?: QueryDocumentSnapshot<DocumentData>
 ): Promise<{ consults: Consult[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
+    if (pageSize <= 0) {
+        return { consults: [], lastDoc: null, hasMore: false };
+    }
+
     const database = requireDb();
     // Track both valid consults and their corresponding Firestore docs.
     // validDocs[i] is the snapshot for validConsults[i], enabling correct cursor tracking.
     const validConsults: Consult[] = [];
     const validDocs: QueryDocumentSnapshot<DocumentData>[] = [];
     let currentCursor = lastDoc;
-    let hasMore = false;
+
+    const MAX_SCAN_DOCS = Math.max(250, pageSize * 10);
+    const MAX_REFILL_BATCH = Math.max(50, pageSize + 1);
+    let totalScanned = 0;
+    let isFirstBatch = true;
+    let refillBatchFloor = 10;
+    let lastScannedDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+    let overflowContinuationDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+    let reachedEndOfData = false;
 
     // ดึงข้อมูลไปเรื่อยๆ จนกว่าจะได้เอกสารที่ถูกต้องครบ pageSize + 1 (เพื่อเช็ค hasMore)
-    while (validConsults.length <= pageSize) {
+    while (validConsults.length <= pageSize && totalScanned < MAX_SCAN_DOCS) {
+        const needed = pageSize + 1 - validConsults.length;
+        const remainingScan = MAX_SCAN_DOCS - totalScanned;
+        const requestedBatch = isFirstBatch ? needed : Math.max(needed, refillBatchFloor);
+        const batchSize = Math.min(remainingScan, requestedBatch);
         let q = query(
             collection(database, COLLECTION_NAME),
             where("status", "==", "completed"),
             orderBy("createdAt", "desc"),
-            limit(pageSize + 1 - validConsults.length)
+            limit(batchSize)
         );
 
         if (currentCursor) {
@@ -148,24 +139,54 @@ export async function fetchCompletedConsultsPage(
         }
 
         const snapshot = await getDocs(q);
-        if (snapshot.empty) break;
+        if (snapshot.empty) {
+            reachedEndOfData = true;
+            break;
+        }
 
-        snapshot.docs.forEach((doc) => {
-            if (validConsults.length <= pageSize) {
-                const c = mapDocToConsult(doc);
-                if (c !== null && Boolean(c.hn)) {
+        totalScanned += snapshot.docs.length;
+
+        for (const docSnap of snapshot.docs) {
+            const c = mapDocToConsult(docSnap);
+            if (c !== null && Boolean(c.hn)) {
+                if (validConsults.length === pageSize) {
+                    overflowContinuationDoc = lastScannedDoc ?? validDocs[pageSize - 1];
                     validConsults.push(c);
-                    validDocs.push(doc);
+                    validDocs.push(docSnap);
+                    break;
                 }
+                validConsults.push(c);
+                validDocs.push(docSnap);
             }
-        });
+            lastScannedDoc = docSnap;
+        }
 
         currentCursor = snapshot.docs[snapshot.docs.length - 1];
+        if (validConsults.length > pageSize) break;
+        // No more documents in Firestore — avoid a wasted extra read
+        if (snapshot.docs.length < batchSize) {
+            reachedEndOfData = true;
+            break;
+        }
+
+        if (!isFirstBatch) {
+            refillBatchFloor = Math.min(MAX_REFILL_BATCH, refillBatchFloor * 2);
+        }
+        isFirstBatch = false;
     }
 
-    hasMore = validConsults.length > pageSize;
-    const pageConsults = hasMore ? validConsults.slice(0, pageSize) : validConsults;
-    const pageLastDoc = pageConsults.length > 0 ? validDocs[pageConsults.length - 1] : null;
+    const hasOverflow = validConsults.length > pageSize;
+    const reachedScanLimit =
+        !hasOverflow && !reachedEndOfData && totalScanned >= MAX_SCAN_DOCS && lastScannedDoc !== null;
+    const hasMore = hasOverflow || reachedScanLimit;
+    const pageConsults = hasOverflow ? validConsults.slice(0, pageSize) : validConsults;
+    const pageLastDoc = hasOverflow
+        ? overflowContinuationDoc
+        : reachedScanLimit
+          ? lastScannedDoc
+          : pageConsults.length > 0
+            ? validDocs[pageConsults.length - 1]
+            : null;
 
     return {
         consults: pageConsults,
@@ -478,7 +499,7 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
     return newConsult;
 }
 
-type ConsultUpdate = UpdateData<Omit<Consult, "id">>;
+type ConsultUpdate = UpdateData<Omit<Consult, "id">> | Partial<Omit<Consult, "id">>;
 export type ConsultUpdater = (current: Consult) => ConsultUpdate | null;
 
 export interface UpdateConsultOptions {
@@ -491,6 +512,11 @@ export interface UpdateResults {
     isQueued: boolean;
     backgroundPromise: Promise<void> | null;
     applied: boolean;
+}
+
+function buildOptimisticConsult(current: Consult, updates: ConsultUpdate): Consult | null {
+    const hasDottedKeys = Object.keys(updates).some((k) => k.includes("."));
+    return hasDottedKeys ? null : ({ ...current, ...updates } as Consult);
 }
 
 export async function updateConsult(
@@ -526,8 +552,6 @@ export async function updateConsult(
                 };
             }
             
-            const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
-            
             // Perform the "real" update in background (Allows Offline persistence)
             const rawPromise = trackOptimisticWrite(updateDoc(docRef, updates));
             rawPromise.catch(err => {
@@ -538,10 +562,7 @@ export async function updateConsult(
             });
 
             return {
-                consult: hasDottedKeys ? null : {
-                    ...currentData,
-                    ...updates,
-                } as Consult,
+                consult: buildOptimisticConsult(currentData, updates),
                 isQueued: true,
                 backgroundPromise: rawPromise,
                 applied: true,
@@ -568,14 +589,10 @@ export async function updateConsult(
                 applied: false,
             };
         }
-        const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
         await updateDoc(docRef, updates);
 
         return {
-            consult: hasDottedKeys ? null : {
-                ...currentData,
-                ...updates,
-            } as Consult,
+            consult: buildOptimisticConsult(currentData, updates),
             isQueued: false,
             backgroundPromise: null,
             applied: true,
@@ -629,6 +646,7 @@ export async function transactionalUpdateConsult(
 
     // For Optimistic UI: read local cache first for immediate UI response
     let optimisticConsult: Consult | null = null;
+    let preApplied = false;
 
     if (!awaitRemote) {
         // Pre-read for optimistic response (may hit local cache)
@@ -638,13 +656,20 @@ export async function transactionalUpdateConsult(
             if (preData) {
                 const preUpdates = updater(preData);
                 if (preUpdates !== null) {
-                    const hasDottedKeys = Object.keys(preUpdates).some(k => k.includes("."));
-                    optimisticConsult = hasDottedKeys ? null : {
-                        ...preData,
-                        ...preUpdates,
-                    } as Consult;
+                    preApplied = true;
+                    optimisticConsult = buildOptimisticConsult(preData, preUpdates);
                 }
             }
+        }
+
+        if (!preApplied) {
+            // Local precondition failed — do not fire a doomed background write
+            return {
+                consult: null,
+                isQueued: false,
+                backgroundPromise: null,
+                applied: false,
+            };
         }
     }
 
@@ -669,13 +694,9 @@ export async function transactionalUpdateConsult(
 
             transaction.update(docRef, updates);
 
-            const hasDottedKeys = Object.keys(updates).some(k => k.includes("."));
             return {
                 applied: true,
-                consult: hasDottedKeys ? null : {
-                    ...currentData,
-                    ...updates,
-                } as Consult,
+                consult: buildOptimisticConsult(currentData, updates),
             };
         });
     };
@@ -704,7 +725,7 @@ export async function transactionalUpdateConsult(
             consult: optimisticConsult,
             isQueued: true,
             backgroundPromise,
-            applied: optimisticConsult !== null,
+            applied: preApplied,
         };
     }
 

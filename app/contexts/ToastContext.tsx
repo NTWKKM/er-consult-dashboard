@@ -29,9 +29,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const pendingAssertiveRef = useRef<string[]>([]);
   const pendingPoliteRef = useRef<string[]>([]);
   const flushScheduledRef = useRef(false);
+  const autoDismissTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const removeToast = useCallback((id: string) => {
+    const timer = autoDismissTimersRef.current.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      autoDismissTimersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  useEffect(() => {
+    const timers = autoDismissTimersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
   }, []);
 
   const addToast = useCallback(
@@ -62,7 +76,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
       const duration = toast.duration ?? 4000;
       if (duration > 0) {
-        setTimeout(() => removeToast(id), duration);
+        const timer = setTimeout(() => {
+          autoDismissTimersRef.current.delete(id);
+          removeToast(id);
+        }, duration);
+        autoDismissTimersRef.current.set(id, timer);
       }
     },
     [removeToast]
@@ -117,11 +135,25 @@ function ToastContainer({
 
 function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
   const [isExiting, setIsExiting] = useState(false);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleRemove = useCallback(() => {
+    if (exitTimerRef.current !== null) return;
     setIsExiting(true);
-    setTimeout(() => onRemove(toast.id), 300);
+    exitTimerRef.current = setTimeout(() => {
+      exitTimerRef.current = null;
+      onRemove(toast.id);
+    }, 300);
   }, [toast.id, onRemove]);
+
+  useEffect(() => {
+    return () => {
+      if (exitTimerRef.current !== null) {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Start exit animation 300ms before removal

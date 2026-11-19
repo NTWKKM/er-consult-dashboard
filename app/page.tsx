@@ -8,8 +8,9 @@ import ErrorState from "@/app/components/ErrorState";
 import ConfirmModal from "@/app/components/ConfirmModal";
 import { RoomTransferButton } from "@/app/components/RoomTransferButton";
 import { subscribeToConsultsByStatus, Consult } from "@/lib/db";
-import { getMilestones, formatTime } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
 import { ElapsedTime as PatientTableElapsedTime } from "@/app/components/ElapsedTime";
+import { MilestoneList } from "@/app/components/MilestoneList";
 import { SURGERY_DEPTS, ORTHO_DEPTS, POST_ACCEPT_STATUSES, ACCEPT_STATUS } from "@/lib/constants";
 import { findNewCaseIds } from "@/lib/utils";
 import { useSettings } from "./contexts/SettingsContext";
@@ -58,7 +59,7 @@ export default function Dashboard() {
     }
   }, [view, roomFilter]);
 
-  const { darkMode, soundEnabled, displayMode, setDisplayMode } = useSettings();
+  const { soundEnabled, displayMode, setDisplayMode } = useSettings();
 
   const handleSetDisplayMode = (mode: "card" | "table") => {
     if (document.startViewTransition) {
@@ -117,7 +118,7 @@ export default function Dashboard() {
   }, [displayMode]);
 
   const scrollToDepartment = (deptName: string) => {
-    Reflect.get(deptRefs.current, deptName)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    (Object.hasOwn(deptRefs.current, deptName) ? deptRefs.current[deptName] : null)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const initAudioContext = useCallback(() => {
@@ -189,6 +190,8 @@ export default function Dashboard() {
   }, [soundEnabled, initAudioContext]);
 
   useEffect(() => {
+    // Wait for the initial snapshot before establishing the baseline so existing cases never trigger an alert
+    if (loading) return;
     const currentIds = new Set(allCases.map((c) => c.id));
     if (!isInitialLoadRef.current) {
       const newIds = findNewCaseIds(currentIds, previousCaseIdsRef.current);
@@ -198,7 +201,16 @@ export default function Dashboard() {
     }
     previousCaseIdsRef.current = currentIds;
     isInitialLoadRef.current = false;
-  }, [allCases, playNotificationSound]);
+  }, [allCases, loading, playNotificationSound]);
+
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        void audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeToConsultsByStatus(
@@ -234,13 +246,13 @@ export default function Dashboard() {
   }, [filteredAllCases]);
 
   const getCasesForDepartment = (deptName: string) => {
-    return Reflect.get(departmentCasesMap, deptName) || [];
+    return (Object.hasOwn(departmentCasesMap, deptName) ? departmentCasesMap[deptName] : undefined) || [];
   };
 
   const totalPendingCases = visibleTableCases.length;
 
   if (loading) {
-    return <SkeletonLoading darkMode={darkMode} />;
+    return <SkeletonLoading />;
   }
 
   if (error) {
@@ -387,7 +399,7 @@ export default function Dashboard() {
                       </tr>
                     ) : (
                       visibleTableCases.map((caseData) => (
-                        <PatientTableRow key={caseData.id} caseData={caseData} darkMode={darkMode} />
+                        <PatientTableRow key={caseData.id} caseData={caseData} />
                       ))
                     )}
                   </tbody>
@@ -403,7 +415,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 visibleTableCases.map((caseData) => (
-                  <MobilePatientCard key={caseData.id} caseData={caseData} darkMode={darkMode} />
+                  <MobilePatientCard key={caseData.id} caseData={caseData} />
                 ))
               )}
             </div>
@@ -469,7 +481,6 @@ export default function Dashboard() {
                               caseData={caseData}
                               caseId={caseData.id}
                               departmentName={dept}
-                              darkMode={darkMode}
                               animationDelay={index * 50}
                             />
                           ))
@@ -539,7 +550,6 @@ export default function Dashboard() {
                                 caseData={caseData}
                                 caseId={caseData.id}
                                 departmentName={dept}
-                                darkMode={darkMode}
                                 animationDelay={index * 50}
                               />
                             ))}
@@ -562,7 +572,7 @@ export default function Dashboard() {
 // SUB-COMPONENTS FOR TABLE VIEW
 // ===========================================================================
 
-function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
+function MobilePatientCard({ caseData }: { caseData: Consult }) {
   const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
   const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
 
@@ -623,10 +633,9 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
             <span className="px-2 py-1 rounded-[4px] text-xs font-medium bg-paper-3 border border-rule text-ink">
               {caseData.room}
             </span>
-            <RoomTransferButton 
+            <RoomTransferButton
               consultId={caseData.id}
               currentRoom={caseData.room}
-              darkMode={darkMode}
             />
           </div>
         </div>
@@ -652,7 +661,7 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
       {/* Management Actions */}
       <div className="flex flex-col gap-2 mt-1">
         {pendingDepts.map(dept => (
-          <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
+          <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} />
         ))}
       </div>
       <ConfirmModal
@@ -669,13 +678,13 @@ function MobilePatientCard({ caseData, darkMode }: { caseData: Consult; darkMode
   );
 }
 
-function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: boolean }) {
+function PatientTableRow({ caseData }: { caseData: Consult }) {
   const { isUpdating, handleToggleUrgency } = useConsultActions(caseData.id, "", caseData.hn);
   const [showUrgencyConfirm, setShowUrgencyConfirm] = useState(false);
 
   // กรองเฉพาะแผนกที่สถานะยังรออยู่ (pending) ของเคสนี้
   const pendingDepts = Object.keys(caseData.departments).filter(
-    (d) => Reflect.get(caseData.departments, d)?.status === "pending"
+    (d) => (Object.hasOwn(caseData.departments, d) ? caseData.departments[d] : undefined)?.status === "pending"
   );
 
   if (pendingDepts.length === 0) return null;
@@ -741,7 +750,6 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
           <RoomTransferButton 
             consultId={caseData.id}
             currentRoom={caseData.room}
-            darkMode={darkMode}
           />
         </div>
       </td>
@@ -751,7 +759,7 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
       <td className="p-3">
         <div className="flex flex-col gap-2">
           {pendingDepts.map(dept => (
-            <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} darkMode={darkMode} />
+            <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} />
           ))}
         </div>
       </td>
@@ -769,23 +777,15 @@ function PatientTableRow({ caseData, darkMode }: { caseData: Consult; darkMode: 
   );
 }
 
-function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; deptName: string; darkMode: boolean }) {
+function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; deptName: string }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
-  const dept = Reflect.get(caseData.departments, deptName);
+  const dept = Object.hasOwn(caseData.departments, deptName) ? caseData.departments[deptName] : undefined;
   const isAccepted = !!dept?.acceptedAt;
   const actionStatus = dept?.actionStatus || "";
   const isStatusSelected = actionStatus && actionStatus !== ACCEPT_STATUS;
   const fullName = [caseData.firstName, caseData.lastName].filter(Boolean).join(" ");
-
-  const milestones = getMilestones(dept, formatTime);
-
-  const getMilestoneTone = (label: string) => {
-    if (label === "รับ") return "text-ok";
-    if (label === "คืน ER") return "text-accent";
-    return "text-cool";
-  };
 
   const {
     isUpdating,
@@ -901,31 +901,7 @@ function DepartmentActionPanel({ caseData, deptName }: { caseData: Consult; dept
             </button>
           </div>
 
-            {milestones.length > 0 && (
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 measured">
-                {milestones.map((m, idx, arr) => (
-                  <React.Fragment key={`${m.label}-${m.raw}`}>
-                    <div className="flex items-center gap-1 text-[10px]">
-                      {m.icon === "check" ? (
-                        <svg aria-hidden="true" className="w-2.5 h-2.5 text-ok shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : m.icon === "transfer" ? (
-                        <svg aria-hidden="true" className="w-2.5 h-2.5 text-cool shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                      ) : null}
-                      <span className={`font-medium whitespace-nowrap ${getMilestoneTone(m.label)}`}>{m.label} {m.time}</span>
-                    </div>
-                    {idx < arr.length - 1 && (
-                      <svg aria-hidden="true" className="w-2.5 h-2.5 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            )}
+          <MilestoneList dept={dept} isAccepted={true} variant="inline" />
         </div>
       </div>
 
