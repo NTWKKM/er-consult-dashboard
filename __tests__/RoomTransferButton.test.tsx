@@ -598,5 +598,37 @@ describe("RoomTransferButton", () => {
       fireEvent.click(trigger);
       expect(screen.getByRole("listbox")).toBeInTheDocument();
     });
+
+    it("closes menu, prevents default, and focuses trigger on Tab and Shift+Tab", () => {
+      renderButton({ currentRoom: "NT" });
+      const trigger = screen.getByTitle("เปลี่ยนห้อง");
+
+      // Tab while menu is open
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      const tabEvent = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+      act(() => {
+        document.dispatchEvent(tabEvent);
+      });
+      expect(tabEvent.defaultPrevented).toBe(true);
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(trigger);
+
+      // Shift+Tab while menu is open
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      const shiftTabEvent = new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        document.dispatchEvent(shiftTabEvent);
+      });
+      expect(shiftTabEvent.defaultPrevented).toBe(true);
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(trigger);
+    });
   });
 });

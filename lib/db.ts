@@ -330,8 +330,16 @@ const PersistedSubmitDraftSchema = z.object({
 
 const retainedSubmitDrafts = new Map<string, RetainedSubmitDraft>();
 const activeSubmitWriteIds = new Set<string>();
+const draftTokens = new Map<string, number>();
+let submitDraftGeneration = 0;
+let nextDraftToken = 0;
 const failedDraftListeners = new Set<(draft: Consult, error?: unknown) => void>();
 let draftsHydrated = false;
+
+export function hasRetainedSubmitDrafts(): boolean {
+    ensureDraftsHydrated();
+    return retainedSubmitDrafts.size > 0;
+}
 
 export function subscribeToFailedSubmitDrafts(
     listener: (draft: Consult, error?: unknown) => void
@@ -342,14 +350,17 @@ export function subscribeToFailedSubmitDrafts(
     };
 }
 
-function notifyFailedDraftListeners(draft: Consult, error?: unknown): void {
+function notifyFailedDraftListeners(draft: Consult, error?: unknown): number {
+    let notified = 0;
     for (const listener of failedDraftListeners) {
+        notified += 1;
         try {
             listener(draft, error);
         } catch {
             // Isolate listener errors
         }
     }
+    return notified;
 }
 
 function persistSubmitDrafts(): void {
@@ -386,6 +397,7 @@ function ensureDraftsHydrated(): void {
                     consult: validated.data.consult,
                     status: validated.data.status,
                 });
+                draftTokens.set(validated.data.consult.id, ++nextDraftToken);
             }
         }
     } catch {
@@ -412,43 +424,63 @@ export function getRetainedSubmitDraft(id: string): RetainedSubmitDraft | undefi
 export function clearRetainedSubmitDraft(id?: string): void {
     ensureDraftsHydrated();
     if (id === undefined) {
+        submitDraftGeneration += 1;
         retainedSubmitDrafts.clear();
         activeSubmitWriteIds.clear();
+        draftTokens.clear();
         persistSubmitDrafts();
         return;
     }
     retainedSubmitDrafts.delete(id);
     activeSubmitWriteIds.delete(id);
+    draftTokens.delete(id);
     persistSubmitDrafts();
 }
 
 /**
  * Reconciles submit drafts loaded from sessionStorage after a page reload before an
  * optimistic write settled. Clears drafts already committed to Firestore and promotes
- * unpersisted/errored drafts to "failed" so the user can retry them.
+ * server-confirmed missing or errored drafts to "failed" so the user can retry them.
  */
 export async function reconcileReloadedSubmitDrafts(): Promise<Consult | null> {
     ensureDraftsHydrated();
     if (!db) return getLatestFailedSubmitDraft();
 
-    const orphanedPending = Array.from(retainedSubmitDrafts.entries()).filter(
-        ([id, entry]) => entry.status === "pending" && !activeSubmitWriteIds.has(id)
-    );
+    const captureGeneration = submitDraftGeneration;
+    const orphanedPending = Array.from(retainedSubmitDrafts.entries())
+        .filter(([id, entry]) => entry.status === "pending" && !activeSubmitWriteIds.has(id))
+        .map(([id, entry]) => ({ id, entry, token: draftTokens.get(id) }));
 
-    for (const [id, entry] of orphanedPending) {
+    let mutated = false;
+    for (const { id, entry, token } of orphanedPending) {
+        const isStillOwned = () =>
+            submitDraftGeneration === captureGeneration &&
+            draftTokens.get(id) === token &&
+            retainedSubmitDrafts.has(id);
+
         try {
             const docSnap = await getDoc(doc(db, COLLECTION_NAME, id));
+            if (!isStillOwned()) continue;
             if (docSnap.exists() && !docSnap.metadata?.hasPendingWrites) {
                 retainedSubmitDrafts.delete(id);
-            } else if (!docSnap.exists()) {
+                draftTokens.delete(id);
+                mutated = true;
+            } else if (!docSnap.exists() && docSnap.metadata?.fromCache === false) {
                 retainedSubmitDrafts.set(id, { ...entry, status: "failed" });
+                mutated = true;
             }
         } catch (err) {
+            if (!isStillOwned()) continue;
             retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
+            mutated = true;
         }
     }
 
-    if (orphanedPending.length > 0) {
+    if (submitDraftGeneration !== captureGeneration) {
+        return null;
+    }
+
+    if (mutated) {
         persistSubmitDrafts();
     }
     return getLatestFailedSubmitDraft();
@@ -466,6 +498,7 @@ export function monitorReloadedPendingSubmitDrafts(
     if (!db) return () => {};
 
     const database = db;
+    const captureGeneration = submitDraftGeneration;
     const unsubscribers: Array<() => void> = [];
 
     for (const [id, entry] of retainedSubmitDrafts.entries()) {
@@ -473,8 +506,13 @@ export function monitorReloadedPendingSubmitDrafts(
             continue;
         }
 
+        const captureToken = draftTokens.get(id);
         let settled = false;
         let unsubscribe: (() => void) | null = null;
+        const isStillOwned = () =>
+            submitDraftGeneration === captureGeneration &&
+            draftTokens.get(id) === captureToken &&
+            retainedSubmitDrafts.has(id);
         const finish = () => {
             settled = true;
             if (unsubscribe) {
@@ -485,6 +523,7 @@ export function monitorReloadedPendingSubmitDrafts(
         const markFailed = (err?: unknown) => {
             if (settled) return;
             finish();
+            if (!isStillOwned()) return;
             retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
             persistSubmitDrafts();
             onFailed?.(entry.consult, err);
@@ -496,16 +535,21 @@ export function monitorReloadedPendingSubmitDrafts(
             { includeMetadataChanges: true },
             (docSnap) => {
                 if (settled) return;
+                if (!isStillOwned()) {
+                    finish();
+                    return;
+                }
                 const hasPendingWrites = Boolean(docSnap.metadata?.hasPendingWrites);
                 if (docSnap.exists() && !hasPendingWrites) {
                     // Server commit confirmed — remove retained draft
                     finish();
                     retainedSubmitDrafts.delete(id);
+                    draftTokens.delete(id);
                     persistSubmitDrafts();
                     return;
                 }
-                if (!docSnap.exists() && !hasPendingWrites) {
-                    // Queued write was rejected/dropped or never reached local cache before reload
+                if (!docSnap.exists() && !hasPendingWrites && docSnap.metadata?.fromCache === false) {
+                    // Server-confirmed missing document (queued write was rejected/rolled back)
                     markFailed();
                 }
             },
@@ -748,7 +792,11 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
 
 export interface AddConsultOptions {
     awaitRemote?: boolean;
-    onBackgroundError?: (error: unknown, draft: Consult) => void;
+    onBackgroundError?: (
+        error: unknown,
+        draft: Consult,
+        context?: { notifiedListenerCount: number }
+    ) => void;
     onBackgroundSuccess?: (consult: Consult) => void;
 }
 
@@ -770,26 +818,40 @@ export async function addConsult(
         // Optimistic offline-first write: retain a retryable draft across navigation/reloads
         // until the Firestore write settles so hospital Wi-Fi drops never lose submissions.
         ensureDraftsHydrated();
+        const captureGeneration = submitDraftGeneration;
+        const captureToken = ++nextDraftToken;
+        draftTokens.set(newConsult.id, captureToken);
         activeSubmitWriteIds.add(newConsult.id);
         retainedSubmitDrafts.set(newConsult.id, { consult: newConsult, status: "pending" });
         persistSubmitDrafts();
+
+        const isStillOwned = () =>
+            submitDraftGeneration === captureGeneration &&
+            draftTokens.get(newConsult.id) === captureToken &&
+            retainedSubmitDrafts.has(newConsult.id);
+
         const writePromise = trackOptimisticWrite(setDoc(newDocRef, newConsult));
         void writePromise.then(
             () => {
                 activeSubmitWriteIds.delete(newConsult.id);
+                if (!isStillOwned()) return;
                 retainedSubmitDrafts.delete(newConsult.id);
+                draftTokens.delete(newConsult.id);
                 persistSubmitDrafts();
                 onBackgroundSuccess?.(newConsult);
             },
             (err) => {
                 activeSubmitWriteIds.delete(newConsult.id);
+                if (!isStillOwned()) return;
                 retainedSubmitDrafts.set(newConsult.id, {
                     consult: newConsult,
                     status: "failed",
                     error: err,
                 });
                 persistSubmitDrafts();
-                onBackgroundError?.(err, newConsult);
+                const notifiedListenerCount = failedDraftListeners.size;
+                onBackgroundError?.(err, newConsult, { notifiedListenerCount });
+                notifyFailedDraftListeners(newConsult, err);
             }
         );
         return newConsult;

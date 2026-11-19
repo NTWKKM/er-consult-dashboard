@@ -4,7 +4,11 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { User, onAuthStateChanged, signOut } from "firebase/auth";
 import { clearIndexedDbPersistence, terminate, waitForPendingWrites, type Firestore } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
-import { clearRetainedSubmitDraft, hasPendingOptimisticWrites } from "../../lib/db";
+import {
+  clearRetainedSubmitDraft,
+  hasPendingOptimisticWrites,
+  hasRetainedSubmitDrafts,
+} from "../../lib/db";
 
 interface AuthContextType {
   user: User | null;
@@ -40,45 +44,58 @@ async function checkIsAuthorizedStaff(currentUser: User): Promise<boolean> {
 
 const PENDING_WRITE_SYNC_TIMEOUT_MS = 1200;
 
-async function confirmPendingWritesBeforeLogout(firestoreDb: Firestore): Promise<boolean> {
-  const confirmDiscard = () =>
+async function confirmPendingWritesBeforeLogout(firestoreDb: Firestore | null): Promise<boolean> {
+  const confirmDiscard = (message: string) =>
     typeof window !== "undefined" &&
     typeof window.confirm === "function" &&
-    window.confirm(
-      "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์อาจสูญหาย ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?"
-    );
+    window.confirm(message);
 
-  // If already offline with local pending writes, ask confirmation immediately rather than waiting on network.
-  if (typeof navigator !== "undefined" && navigator.onLine === false && hasPendingOptimisticWrites()) {
-    return confirmDiscard();
+  const pendingMessage =
+    "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์อาจสูญหาย ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
+  const retainedDraftMessage =
+    "มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง หากออกจากระบบข้อมูลร่างจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
+
+  if (firestoreDb) {
+    // If already offline with local pending writes, ask confirmation immediately rather than waiting on network.
+    if (typeof navigator !== "undefined" && navigator.onLine === false && hasPendingOptimisticWrites()) {
+      return confirmDiscard(pendingMessage);
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let syncTimedOut = false;
+    let writesSettled = false;
+
+    try {
+      const syncCompleted = await Promise.race<boolean>([
+        waitForPendingWrites(firestoreDb).then(() => true),
+        new Promise<boolean>((resolve) => {
+          timeoutId = setTimeout(() => {
+            syncTimedOut = true;
+            resolve(false);
+          }, PENDING_WRITE_SYNC_TIMEOUT_MS);
+        }),
+      ]);
+
+      writesSettled = syncCompleted && !syncTimedOut && !hasPendingOptimisticWrites();
+    } catch {
+      // Treat waitForPendingWrites failure as unconfirmed pending writes so we never silently wipe local data
+      writesSettled = false;
+    } finally {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (!writesSettled) {
+      return confirmDiscard(pendingMessage);
+    }
   }
 
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  let syncTimedOut = false;
-
-  try {
-    const syncCompleted = await Promise.race<boolean>([
-      waitForPendingWrites(firestoreDb).then(() => true),
-      new Promise<boolean>((resolve) => {
-        timeoutId = setTimeout(() => {
-          syncTimedOut = true;
-          resolve(false);
-        }, PENDING_WRITE_SYNC_TIMEOUT_MS);
-      }),
-    ]);
-
-    if (syncCompleted && !syncTimedOut && !hasPendingOptimisticWrites()) {
-      return true;
-    }
-  } catch {
-    // Treat waitForPendingWrites failure as unconfirmed pending writes so we never silently wipe local data
-  } finally {
-    if (timeoutId !== null) {
-      clearTimeout(timeoutId);
-    }
+  if (hasRetainedSubmitDrafts()) {
+    return confirmDiscard(retainedDraftMessage);
   }
 
-  return confirmDiscard();
+  return true;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -121,7 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    if (db && typeof window !== "undefined") {
+    if (typeof window !== "undefined") {
       const canProceed = await confirmPendingWritesBeforeLogout(db);
       if (!canProceed) {
         return;

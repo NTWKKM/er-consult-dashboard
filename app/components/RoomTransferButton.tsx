@@ -43,6 +43,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   }
   const { addToast } = useToast();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const transferInFlightRef = useRef(false);
@@ -124,6 +125,11 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       if (event.key === "Escape") {
         setIsOpen(false);
         setFocusedIndex(-1);
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        setIsOpen(false);
+        setFocusedIndex(-1);
+        triggerRef.current?.focus();
       } else if (event.key === "ArrowDown") {
         event.preventDefault();
         setFocusedIndex((prev) => (prev < sortedRooms.length - 1 ? prev + 1 : 0));
@@ -280,6 +286,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   return (
     <div className="relative inline-block ml-1" ref={dropdownRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={handleToggle}
         disabled={isTransferring || disabled}

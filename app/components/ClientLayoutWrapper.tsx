@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Navbar from "./Navbar";
 import BottomNav from "./BottomNav";
@@ -11,11 +11,20 @@ import { monitorReloadedPendingSubmitDrafts } from "@/lib/db";
 export default function ClientLayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLoginPage = pathname === "/login";
+  const pathnameRef = useRef(pathname);
   const { addToast } = useToast();
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     if (isLoginPage) return;
     return monitorReloadedPendingSubmitDrafts((failedDraft) => {
+      if (pathnameRef.current === "/submit") {
+        // SubmitPage handles in-page recovery/toast while on /submit
+        return;
+      }
       addToast({
         type: "error",
         message: `ซิงค์เคส HN: ${failedDraft.hn} ไม่สำเร็จ กรุณากลับไปหน้า "ส่งเคสปรึกษา" เพื่อลองส่งใหม่`,

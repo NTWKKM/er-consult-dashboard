@@ -65,6 +65,7 @@ import {
   getLatestFailedSubmitDraft,
   getRetainedSubmitDraft,
   hasPendingOptimisticWrites,
+  subscribeToFailedSubmitDrafts,
   MAX_HN_SEARCH_RESULTS,
   updateConsult,
   transactionalUpdateConsult,
@@ -919,7 +920,9 @@ describe("addConsult optimistic draft retention", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(onBackgroundError).toHaveBeenCalledWith(writeError, failedConsult);
+    expect(onBackgroundError).toHaveBeenCalledWith(writeError, failedConsult, {
+      notifiedListenerCount: 0,
+    });
     expect(getRetainedSubmitDraft(failedConsult.id)?.status).toBe("failed");
     expect(getLatestFailedSubmitDraft()?.id).toBe(failedConsult.id);
     clearRetainedSubmitDraft(failedConsult.id);
@@ -954,8 +957,11 @@ describe("addConsult optimistic draft retention", () => {
     const reloadedDb = await import("@/lib/db");
     expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
 
-    // Reconcile orphaned pending draft when doc does not exist in Firestore -> promoted to failed
-    mockGetDoc.mockResolvedValueOnce(makeDocSnapshot(pendingConsult.id, null, false));
+    // Reconcile orphaned pending draft when server confirms doc does not exist -> promoted to failed
+    mockGetDoc.mockResolvedValueOnce({
+      ...makeDocSnapshot(pendingConsult.id, null, false),
+      metadata: { fromCache: false, hasPendingWrites: false },
+    });
     const recovered = await reloadedDb.reconcileReloadedSubmitDrafts();
     expect(recovered?.id).toBe(pendingConsult.id);
     expect(recovered?.hn).toBe("998877");
@@ -1087,7 +1093,10 @@ describe("addConsult optimistic draft retention", () => {
     vi.resetModules();
     const afterReload2 = await import("@/lib/db");
     const unsubMock2 = vi.fn();
-    let snapshotNext2!: (snap: { exists: () => boolean; metadata?: { hasPendingWrites?: boolean } }) => void;
+    let snapshotNext2!: (snap: {
+      exists: () => boolean;
+      metadata?: { fromCache?: boolean; hasPendingWrites?: boolean };
+    }) => void;
     mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
       snapshotNext2 = onNext;
       return unsubMock2;
@@ -1098,7 +1107,7 @@ describe("addConsult optimistic draft retention", () => {
     snapshotNext2({ exists: () => true, metadata: { hasPendingWrites: true } });
     expect(onFailed2).not.toHaveBeenCalled();
 
-    snapshotNext2({ exists: () => false, metadata: { hasPendingWrites: false } });
+    snapshotNext2({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } });
     expect(onFailed2).toHaveBeenCalledWith(
       expect.objectContaining({ id: rollbackConsult.id, hn: "665544" }),
       undefined
@@ -1109,6 +1118,129 @@ describe("addConsult optimistic draft retention", () => {
     resolveWrite2();
     await Promise.resolve();
     await Promise.resolve();
+    window.sessionStorage.clear();
+  });
+
+  it("leaves draft pending on cold-cache miss and clears without failing when server-existing snapshot arrives", async () => {
+    window.sessionStorage.clear();
+    let resolveWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite = resolve; }));
+
+    const coldConsult = await addConsult(
+      {
+        hn: "112233",
+        firstName: "Cold",
+        lastName: "Cache",
+        room: "Urgent",
+        problem: "Cold cache reload",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+    const unsubMock = vi.fn();
+    let snapshotNext!: (snap: {
+      exists: () => boolean;
+      metadata?: { fromCache?: boolean; hasPendingWrites?: boolean };
+    }) => void;
+    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
+      snapshotNext = onNext;
+      return unsubMock;
+    });
+
+    const onFailed = vi.fn();
+    reloadedDb.monitorReloadedPendingSubmitDrafts(onFailed);
+
+    // Cold-cache miss (fromCache: true, hasPendingWrites: false) must NOT fail or unsubscribe
+    snapshotNext({ exists: () => false, metadata: { fromCache: true, hasPendingWrites: false } });
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(unsubMock).not.toHaveBeenCalled();
+    expect(reloadedDb.getRetainedSubmitDraft(coldConsult.id)?.status).toBe("pending");
+    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
+
+    // Server later confirms document exists -> clears draft without failing or retrying
+    snapshotNext({ exists: () => true, metadata: { fromCache: false, hasPendingWrites: false } });
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(unsubMock).toHaveBeenCalledTimes(1);
+    expect(reloadedDb.getRetainedSubmitDraft(coldConsult.id)).toBeUndefined();
+    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
+
+    resolveWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.sessionStorage.clear();
+  });
+
+  it("invalidates outstanding producers when clearRetainedSubmitDraft clears drafts", async () => {
+    window.sessionStorage.clear();
+    let rejectWrite!: (err: unknown) => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectWrite = reject;
+      })
+    );
+
+    const onBackgroundError = vi.fn();
+    const listenerSpy = vi.fn();
+    const unsubListener = subscribeToFailedSubmitDrafts(listenerSpy);
+
+    const consult = await addConsult(
+      {
+        hn: "445566",
+        firstName: "Cleared",
+        lastName: "BeforeReject",
+        room: "NT",
+        problem: "Logout clear race",
+        isUrgent: false,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, onBackgroundError }
+    );
+
+    // Clear all drafts (e.g. logout) before the background write settles
+    clearRetainedSubmitDraft();
+    expect(getRetainedSubmitDraft(consult.id)).toBeUndefined();
+
+    rejectWrite(new Error("permission-denied"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Cleared producer must NOT resurrect draft or notify consumers
+    expect(getRetainedSubmitDraft(consult.id)).toBeUndefined();
+    expect(getLatestFailedSubmitDraft()).toBeNull();
+    expect(onBackgroundError).not.toHaveBeenCalled();
+    expect(listenerSpy).not.toHaveBeenCalled();
+    unsubListener();
+
+    // Also verify reconcileReloadedSubmitDrafts ignores result after clearRetainedSubmitDraft()
+    window.sessionStorage.setItem(
+      "er_consult_submit_drafts_v1",
+      JSON.stringify([{ consult, status: "pending" }])
+    );
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+    let resolveGetDoc!: (snap: unknown) => void;
+    mockGetDoc.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGetDoc = resolve;
+      })
+    );
+
+    const reconcilePromise = reloadedDb.reconcileReloadedSubmitDrafts();
+    reloadedDb.clearRetainedSubmitDraft();
+    resolveGetDoc({
+      ...makeDocSnapshot(consult.id, null, false),
+      metadata: { fromCache: false, hasPendingWrites: false },
+    });
+
+    const reconciled = await reconcilePromise;
+    expect(reconciled).toBeNull();
+    expect(reloadedDb.getRetainedSubmitDraft(consult.id)).toBeUndefined();
     window.sessionStorage.clear();
   });
 });

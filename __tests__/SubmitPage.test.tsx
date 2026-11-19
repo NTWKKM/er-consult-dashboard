@@ -9,7 +9,7 @@ const mockAddConsult = vi.fn();
 const mockClearRetainedSubmitDraft = vi.fn();
 const mockGetLatestFailedSubmitDraft = vi.fn<() => Consult | null>(() => null);
 const mockReconcileReloadedSubmitDrafts = vi.fn<() => Promise<Consult | null>>(async () => null);
-const mockSubscribeToFailedSubmitDrafts = vi.fn<() => () => void>(() => () => {});
+const mockSubscribeToFailedSubmitDrafts = vi.fn<(listener: (draft: Consult) => void) => () => void>(() => () => {});
 const mockAddToast = vi.fn();
 let mockPendingCases: Consult[] = [];
 let mockIsOnline = true;
@@ -23,7 +23,8 @@ vi.mock("@/lib/db", () => ({
   clearRetainedSubmitDraft: (...args: unknown[]) => mockClearRetainedSubmitDraft(...args),
   getLatestFailedSubmitDraft: () => mockGetLatestFailedSubmitDraft(),
   reconcileReloadedSubmitDrafts: () => mockReconcileReloadedSubmitDrafts(),
-  subscribeToFailedSubmitDrafts: () => mockSubscribeToFailedSubmitDrafts(),
+  subscribeToFailedSubmitDrafts: (listener: (draft: Consult) => void) =>
+    mockSubscribeToFailedSubmitDrafts(listener),
 }));
 
 vi.mock("@/app/contexts/ToastContext", () => ({
@@ -343,5 +344,138 @@ describe("SubmitPage mount and redirect safety", () => {
     expect(screen.getByPlaceholderText("นามสกุลผู้ป่วย")).toHaveValue("ใจดี");
     expect(screen.getByLabelText(/รายละเอียดปัญหา/i)).toHaveValue("Acute abdomen");
     expect(screen.getByLabelText("Gen Sx")).toBeChecked();
+  });
+
+  it("does not overwrite dirty form when async reconciliation finds a draft, offering explicit restore instead", async () => {
+    let resolveReconcile!: (draft: Consult | null) => void;
+    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
+      new Promise<Consult | null>((resolve) => {
+        resolveReconcile = resolve;
+      })
+    );
+
+    render(<SubmitPage />);
+
+    // User starts typing a new consult while reconciliation is in flight
+    fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "999999" } });
+    fireEvent.change(screen.getByPlaceholderText("ชื่อผู้ป่วย"), { target: { value: "ผู้ป่วยใหม่" } });
+
+    const reconciledDraft = makeConsult({
+      id: "reconciled-1",
+      hn: "111222",
+      firstName: "เคสเดิม",
+      lastName: "ที่ค้าง",
+      room: "Urgent",
+      problem: "Old problem",
+      departments: { Ortho: { status: "pending", completedAt: null } },
+    });
+
+    await act(async () => {
+      resolveReconcile(reconciledDraft);
+      await Promise.resolve();
+    });
+
+    // Current user input is preserved
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("999999");
+    expect(screen.getByPlaceholderText("ชื่อผู้ป่วย")).toHaveValue("ผู้ป่วยใหม่");
+
+    // Explicit restore button is shown and restores the draft on click
+    const restoreBtn = screen.getByRole("button", { name: /กู้คืนข้อมูลร่าง/ });
+    fireEvent.click(restoreBtn);
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("111222");
+    expect(screen.getByPlaceholderText("ชื่อผู้ป่วย")).toHaveValue("เคสเดิม");
+    expect(screen.getByLabelText("Ortho")).toBeChecked();
+  });
+
+  it("clears superseded failed draft ID only after the retried offline submission retains its own failed draft", async () => {
+    mockIsOnline = false;
+    const draft1 = makeConsult({
+      id: "draft-1",
+      hn: "123456",
+      firstName: "สมชาย",
+      lastName: "ใจดี",
+      room: "Resus Team 1",
+      problem: "First attempt",
+      departments: { "Gen Sx": { status: "pending", completedAt: null } },
+    });
+    mockGetLatestFailedSubmitDraft.mockReturnValueOnce(draft1);
+
+    let onBgError2: ((err: unknown, draft: Consult, ctx?: { notifiedListenerCount: number }) => void) | undefined;
+    const draft2 = { ...draft1, id: "draft-2", problem: "Second attempt" };
+    mockAddConsult.mockImplementationOnce(async (_payload, options) => {
+      onBgError2 = options?.onBackgroundError;
+      return draft2;
+    });
+
+    render(<SubmitPage />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("123456");
+
+    // Submit retry offline
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+    // Retry also fails -> superseded draft-1 is cleared while newly retained draft-2 stays active
+    await act(async () => {
+      onBgError2?.(new Error("offline reject"), draft2, { notifiedListenerCount: 1 });
+      await Promise.resolve();
+    });
+    expect(mockClearRetainedSubmitDraft).toHaveBeenCalledWith("draft-1");
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalledWith("draft-2");
+  });
+
+  it("coordinates failed-draft listener without duplicate restoration or off-page redirect hint when already on /submit", async () => {
+    mockIsOnline = false;
+    let capturedListener: ((draft: Consult) => void) | undefined;
+    mockSubscribeToFailedSubmitDrafts.mockImplementationOnce((listener: (draft: Consult) => void) => {
+      capturedListener = listener;
+      return () => {};
+    });
+
+    let onBgError: ((err: unknown, draft: Consult, ctx?: { notifiedListenerCount: number }) => void) | undefined;
+    const failedDraft = makeConsult({
+      id: "coord-1",
+      hn: "777888",
+      firstName: "ผู้ป่วย",
+      lastName: "ทดสอบ",
+      room: "NT",
+      problem: "Coordinated error",
+      departments: { "Gen Sx": { status: "pending", completedAt: null } },
+    });
+    mockAddConsult.mockImplementationOnce(async (_payload, options) => {
+      onBgError = options?.onBackgroundError;
+      return failedDraft;
+    });
+
+    const { unmount } = render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    // If still mounted: onBackgroundError restores once and subsequent listener invocation is ignored
+    mockAddToast.mockClear();
+    await act(async () => {
+      onBgError?.(new Error("fail"), failedDraft, { notifiedListenerCount: 1 });
+      capturedListener?.(failedDraft);
+      await Promise.resolve();
+    });
+    expect(mockAddToast).toHaveBeenCalledTimes(1);
+
+    // If originating form unmounted while another /submit listener is active, originating callback avoids "return to /submit" toast
+    unmount();
+    mockAddToast.mockClear();
+    await act(async () => {
+      onBgError?.(new Error("fail"), failedDraft, { notifiedListenerCount: 1 });
+      await Promise.resolve();
+    });
+    expect(mockAddToast).not.toHaveBeenCalled();
   });
 });

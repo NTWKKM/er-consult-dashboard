@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft, reconcileReloadedSubmitDrafts, subscribeToFailedSubmitDrafts } from "@/lib/db";
+import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft, reconcileReloadedSubmitDrafts, subscribeToFailedSubmitDrafts, type Consult } from "@/lib/db";
 import {
   ALL_DEPARTMENTS,
   MAX_HN_LENGTH,
@@ -25,6 +25,9 @@ export default function SubmitPage() {
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
   const retriedDraftIdRef = useRef<string | null>(null);
+  const formDirtyRef = useRef(false);
+  const formHasValuesRef = useRef(false);
+  const handledFailedIdsRef = useRef<Set<string>>(new Set());
 
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -35,6 +38,13 @@ export default function SubmitPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isMac, setIsMac] = useState(false);
+  const [pendingRecoverableDraft, setPendingRecoverableDraft] = useState<Consult | null>(null);
+
+  useEffect(() => {
+    formHasValuesRef.current = Boolean(
+      hn || firstName || lastName || room || problem || selectedDepts.length > 0
+    );
+  }, [hn, firstName, lastName, room, problem, selectedDepts]);
 
   // Auto-focus HN field on mount & detect OS
   useEffect(() => {
@@ -101,6 +111,7 @@ export default function SubmitPage() {
   }, [hn, firstName, lastName, room, problem, selectedDepts]);
 
   const handleCheckboxChange = (dept: string) => {
+    formDirtyRef.current = true;
     setSelectedDepts((prev) =>
       prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]
     );
@@ -209,8 +220,26 @@ export default function SubmitPage() {
               }
             }
           },
-          onBackgroundError: (_err, failedConsult) => {
+          onBackgroundError: (_err, failedConsult, context) => {
+            if (failedConsult?.id) {
+              handledFailedIdsRef.current.add(failedConsult.id);
+              // Clear superseded previous retry draft only after the new failed draft has been retained
+              if (
+                previousFailedDraftId &&
+                previousFailedDraftId !== failedConsult.id &&
+                typeof clearRetainedSubmitDraft === "function"
+              ) {
+                clearRetainedSubmitDraft(previousFailedDraftId);
+              }
+            }
+
             if (!isMountedRef.current) {
+              const hasActiveSubmitListener = (context?.notifiedListenerCount ?? 0) > 0;
+              const isAlreadyOnSubmit =
+                typeof window !== "undefined" && window.location.pathname === "/submit";
+              if (hasActiveSubmitListener || isAlreadyOnSubmit) {
+                return;
+              }
               // ToastProvider lives in the root layout, so users still receive failed-sync alerts after redirect
               addToast({
                 type: "error",
@@ -219,6 +248,7 @@ export default function SubmitPage() {
               });
               return;
             }
+
             if (redirectTimerRef.current !== null) {
               clearTimeout(redirectTimerRef.current);
               redirectTimerRef.current = null;
@@ -226,6 +256,21 @@ export default function SubmitPage() {
             if (failedConsult?.id) {
               retriedDraftIdRef.current = failedConsult.id;
             }
+            submitInFlightRef.current = false;
+            setIsLoading(false);
+
+            if (formDirtyRef.current || formHasValuesRef.current) {
+              if (failedConsult) {
+                setPendingRecoverableDraft(failedConsult);
+              }
+              addToast({
+                type: "error",
+                message: `ซิงค์เคส HN: ${submittedDraft.hn} ไม่สำเร็จ สามารถกดกู้คืนข้อมูลร่างได้ด้านบน`,
+                duration: 5000,
+              });
+              return;
+            }
+
             setHn(submittedDraft.hn);
             setFirstName(submittedDraft.firstName);
             setLastName(submittedDraft.lastName);
@@ -233,8 +278,8 @@ export default function SubmitPage() {
             setProblem(submittedDraft.problem);
             setSelectedDepts(submittedDraft.selectedDepts);
             setErrors({});
-            submitInFlightRef.current = false;
-            setIsLoading(false);
+            formDirtyRef.current = false;
+            setPendingRecoverableDraft(null);
             addToast({
               type: "error",
               message: "ซิงค์เคสที่บันทึกขณะออฟไลน์ไม่สำเร็จ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
@@ -257,6 +302,8 @@ export default function SubmitPage() {
       if (!isMountedRef.current) return;
 
       // Reset only visible form inputs; any optimistic write draft remains retained in lib/db.ts until settled.
+      formDirtyRef.current = false;
+      setPendingRecoverableDraft(null);
       setHn("");
       setFirstName("");
       setLastName("");
@@ -283,20 +330,22 @@ export default function SubmitPage() {
     }
   }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router, isOnline]);
 
-  useEffect(() => {
-    isMountedRef.current = true;
-    const restoreDraft = (
-      draft: { id: string; hn: string; firstName: string; lastName: string; room: RoomName; problem: string; departments: Record<string, unknown> },
+  const restoreDraft = useCallback(
+    (
+      draft: Consult,
       options?: { silentToast?: boolean }
     ) => {
       if (!isMountedRef.current) return;
       retriedDraftIdRef.current = draft.id;
+      formDirtyRef.current = false;
+      setPendingRecoverableDraft(null);
       setHn(draft.hn);
       setFirstName(draft.firstName);
       setLastName(draft.lastName);
       setRoom(draft.room);
       setProblem(draft.problem);
       setSelectedDepts(Object.keys(draft.departments));
+      setErrors({});
       if (!options?.silentToast) {
         addToast({
           type: "error",
@@ -304,22 +353,48 @@ export default function SubmitPage() {
           duration: 5000,
         });
       }
+    },
+    [addToast]
+  );
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    const handleRecoveredDraft = (draft: Consult) => {
+      if (!isMountedRef.current) return;
+      if (handledFailedIdsRef.current.has(draft.id)) return;
+      handledFailedIdsRef.current.add(draft.id);
+
+      const isIdleAndUntouched =
+        !formDirtyRef.current &&
+        !submitInFlightRef.current &&
+        !formHasValuesRef.current;
+
+      if (isIdleAndUntouched) {
+        restoreDraft(draft);
+      } else {
+        setPendingRecoverableDraft(draft);
+        addToast({
+          type: "error",
+          message: `พบเคส HN: ${draft.hn} ที่ซิงค์ไม่สำเร็จ สามารถกดกู้คืนข้อมูลร่างได้ด้านบน`,
+          duration: 5000,
+        });
+      }
     };
 
     const failedDraft = typeof getLatestFailedSubmitDraft === "function" ? getLatestFailedSubmitDraft() : null;
     if (failedDraft) {
-      void Promise.resolve().then(() => restoreDraft(failedDraft));
+      void Promise.resolve().then(() => handleRecoveredDraft(failedDraft));
     } else if (typeof reconcileReloadedSubmitDrafts === "function") {
       void reconcileReloadedSubmitDrafts().then((reconciledDraft) => {
         if (reconciledDraft) {
-          restoreDraft(reconciledDraft);
+          handleRecoveredDraft(reconciledDraft);
         }
       });
     }
     const unsubscribeFailed =
       typeof subscribeToFailedSubmitDrafts === "function"
         ? subscribeToFailedSubmitDrafts((draft) => {
-            restoreDraft(draft, { silentToast: true });
+            handleRecoveredDraft(draft);
           })
         : () => {};
     return () => {
@@ -330,7 +405,7 @@ export default function SubmitPage() {
         redirectTimerRef.current = null;
       }
     };
-  }, [addToast]);
+  }, [addToast, restoreDraft]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -372,6 +447,39 @@ export default function SubmitPage() {
         </div>
 
         <div className="p-5 md:p-6 rounded-[10px] relative z-0 border border-rule bg-paper-2 transition-colors">
+          {pendingRecoverableDraft && (
+            <div
+              role="region"
+              aria-label="กู้คืนข้อมูลร่างเคส"
+              className="mb-4 p-3 rounded-[6px] border border-bad/40 bg-bad-soft flex flex-wrap items-center justify-between gap-2"
+            >
+              <p className="text-xs font-medium text-ink">
+                พบข้อมูลเคสที่ส่งไม่สำเร็จก่อนหน้านี้ (HN:{" "}
+                <span className="measured font-semibold">{pendingRecoverableDraft.hn}</span>)
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => restoreDraft(pendingRecoverableDraft, { silentToast: true })}
+                  className="px-2.5 py-1 rounded-[6px] text-xs font-medium bg-accent text-accent-ink hover:opacity-90 transition-opacity"
+                >
+                  กู้คืนข้อมูลร่าง
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof clearRetainedSubmitDraft === "function") {
+                      clearRetainedSubmitDraft(pendingRecoverableDraft.id);
+                    }
+                    setPendingRecoverableDraft(null);
+                  }}
+                  className="px-2.5 py-1 rounded-[6px] text-xs font-medium border border-rule-2 bg-paper-3 text-ink-2 hover:text-ink transition-colors"
+                >
+                  ละทิ้งร่าง
+                </button>
+              </div>
+            </div>
+          )}
           <form
             noValidate
             onSubmit={(e) => {
@@ -400,6 +508,7 @@ export default function SubmitPage() {
                     aria-invalid={Boolean(errors.hn)}
                     aria-describedby={errors.hn ? "hn-error" : undefined}
                     onChange={(e) => {
+                      formDirtyRef.current = true;
                       const digitsOnly = e.target.value.replace(/\D/g, "");
                       setHn(digitsOnly);
                       if (errors.hn) setErrors((prev) => { const n = { ...prev }; delete n.hn; return n; });
@@ -424,6 +533,7 @@ export default function SubmitPage() {
                     aria-invalid={Boolean(errors.firstName)}
                     aria-describedby={errors.firstName ? "firstName-error" : undefined}
                     onChange={(e) => {
+                      formDirtyRef.current = true;
                       setFirstName(e.target.value);
                       if (errors.firstName) setErrors((prev) => { const n = { ...prev }; delete n.firstName; return n; });
                     }}
@@ -447,6 +557,7 @@ export default function SubmitPage() {
                     aria-invalid={Boolean(errors.lastName)}
                     aria-describedby={errors.lastName ? "lastName-error" : undefined}
                     onChange={(e) => {
+                      formDirtyRef.current = true;
                       setLastName(e.target.value);
                       if (errors.lastName) setErrors((prev) => { const n = { ...prev }; delete n.lastName; return n; });
                     }}
@@ -473,6 +584,7 @@ export default function SubmitPage() {
                   aria-invalid={Boolean(errors.room)}
                   aria-describedby={errors.room ? "room-error" : undefined}
                   onChange={(e) => {
+                    formDirtyRef.current = true;
                     setRoom(e.target.value as RoomName | "");
                     if (errors.room) setErrors((prev) => { const n = { ...prev }; delete n.room; return n; });
                   }}
@@ -503,6 +615,7 @@ export default function SubmitPage() {
                   aria-invalid={Boolean(errors.problem)}
                   aria-describedby={errors.problem ? "problem-error" : undefined}
                   onChange={(e) => {
+                    formDirtyRef.current = true;
                     setProblem(e.target.value);
                     if (errors.problem) setErrors((prev) => { const n = { ...prev }; delete n.problem; return n; });
                   }}

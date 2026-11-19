@@ -9,6 +9,7 @@ const {
   mockClearIndexedDbPersistence,
   mockWaitForPendingWrites,
   mockHasPendingOptimisticWrites,
+  mockHasRetainedSubmitDrafts,
   mockClearRetainedSubmitDraft,
 } = vi.hoisted(() => ({
   mockOnAuthStateChanged: vi.fn(),
@@ -17,6 +18,7 @@ const {
   mockClearIndexedDbPersistence: vi.fn(),
   mockWaitForPendingWrites: vi.fn(),
   mockHasPendingOptimisticWrites: vi.fn(() => false),
+  mockHasRetainedSubmitDrafts: vi.fn(() => false),
   mockClearRetainedSubmitDraft: vi.fn(),
 }));
 
@@ -38,6 +40,7 @@ vi.mock("firebase/firestore", () => ({
 
 vi.mock("@/lib/db", () => ({
   hasPendingOptimisticWrites: mockHasPendingOptimisticWrites,
+  hasRetainedSubmitDrafts: mockHasRetainedSubmitDrafts,
   clearRetainedSubmitDraft: mockClearRetainedSubmitDraft,
 }));
 
@@ -70,6 +73,7 @@ describe("AuthContext", () => {
     mockClearIndexedDbPersistence.mockResolvedValue(undefined);
     mockWaitForPendingWrites.mockResolvedValue(undefined);
     mockHasPendingOptimisticWrites.mockReturnValue(false);
+    mockHasRetainedSubmitDrafts.mockReturnValue(false);
 
     mockOnAuthStateChanged.mockImplementation((_auth, cb: (u: unknown) => void) => {
       authCallback = cb;
@@ -221,5 +225,41 @@ describe("AuthContext", () => {
     } finally {
       Object.defineProperty(navigator, "onLine", { configurable: true, value: originalOnLine });
     }
+  });
+
+  it("requires explicit confirmation when retained failed drafts remain even if no writes are pending", async () => {
+    mockHasPendingOptimisticWrites.mockReturnValue(false);
+    mockHasRetainedSubmitDrafts.mockReturnValue(true);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    act(() => {
+      authCallback!(null);
+    });
+
+    // First attempt: user declines discarding failed draft recovery data
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await Promise.resolve();
+    });
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+    expect(mockSignOut).not.toHaveBeenCalled();
+
+    // Second attempt: user explicitly confirms discarding recovery data
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledTimes(2);
+      expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+    });
   });
 });
