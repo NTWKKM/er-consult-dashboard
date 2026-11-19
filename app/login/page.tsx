@@ -6,6 +6,44 @@ import { auth } from "../../lib/firebase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 
+function getAuthErrorCode(err: unknown): string {
+  if (typeof err === "object" && err !== null && "code" in err && typeof err.code === "string") {
+    return err.code;
+  }
+  return "";
+}
+
+function getLoginErrorMessage(err: unknown): string {
+  const code = getAuthErrorCode(err);
+  const message = err instanceof Error ? err.message : "";
+  const combined = `${code} ${message}`.toLowerCase();
+
+  if (
+    combined.includes("api-key-not-valid") ||
+    combined.includes("invalid-api-key") ||
+    combined.includes("requests-from-referer") ||
+    code === "auth/app-not-authorized" ||
+    code === "auth/unauthorized-domain" ||
+    code === "auth/operation-not-allowed"
+  ) {
+    return "การตั้งค่า Firebase ไม่ถูกต้องหรือยังไม่ได้ Redeploy หลังอัปเดต Environment Variables กรุณาตรวจสอบและ Redeploy บน Vercel";
+  }
+
+  if (code === "auth/network-request-failed") {
+    return "ไม่สามารถเชื่อมต่อระบบยืนยันตัวตนได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต";
+  }
+
+  if (code === "auth/too-many-requests") {
+    return "มีการลองเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง";
+  }
+
+  if (code === "auth/user-disabled") {
+    return "บัญชีผู้ใช้นี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ";
+  }
+
+  return "Passcode ไม่ถูกต้อง หรือไม่มีสิทธิ์เข้าถึง";
+}
+
 export default function LoginPage() {
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
@@ -33,16 +71,24 @@ export default function LoginPage() {
       return;
     }
 
+    const normalizedPasscode = passcode.trim().replace(/@mnrh\.com$/i, "");
+    if (!normalizedPasscode) {
+      setError("กรุณากรอก Passcode");
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const email = `${passcode}@mnrh.com`;
+      const email = `${normalizedPasscode}@mnrh.com`;
       // By standard, we use the passcode itself or a fixed pattern as password to reduce friction
-      const password = passcode; 
-      
+      const password = normalizedPasscode;
+
       await signInWithEmailAndPassword(auth, email, password);
       router.push("/");
     } catch (err: unknown) {
-      console.error("Login failed:", err instanceof Error ? err.message : "unknown");
-      setError("Passcode ไม่ถูกต้อง หรือไม่มีสิทธิ์เข้าถึง");
+      const code = getAuthErrorCode(err);
+      console.error("Login failed:", code || (err instanceof Error ? err.message : "unknown"));
+      setError(getLoginErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
