@@ -1331,4 +1331,83 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   });
+
+  it("protects drafts during the HELLO handshake when null-user arrives before HELLO_ACK, then clears cleanly on clean timeout", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; hasDrafts?: boolean }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; hasDrafts?: boolean });
+    };
+
+    try {
+      // Scenario 1: bfcache-restored dirty tab receives null-user BEFORE HELLO_ACK arrives
+      mockHasRetainedSubmitDrafts.mockReturnValue(true);
+      const restoredRender = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      peerMessages.length = 0;
+      window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+
+      // Deliver null-user notification IMMEDIATELY before HELLO_ACK arrives
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "HELLO" && m.hasDrafts === true)).toBe(true);
+      });
+
+      // Initiator sends HELLO_ACK holding clear until consent resolves
+      peerChannel.postMessage({
+        type: "HELLO_ACK",
+        tabId: "initiator-tab-late",
+        activeLogoutReservationId: "init-res-late",
+        awaitConsentBeforeClear: true,
+      });
+
+      // Wait past the 120ms handshake timeout -> draft MUST remain preserved
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 160);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // Initiator declines consent -> draft remains preserved
+      peerChannel.postMessage({
+        type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
+        senderTabId: "initiator-tab-late",
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      restoredRender.unmount();
+
+      // Scenario 2: Clean tab with no consent hold clears retained drafts once the 120ms handshake settles
+      mockHasRetainedSubmitDrafts.mockReturnValue(false);
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      await waitFor(() => {
+        expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
 });

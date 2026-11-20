@@ -183,6 +183,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutConsentedRef = useRef(false);
   const holdClearOnConsentTabRef = useRef<string | null>(null);
   const preserveDraftOnSignOutDeclineRef = useRef(false);
+  const helloHandshakePendingRef = useRef(false);
+  const pendingNullClearAfterHandshakeRef = useRef(false);
+  const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const joinedDirtyDuringLogoutRef = useRef<{ hasPending: boolean; hasDrafts: boolean }>({
     hasPending: false,
     hasDrafts: false,
@@ -245,6 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             if (msg.awaitConsentBeforeClear) {
               holdClearOnConsentTabRef.current = msg.tabId;
+              pendingNullClearAfterHandshakeRef.current = false;
             }
             if (msg.activeLogoutReservationId) {
               // Newly opened or bfcache-restored tabs must respect an in-flight logout reservation
@@ -304,6 +308,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         case "LOGOUT_DECLINED_PRESERVE_DRAFTS":
           if (msg.senderTabId !== myTabId) {
             preserveDraftOnSignOutDeclineRef.current = true;
+            pendingNullClearAfterHandshakeRef.current = false;
             if (holdClearOnConsentTabRef.current === msg.senderTabId) {
               holdClearOnConsentTabRef.current = null;
             }
@@ -312,6 +317,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         case "LOGOUT_CLEAR_DRAFTS":
           if (msg.senderTabId !== myTabId) {
             preserveDraftOnSignOutDeclineRef.current = false;
+            pendingNullClearAfterHandshakeRef.current = false;
             holdClearOnConsentTabRef.current = null;
             clearRetainedSubmitDraft();
           }
@@ -320,6 +326,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const announceHello = () => {
+      // Protect drafts from an immediate null-user event until the peer HELLO handshake window settles
+      helloHandshakePendingRef.current = true;
+      if (handshakeTimerRef.current !== null) {
+        clearTimeout(handshakeTimerRef.current);
+      }
+      handshakeTimerRef.current = setTimeout(() => {
+        helloHandshakePendingRef.current = false;
+        handshakeTimerRef.current = null;
+        if (
+          pendingNullClearAfterHandshakeRef.current &&
+          !logoutInProgressRef.current &&
+          !holdClearOnConsentTabRef.current &&
+          !preserveDraftOnSignOutDeclineRef.current
+        ) {
+          pendingNullClearAfterHandshakeRef.current = false;
+          clearRetainedSubmitDraft();
+        }
+      }, PEER_LOGOUT_CHECK_TIMEOUT_MS);
+
       try {
         channel.postMessage({
           type: "HELLO",
@@ -354,6 +379,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("pagehide", notifyBye);
+      if (handshakeTimerRef.current !== null) {
+        clearTimeout(handshakeTimerRef.current);
+        handshakeTimerRef.current = null;
+      }
+      helloHandshakePendingRef.current = false;
+      pendingNullClearAfterHandshakeRef.current = false;
       notifyBye();
       channelRef.current = null;
       peerTabs.clear();
@@ -431,12 +462,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       const generation = ++authGeneration;
       if (!currentUser) {
-        // Defer draft invalidation while a logout consent flow is unresolved or was explicitly declined
+        // Defer draft invalidation while the HELLO handshake, logout consent flow, or decline hold is active
         if (
-          !logoutInProgressRef.current &&
-          !holdClearOnConsentTabRef.current &&
-          !preserveDraftOnSignOutDeclineRef.current
+          logoutInProgressRef.current ||
+          holdClearOnConsentTabRef.current ||
+          preserveDraftOnSignOutDeclineRef.current
         ) {
+          // Hold clear until consent resolves or explicit clear arrives
+        } else if (helloHandshakePendingRef.current) {
+          pendingNullClearAfterHandshakeRef.current = true;
+        } else {
           clearRetainedSubmitDraft();
         }
         if (!cancelled && generation === authGeneration) {
@@ -447,6 +482,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (handshakeTimerRef.current !== null) {
+        clearTimeout(handshakeTimerRef.current);
+        handshakeTimerRef.current = null;
+      }
+      helloHandshakePendingRef.current = false;
+      pendingNullClearAfterHandshakeRef.current = false;
       preserveDraftOnSignOutDeclineRef.current = false;
       holdClearOnConsentTabRef.current = null;
 
