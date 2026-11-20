@@ -1531,23 +1531,40 @@ describe("AuthContext", () => {
     }
   });
 
-  it("includes tabId in self logout reservation IDs so multiple tabs do not collide", async () => {
-    const channelA = new BroadcastChannel("er_consult_auth_sync_v1");
-    const messagesSeenByA: Array<{ type: string; activeLogoutReservationId?: string }> = [];
-    channelA.onmessage = (event) => {
-      messagesSeenByA.push(event.data as { type: string; activeLogoutReservationId?: string });
+  it("includes tabId in self logout reservation IDs so overlapping attempts across tabs stay isolated", async () => {
+    const observerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const observedAcks: Array<{ type: string; tabId?: string; activeLogoutReservationId?: string }> = [];
+    observerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; tabId?: string; activeLogoutReservationId?: string };
+      if (msg.type === "HELLO_ACK" && msg.activeLogoutReservationId) {
+        observedAcks.push(msg);
+      }
     };
 
-    let resolveSignOutA!: () => void;
+    let rejectSignOutA!: (err: unknown) => void;
     let resolveSignOutB!: () => void;
     mockSignOut
-      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSignOutA = resolve; }))
-      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSignOutB = resolve; }));
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectSignOutA = reject;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSignOutB = resolve;
+          })
+      );
+
+    const logoutResultsA: unknown[] = [];
+    const logoutResultsB: unknown[] = [];
 
     try {
+      // Mount Tab A and start pending signOut #1
       const renderA = render(
         <AuthProvider>
-          <AuthProbe />
+          <AuthProbe onLogoutResult={(err) => logoutResultsA.push(err)} />
         </AuthProvider>
       );
       const cbA = authCallback!;
@@ -1555,23 +1572,15 @@ describe("AuthContext", () => {
         cbA(makeMockStaffUser());
         await Promise.resolve();
       });
-      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      fireEvent.click(screen.getAllByRole("button", { name: "Logout" })[0]);
       await waitFor(() => {
         expect(mockSignOut).toHaveBeenCalledTimes(1);
       });
-      channelA.postMessage({ type: "HELLO", tabId: "observer-a" });
-      await waitFor(() => {
-        expect(messagesSeenByA.some((m) => m.type === "HELLO_ACK" && m.activeLogoutReservationId)).toBe(true);
-      });
-      const resIdA = messagesSeenByA.find((m) => m.type === "HELLO_ACK" && m.activeLogoutReservationId)
-        ?.activeLogoutReservationId;
-      renderA.unmount();
-      resolveSignOutA();
 
-      messagesSeenByA.length = 0;
+      // Mount Tab B simultaneously and start pending signOut #2 (overlapping attempt)
       const renderB = render(
         <AuthProvider>
-          <AuthProbe />
+          <AuthProbe onLogoutResult={(err) => logoutResultsB.push(err)} />
         </AuthProvider>
       );
       const cbB = authCallback!;
@@ -1579,24 +1588,52 @@ describe("AuthContext", () => {
         cbB(makeMockStaffUser());
         await Promise.resolve();
       });
-      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      fireEvent.click(screen.getAllByRole("button", { name: "Logout" })[1]);
       await waitFor(() => {
         expect(mockSignOut).toHaveBeenCalledTimes(2);
       });
-      channelA.postMessage({ type: "HELLO", tabId: "observer-b" });
-      await waitFor(() => {
-        expect(messagesSeenByA.some((m) => m.type === "HELLO_ACK" && m.activeLogoutReservationId)).toBe(true);
-      });
-      const resIdB = messagesSeenByA.find((m) => m.type === "HELLO_ACK" && m.activeLogoutReservationId)
-        ?.activeLogoutReservationId;
-      renderB.unmount();
-      resolveSignOutB();
 
-      expect(resIdA).toBeDefined();
-      expect(resIdB).toBeDefined();
-      expect(resIdA).not.toBe(resIdB);
+      // Mount third receiving Tab C while BOTH A and B have signOut pending
+      const renderC = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        const distinctIds = new Set(observedAcks.map((m) => m.activeLogoutReservationId));
+        expect(distinctIds.size).toBe(2);
+        expect(isSubmissionBlockedByLogout()).toBe(true);
+      });
+
+      // Reject first attempt (Tab A) while Tab B remains pending -> submissions MUST stay blocked in Tab C
+      const firstErr = new Error("signOut-a-failed");
+      await act(async () => {
+        rejectSignOutA(firstErr);
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(logoutResultsA).toHaveLength(1);
+      });
+      expect(logoutResultsA[0]).toBe(firstErr);
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+
+      // Now resolve second attempt (Tab B) -> submissions resume cleanly
+      await act(async () => {
+        resolveSignOutB();
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(logoutResultsB).toHaveLength(1);
+        expect(isSubmissionBlockedByLogout()).toBe(false);
+      });
+      expect(logoutResultsB[0]).toBeNull();
+
+      renderC.unmount();
+      renderB.unmount();
+      renderA.unmount();
     } finally {
-      channelA.close();
+      observerChannel.close();
     }
   });
 });

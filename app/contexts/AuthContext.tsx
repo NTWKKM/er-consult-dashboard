@@ -321,6 +321,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             helloHandshakeStateRef.current = "settled";
             holdClearOnConsentTabRef.current = null;
             clearRetainedSubmitDraft();
+            for (const [requestId, ownerTabId] of peerReservationsRef.current.entries()) {
+              if (ownerTabId === msg.senderTabId) {
+                releaseLogoutReservation(requestId);
+                peerReservationsRef.current.delete(requestId);
+              }
+            }
           }
           break;
       }
@@ -633,8 +639,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       activeLogoutReservationIdRef.current = null;
       logoutConsentedRef.current = false;
       joinedDirtyDuringLogoutRef.current = { hasPending: false, hasDrafts: false };
+      releaseLogoutReservation(selfReservationId);
       if (!logoutCommitted) {
-        releaseLogoutReservation(selfReservationId);
         for (const requestId of [selfReservationId, ...issuedRequestIds]) {
           try {
             channelRef.current?.postMessage({
