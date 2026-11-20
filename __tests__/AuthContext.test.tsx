@@ -1040,4 +1040,139 @@ describe("AuthContext", () => {
       latePeerChannel.close();
     }
   });
+
+  it("reports retained draft state in HELLO_ACK and requires discard consent before clearing drafts from a joining tab", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; hasDrafts?: boolean; hasPending?: boolean }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; hasDrafts?: boolean; hasPending?: boolean });
+    };
+
+    try {
+      // Case 1: Tab with retained draft emits hasDrafts: true in HELLO_ACK
+      mockHasRetainedSubmitDrafts.mockReturnValue(true);
+      const firstMount = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      peerChannel.postMessage({ type: "HELLO", tabId: "probe-tab-1" });
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "HELLO_ACK" && m.hasDrafts === true)).toBe(true);
+      });
+      firstMount.unmount();
+
+      // Case 2: Joining tab reports hasDrafts: true during logout wait -> requires consent; clean joining tab stays prompt-free
+      mockHasRetainedSubmitDrafts.mockReturnValue(false);
+      mockHasPendingOptimisticWrites.mockReturnValue(false);
+      let resolveWait!: () => void;
+      mockWaitForPendingWrites.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveWait = resolve;
+          })
+      );
+      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+      peerMessages.length = 0;
+
+      const secondMount = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      // Simulate joining tab sending HELLO_ACK with hasDrafts: true while logout wait is active
+      peerChannel.postMessage({
+        type: "HELLO_ACK",
+        tabId: "joining-tab-with-draft",
+        hasPending: false,
+        hasDrafts: true,
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 10);
+      });
+
+      await act(async () => {
+        resolveWait();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(confirmSpy).toHaveBeenCalledWith(
+        expect.stringContaining("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง")
+      );
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(false);
+      secondMount.unmount();
+
+      // Case 3: Clean joining tab (hasDrafts: false, hasPending: false) preserves prompt-free logout
+      confirmSpy.mockClear();
+      peerMessages.length = 0;
+      peerChannel.onmessage = (event) => {
+        const msg = event.data as { type: string; requestId?: string };
+        peerMessages.push(msg);
+        if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+          peerChannel.postMessage({
+            type: "LOGOUT_CHECK_RESPONSE",
+            requestId: msg.requestId,
+            tabId: "clean-joining-tab",
+            hasPending: false,
+            hasDrafts: false,
+          });
+        }
+      };
+      let resolveCleanWait!: () => void;
+      mockWaitForPendingWrites.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveCleanWait = resolve;
+          })
+      );
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      peerChannel.postMessage({
+        type: "HELLO_ACK",
+        tabId: "clean-joining-tab",
+        hasPending: false,
+        hasDrafts: false,
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 10);
+      });
+
+      await act(async () => {
+        resolveCleanWait();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+        expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(true);
+      });
+      expect(confirmSpy).not.toHaveBeenCalled();
+    } finally {
+      peerChannel.close();
+    }
+  });
 });

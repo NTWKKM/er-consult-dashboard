@@ -59,8 +59,14 @@ interface PeerTabDirtyState {
 }
 
 type AuthSyncMessage =
-  | { type: "HELLO"; tabId: string }
-  | { type: "HELLO_ACK"; tabId: string; activeLogoutReservationId?: string }
+  | { type: "HELLO"; tabId: string; hasPending?: boolean; hasDrafts?: boolean }
+  | {
+      type: "HELLO_ACK";
+      tabId: string;
+      activeLogoutReservationId?: string;
+      hasPending?: boolean;
+      hasDrafts?: boolean;
+    }
   | { type: "BYE"; tabId: string }
   | { type: "LOGOUT_CHECK_REQUEST"; requestId: string; senderTabId: string }
   | {
@@ -172,6 +178,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutInProgressRef = useRef(false);
   const logoutSequenceRef = useRef(0);
   const activeLogoutReservationIdRef = useRef<string | null>(null);
+  const joinedDirtyDuringLogoutRef = useRef<{ hasPending: boolean; hasDrafts: boolean }>({
+    hasPending: false,
+    hasDrafts: false,
+  });
   const tabIdRef = useRef<string>("");
   const channelRef = useRef<BroadcastChannel | null>(null);
   const peerTabsRef = useRef<Set<string>>(new Set());
@@ -203,9 +213,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         case "HELLO":
           if (msg.tabId !== myTabId) {
             peerTabsRef.current.add(msg.tabId);
+            if (logoutInProgressRef.current) {
+              if (msg.hasPending) joinedDirtyDuringLogoutRef.current.hasPending = true;
+              if (msg.hasDrafts) joinedDirtyDuringLogoutRef.current.hasDrafts = true;
+            }
             channel.postMessage({
               type: "HELLO_ACK",
               tabId: myTabId,
+              hasPending: hasPendingOptimisticWrites(),
+              hasDrafts: hasRetainedSubmitDrafts(),
               ...(activeLogoutReservationIdRef.current
                 ? { activeLogoutReservationId: activeLogoutReservationIdRef.current }
                 : {}),
@@ -215,6 +231,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         case "HELLO_ACK":
           if (msg.tabId !== myTabId) {
             peerTabsRef.current.add(msg.tabId);
+            if (logoutInProgressRef.current) {
+              if (msg.hasPending) joinedDirtyDuringLogoutRef.current.hasPending = true;
+              if (msg.hasDrafts) joinedDirtyDuringLogoutRef.current.hasDrafts = true;
+            }
             if (msg.activeLogoutReservationId) {
               // Newly opened or bfcache-restored tabs must respect an in-flight logout reservation
               reserveSubmissionsForLogout(msg.activeLogoutReservationId, LOGOUT_RESERVATION_TTL_MS);
@@ -277,7 +297,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const announceHello = () => {
       try {
-        channel.postMessage({ type: "HELLO", tabId: myTabId } satisfies AuthSyncMessage);
+        channel.postMessage({
+          type: "HELLO",
+          tabId: myTabId,
+          hasPending: hasPendingOptimisticWrites(),
+          hasDrafts: hasRetainedSubmitDrafts(),
+        } satisfies AuthSyncMessage);
       } catch {
         // Ignore if channel is already closed
       }
@@ -413,6 +438,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logoutInProgressRef.current = true;
     const selfReservationId = `self-logout-${++logoutSequenceRef.current}`;
     activeLogoutReservationIdRef.current = selfReservationId;
+    joinedDirtyDuringLogoutRef.current = { hasPending: false, hasDrafts: false };
     reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
     const issuedRequestIds: string[] = [];
     let logoutCommitted = false;
@@ -433,12 +459,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }, LOGOUT_RESERVATION_RENEW_INTERVAL_MS)
         : null;
 
+    const queryPeerTabsWithJoinedDirty = async (): Promise<PeerTabDirtyState> => {
+      const peerState = await queryPeerTabsBeforeLogout(issuedRequestIds);
+      return {
+        hasPending: peerState.hasPending || joinedDirtyDuringLogoutRef.current.hasPending,
+        hasDrafts: peerState.hasDrafts || joinedDirtyDuringLogoutRef.current.hasDrafts,
+        hasUnknownPeer: peerState.hasUnknownPeer,
+      };
+    };
+
     try {
       let confirmedDiscard = false;
       if (typeof window !== "undefined") {
-        const initialCheck = await confirmPendingWritesBeforeLogout(db, () =>
-          queryPeerTabsBeforeLogout(issuedRequestIds)
-        );
+        const initialCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsWithJoinedDirty);
         if (!initialCheck.canProceed) {
           return;
         }
@@ -446,7 +479,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Re-check immediately before signOut/cleanup in case a late write or peer draft appeared during wait
         if (!confirmedDiscard) {
-          const latePeerState = await queryPeerTabsBeforeLogout(issuedRequestIds);
+          const latePeerState = await queryPeerTabsWithJoinedDirty();
           if (
             hasPendingOptimisticWrites() ||
             hasRetainedSubmitDrafts() ||
@@ -454,18 +487,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             latePeerState.hasDrafts ||
             latePeerState.hasUnknownPeer
           ) {
-            const lateCheck = await confirmPendingWritesBeforeLogout(db, () =>
-              queryPeerTabsBeforeLogout(issuedRequestIds)
-            );
+            const lateCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsWithJoinedDirty);
             if (!lateCheck.canProceed) {
               return;
             }
+            confirmedDiscard = lateCheck.confirmedDiscard;
           }
         }
       }
 
       if (auth) {
         await signOut(auth);
+      }
+
+      // If a tab joined or restored from bfcache with retained dirty state while signOut was in flight, confirm before wiping
+      if (
+        !confirmedDiscard &&
+        typeof window !== "undefined" &&
+        (joinedDirtyDuringLogoutRef.current.hasPending ||
+          joinedDirtyDuringLogoutRef.current.hasDrafts)
+      ) {
+        const postSignOutCheck = await confirmPendingWritesBeforeLogout(
+          db,
+          queryPeerTabsWithJoinedDirty
+        );
+        if (!postSignOutCheck.canProceed) {
+          return;
+        }
       }
       logoutCommitted = true;
 
