@@ -961,9 +961,61 @@ describe("SubmitPage mount and redirect safety", () => {
 
     expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalledWith(draftA.id);
     expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalledWith(olderWriteC.id);
-    expect(mockAddConsult).toHaveBeenLastCalledWith(
-      expect.objectContaining({ hn: "404040" }),
-      expect.not.objectContaining({ replacesDraftId: draftA.id })
+    const lastCallArgs = mockAddConsult.mock.calls[mockAddConsult.mock.calls.length - 1];
+    expect(lastCallArgs?.[0]).toEqual(expect.objectContaining({ hn: "404040" }));
+    expect(lastCallArgs?.[1]).not.toHaveProperty("replacesDraftId");
+  });
+
+  it("offers the next eligible retained failed draft when dismissing the current recovery banner, and clears only when none remain", async () => {
+    const draft1 = makeConsult({
+      id: "failed-draft-1",
+      hn: "111001",
+      firstName: "เคสหนึ่ง",
+      lastName: "ค้างอยู่",
+      room: "NT",
+      problem: "First remaining draft",
+      departments: { "Gen Sx": { status: "pending", completedAt: null } },
+    });
+    const draft2 = makeConsult({
+      id: "failed-draft-2",
+      hn: "222002",
+      firstName: "เคสสอง",
+      lastName: "แสดงก่อน",
+      room: "Urgent",
+      problem: "Second draft shown first",
+      departments: { Ortho: { status: "pending", completedAt: null } },
+    });
+
+    let resolveReconcile!: (draft: Consult | null) => void;
+    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
+      new Promise<Consult | null>((resolve) => {
+        resolveReconcile = resolve;
+      })
     );
+
+    render(<SubmitPage />);
+    // Dirty the form so draft2 displays in the banner instead of auto-restoring
+    fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "999999" } });
+
+    await act(async () => {
+      resolveReconcile(draft2);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("222002")).toBeInTheDocument();
+
+    // Dismissing draft2 falls back to next eligible retained draft (draft1)
+    mockGetLatestFailedSubmitDraft.mockReturnValueOnce(draft1);
+    fireEvent.click(screen.getByRole("button", { name: "ละทิ้งร่าง" }));
+
+    expect(mockClearRetainedSubmitDraft).toHaveBeenCalledWith(draft2.id);
+    expect(screen.getByRole("region", { name: "กู้คืนข้อมูลร่างเคส" })).toBeInTheDocument();
+    expect(screen.getByText("111001")).toBeInTheDocument();
+
+    // Dismissing draft1 when no eligible draft remains clears the banner completely
+    mockGetLatestFailedSubmitDraft.mockReturnValueOnce(null);
+    fireEvent.click(screen.getByRole("button", { name: "ละทิ้งร่าง" }));
+
+    expect(mockClearRetainedSubmitDraft).toHaveBeenCalledWith(draft1.id);
+    expect(screen.queryByRole("region", { name: "กู้คืนข้อมูลร่างเคส" })).not.toBeInTheDocument();
   });
 });

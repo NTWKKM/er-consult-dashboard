@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import NavbarControls from "./NavbarControls";
@@ -14,6 +14,8 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const { addToast } = useToast();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const logoutAttemptRef = useRef(false);
 
   const isHome = pathname === "/";
   const isCompleted = pathname === "/completed";
@@ -161,7 +163,11 @@ export default function Navbar() {
         confirmText="ออกจากระบบ"
         cancelText="ยกเลิก"
         variant="warning"
+        confirmDisabled={isLoggingOut}
         onConfirm={() => {
+          if (logoutAttemptRef.current) return;
+          logoutAttemptRef.current = true;
+          setIsLoggingOut(true);
           void (async () => {
             try {
               await logout();
@@ -175,10 +181,16 @@ export default function Navbar() {
                     : "ออกจากระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
                 duration: 5000,
               });
+            } finally {
+              logoutAttemptRef.current = false;
+              setIsLoggingOut(false);
             }
           })();
         }}
-        onCancel={() => setShowLogoutConfirm(false)}
+        onCancel={() => {
+          if (logoutAttemptRef.current) return;
+          setShowLogoutConfirm(false);
+        }}
       />
     </nav>
   );

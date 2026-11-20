@@ -805,6 +805,11 @@ describe("AuthContext", () => {
       await signOutStartedPromise;
 
       // Advance fake clock by 6000ms (3 renewal ticks at 2000ms) while signOut is still pending
+      const sentRequestIds = peerMessages
+        .filter((m) => m.type === "LOGOUT_CHECK_REQUEST" && typeof m.requestId === "string")
+        .map((m) => m.requestId as string);
+      expect(sentRequestIds.length).toBeGreaterThan(0);
+
       for (let i = 0; i < 3; i += 1) {
         act(() => {
           vi.advanceTimersByTime(2000);
@@ -813,6 +818,11 @@ describe("AuthContext", () => {
       await waitForPeerMsg(
         (msgs) => msgs.filter((m) => m.type === "LOGOUT_RESERVATION_RENEW").length >= 3
       );
+      const renewMsgs = peerMessages.filter((m) => m.type === "LOGOUT_RESERVATION_RENEW");
+      expect(renewMsgs.length).toBeGreaterThanOrEqual(3);
+      expect(
+        renewMsgs.every((m) => sentRequestIds.every((id) => m.requestIds?.includes(id)))
+      ).toBe(true);
       expect(isSubmissionBlockedByLogout()).toBe(true);
 
       // Verify actual addConsult offline submission is rejected while reservation is active past 5000ms
@@ -893,6 +903,141 @@ describe("AuthContext", () => {
     } finally {
       peerChannel.close();
       vi.useRealTimers();
+    }
+  });
+
+  it("waits for all expected peers rather than finishing early when one peer reports both pending and drafts", async () => {
+    const peerChannelA = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerChannelB = new BroadcastChannel("er_consult_auth_sync_v1");
+    const messagesA: Array<{ type: string; requestId?: string }> = [];
+    peerChannelA.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      messagesA.push(msg);
+      if (msg.type === "HELLO") {
+        peerChannelA.postMessage({ type: "HELLO_ACK", tabId: "peer-a-full-dirty" });
+      } else if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        // Peer A immediately reports BOTH pending & drafts while Peer B stays silent
+        peerChannelA.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "peer-a-full-dirty",
+          hasPending: true,
+          hasDrafts: true,
+        });
+      }
+    };
+    peerChannelB.onmessage = (event) => {
+      const msg = event.data as { type: string };
+      if (msg.type === "HELLO") {
+        peerChannelB.postMessage({ type: "HELLO_ACK", tabId: "peer-b-silent" });
+      }
+    };
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(messagesA.some((m) => m.type === "HELLO")).toBe(true);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+      });
+      // Must wait for Peer B timeout and include unanswered-peer warning rather than finishing early on Peer A
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("แท็บอื่น"));
+      expect(mockSignOut).not.toHaveBeenCalled();
+    } finally {
+      peerChannelA.close();
+      peerChannelB.close();
+    }
+  });
+
+  it("propagates active logout reservation via HELLO_ACK to tabs joining while signOut is pending", async () => {
+    const latePeerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const lateMessages: Array<{ type: string; activeLogoutReservationId?: string }> = [];
+    latePeerChannel.onmessage = (event) => {
+      lateMessages.push(event.data as { type: string; activeLogoutReservationId?: string });
+    };
+
+    let resolveSignOut!: () => void;
+    mockSignOut.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSignOut = resolve;
+        })
+    );
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+      });
+
+      // Simulate a brand-new or bfcache-restored tab sending HELLO while signOut is pending
+      latePeerChannel.postMessage({ type: "HELLO", tabId: "late-joining-tab" });
+
+      await waitFor(() => {
+        expect(
+          lateMessages.some(
+            (m) => m.type === "HELLO_ACK" && typeof m.activeLogoutReservationId === "string"
+          )
+        ).toBe(true);
+      });
+
+      // Also verify a receiving AuthProvider reserves submissions when HELLO_ACK includes activeLogoutReservationId
+      clearAllLogoutReservationsForTests();
+      latePeerChannel.onmessage = (event) => {
+        const msg = event.data as { type: string };
+        if (msg.type === "HELLO") {
+          latePeerChannel.postMessage({
+            type: "HELLO_ACK",
+            tabId: "remote-logging-out-tab",
+            activeLogoutReservationId: "remote-self-logout-1",
+          });
+        }
+      };
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(isSubmissionBlockedByLogout()).toBe(true);
+      });
+
+      await act(async () => {
+        resolveSignOut();
+        await Promise.resolve();
+      });
+    } finally {
+      latePeerChannel.close();
     }
   });
 });

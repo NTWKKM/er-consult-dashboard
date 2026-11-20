@@ -43,17 +43,31 @@ describe("Navbar logout confirmation", () => {
     vi.clearAllMocks();
   });
 
-  it("reports logout error and keeps confirmation modal open when sign-out fails", async () => {
-    mockLogout.mockRejectedValueOnce(new Error("signOut failed"));
+  it("prevents duplicate logout requests while pending, keeps modal open and re-enables on error, then closes on retry success", async () => {
+    let rejectFirst!: (err: unknown) => void;
+    mockLogout
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirst = reject;
+          })
+      )
+      .mockResolvedValueOnce(undefined);
 
     render(<Navbar />);
 
     fireEvent.click(screen.getByRole("button", { name: "ออกจากระบบ" }));
     const dialog = screen.getByRole("dialog");
-    expect(dialog).toBeInTheDocument();
+    const confirmBtn = within(dialog).getByRole("button", { name: "ออกจากระบบ" });
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "ออกจากระบบ" }));
+    // Rapid repeated clicks while first logout is still pending must only invoke logout() once and disable confirm
+    fireEvent.click(confirmBtn);
+    fireEvent.click(confirmBtn);
+    expect(mockLogout).toHaveBeenCalledTimes(1);
+    expect(confirmBtn).toBeDisabled();
 
+    // First attempt fails -> error toast reported, dialog stays open, confirm button re-enabled for retry
+    rejectFirst(new Error("signOut failed"));
     await waitFor(() => {
       expect(mockAddToast).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -63,6 +77,14 @@ describe("Navbar logout confirmation", () => {
       );
     });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(confirmBtn).not.toBeDisabled();
+
+    // Retry succeeds -> dialog closes cleanly
+    fireEvent.click(confirmBtn);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(mockLogout).toHaveBeenCalledTimes(2);
   });
 
   it("closes confirmation modal when logout resolves cleanly", async () => {

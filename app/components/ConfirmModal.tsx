@@ -10,6 +10,7 @@ interface ConfirmModalProps {
   confirmText?: string;
   cancelText?: string;
   variant?: "danger" | "warning" | "info";
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -21,6 +22,7 @@ export default function ConfirmModal({
   confirmText = "ยืนยัน",
   cancelText = "ยกเลิก",
   variant = "danger",
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -218,8 +220,9 @@ export default function ConfirmModal({
           <button
             type="button"
             data-variant={variant}
+            disabled={confirmDisabled}
             onClick={onConfirm}
-            className={`px-4 py-2 rounded-[6px] font-medium text-sm transition-opacity whitespace-nowrap tap-feedback ${style.confirmBtn}`}
+            className={`px-4 py-2 rounded-[6px] font-medium text-sm transition-opacity whitespace-nowrap tap-feedback disabled:opacity-50 disabled:cursor-not-allowed ${style.confirmBtn}`}
           >
             {confirmText}
           </button>

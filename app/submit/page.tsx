@@ -527,7 +527,16 @@ export default function SubmitPage() {
                     if (typeof clearRetainedSubmitDraft === "function") {
                       clearRetainedSubmitDraft(pendingRecoverableDraft.id);
                     }
-                    setPendingRecoverableDraft(null);
+                    const nextDraft =
+                      typeof getLatestFailedSubmitDraft === "function"
+                        ? getLatestFailedSubmitDraft()
+                        : null;
+                    if (nextDraft && nextDraft.id !== pendingRecoverableDraft.id) {
+                      handledFailedIdsRef.current.add(nextDraft.id);
+                      setPendingRecoverableDraft(nextDraft);
+                    } else {
+                      setPendingRecoverableDraft(null);
+                    }
                   }}
                   className="px-2.5 py-1 rounded-[6px] text-xs font-medium border border-rule-2 bg-paper-3 text-ink-2 hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
