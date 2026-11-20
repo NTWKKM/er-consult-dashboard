@@ -732,4 +732,167 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   });
+
+  it("renews peer logout reservation during a slow signOut past TTL and releases when initiator disappears", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(new Date("2026-11-20T00:00:00.000Z"));
+
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    type PeerMsg = { type: string; requestId?: string; requestIds?: string[] };
+    const peerMessages: PeerMsg[] = [];
+    const waiters: Array<() => void> = [];
+    const waitForPeerMsg = (predicate: (msgs: PeerMsg[]) => boolean) =>
+      new Promise<void>((resolve) => {
+        if (predicate(peerMessages)) {
+          resolve();
+          return;
+        }
+        const check = () => {
+          if (predicate(peerMessages)) resolve();
+        };
+        waiters.push(check);
+      });
+    const notifyWaiters = () => {
+      for (const w of waiters) w();
+    };
+
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as PeerMsg;
+      peerMessages.push(msg);
+      if (msg.type === "HELLO") {
+        peerChannel.postMessage({ type: "HELLO_ACK", tabId: "peer-slow-signout" });
+      } else if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "peer-slow-signout",
+          hasPending: false,
+          hasDrafts: false,
+        });
+      }
+      notifyWaiters();
+    };
+
+    let resolveSignOut!: () => void;
+    let signOutStarted!: () => void;
+    const signOutStartedPromise = new Promise<void>((r) => {
+      signOutStarted = r;
+    });
+    mockSignOut.mockImplementationOnce(() => {
+      signOutStarted();
+      return new Promise<void>((resolve) => {
+        resolveSignOut = resolve;
+      });
+    });
+
+    try {
+      const { unmount } = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      await waitForPeerMsg((msgs) => msgs.some((m) => m.type === "HELLO"));
+
+      // Start logout; peer replies quickly (real microtask/IO tick via setImmediate fallback)
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await waitForPeerMsg((msgs) => msgs.some((m) => m.type === "LOGOUT_CHECK_REQUEST"));
+      await signOutStartedPromise;
+
+      // Advance fake clock by 6000ms (3 renewal ticks at 2000ms) while signOut is still pending
+      for (let i = 0; i < 3; i += 1) {
+        act(() => {
+          vi.advanceTimersByTime(2000);
+        });
+      }
+      await waitForPeerMsg(
+        (msgs) => msgs.filter((m) => m.type === "LOGOUT_RESERVATION_RENEW").length >= 3
+      );
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+
+      // Verify actual addConsult offline submission is rejected while reservation is active past 5000ms
+      const actualDb = await vi.importActual<typeof import("@/lib/db")>("@/lib/db");
+      await expect(
+        actualDb.addConsult(
+          {
+            hn: "919191",
+            firstName: "Slow",
+            lastName: "SignOut",
+            room: "NT",
+            problem: "Should be blocked",
+            isUrgent: false,
+            status: "pending",
+            departments: { "Gen Sx": { status: "pending", completedAt: null } },
+          },
+          { awaitRemote: false }
+        )
+      ).rejects.toThrow(/กำลังออกจากระบบ/);
+
+      // Complete signOut cleanly so no pending promise hangs
+      await act(async () => {
+        resolveSignOut();
+        await Promise.resolve();
+      });
+
+      // Also verify peer side keeps reservation active past 5000ms on RENEW and recovers when initiator sends BYE
+      unmount();
+      clearAllLogoutReservationsForTests();
+
+      peerMessages.length = 0;
+      peerChannel.onmessage = (event) => {
+        peerMessages.push(event.data as PeerMsg);
+        notifyWaiters();
+      };
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      peerChannel.postMessage({
+        type: "LOGOUT_CHECK_REQUEST",
+        requestId: "slow-req-1",
+        senderTabId: "remote-initiator",
+      });
+      await waitForPeerMsg((msgs) =>
+        msgs.some((m) => m.type === "LOGOUT_CHECK_RESPONSE" && m.requestId === "slow-req-1")
+      );
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+
+      // Renew past initial 5000ms TTL (advance 3 x 2000ms = 6000ms)
+      for (let i = 0; i < 3; i += 1) {
+        act(() => {
+          vi.advanceTimersByTime(2000);
+        });
+        peerChannel.postMessage({
+          type: "LOGOUT_RESERVATION_RENEW",
+          requestIds: ["slow-req-1"],
+          senderTabId: "remote-initiator",
+        });
+        await new Promise<void>((resolve) => {
+          setImmediate(resolve);
+        });
+        expect(isSubmissionBlockedByLogout()).toBe(true);
+      }
+
+      // If remote initiator disappears (BYE), peer releases its reservation immediately
+      peerChannel.postMessage({
+        type: "BYE",
+        tabId: "remote-initiator",
+      });
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      expect(isSubmissionBlockedByLogout()).toBe(false);
+    } finally {
+      peerChannel.close();
+      vi.useRealTimers();
+    }
+  });
 });

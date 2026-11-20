@@ -50,6 +50,7 @@ const PENDING_WRITE_SYNC_TIMEOUT_MS = 1200;
 const AUTH_SYNC_CHANNEL = "er_consult_auth_sync_v1";
 const PEER_LOGOUT_CHECK_TIMEOUT_MS = 120;
 const LOGOUT_RESERVATION_TTL_MS = 5000;
+const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 
 interface PeerTabDirtyState {
   hasPending: boolean;
@@ -69,6 +70,7 @@ type AuthSyncMessage =
       hasPending: boolean;
       hasDrafts: boolean;
     }
+  | { type: "LOGOUT_RESERVATION_RENEW"; requestIds: string[]; senderTabId: string }
   | { type: "LOGOUT_RESERVATION_RELEASE"; requestId: string; senderTabId: string }
   | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string };
 
@@ -172,7 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const tabIdRef = useRef<string>("");
   const channelRef = useRef<BroadcastChannel | null>(null);
   const peerTabsRef = useRef<Set<string>>(new Set());
-  const peerReservationIdsRef = useRef<Set<string>>(new Set());
+  const peerReservationsRef = useRef<Map<string, string>>(new Map());
   const pendingPeerChecksRef = useRef<
     Map<string, (response: { tabId: string; hasPending: boolean; hasDrafts: boolean }) => void>
   >(new Map());
@@ -210,12 +212,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           break;
         case "BYE":
           peerTabsRef.current.delete(msg.tabId);
+          for (const [requestId, ownerTabId] of peerReservationsRef.current.entries()) {
+            if (ownerTabId === msg.tabId) {
+              releaseLogoutReservation(requestId);
+              peerReservationsRef.current.delete(requestId);
+            }
+          }
           break;
         case "LOGOUT_CHECK_REQUEST":
           if (msg.senderTabId !== myTabId) {
             // Reserve peer submissions before reading dirty state so no new submit starts mid-logout check
             reserveSubmissionsForLogout(msg.requestId, LOGOUT_RESERVATION_TTL_MS);
-            peerReservationIdsRef.current.add(msg.requestId);
+            peerReservationsRef.current.set(msg.requestId, msg.senderTabId);
             channel.postMessage({
               type: "LOGOUT_CHECK_RESPONSE",
               requestId: msg.requestId,
@@ -232,10 +240,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           break;
         }
+        case "LOGOUT_RESERVATION_RENEW":
+          if (msg.senderTabId !== myTabId) {
+            for (const requestId of msg.requestIds) {
+              if (peerReservationsRef.current.get(requestId) === msg.senderTabId) {
+                reserveSubmissionsForLogout(requestId, LOGOUT_RESERVATION_TTL_MS);
+              }
+            }
+          }
+          break;
         case "LOGOUT_RESERVATION_RELEASE":
           if (msg.senderTabId !== myTabId) {
             releaseLogoutReservation(msg.requestId);
-            peerReservationIdsRef.current.delete(msg.requestId);
+            peerReservationsRef.current.delete(msg.requestId);
           }
           break;
         case "LOGOUT_CLEAR_DRAFTS":
@@ -271,7 +288,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener("pagehide", notifyBye);
 
     const peerTabs = peerTabsRef.current;
-    const peerReservations = peerReservationIdsRef.current;
+    const peerReservations = peerReservationsRef.current;
     const pendingPeerChecks = pendingPeerChecksRef.current;
     return () => {
       window.removeEventListener("pageshow", handlePageShow);
@@ -279,7 +296,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       notifyBye();
       channelRef.current = null;
       peerTabs.clear();
-      for (const reservationId of peerReservations) {
+      for (const reservationId of peerReservations.keys()) {
         releaseLogoutReservation(reservationId);
       }
       peerReservations.clear();
@@ -386,6 +403,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
     const issuedRequestIds: string[] = [];
     let logoutCommitted = false;
+    // Periodically renew the short-lived lease while confirmation or signOut is in flight
+    const renewIntervalId =
+      typeof window !== "undefined"
+        ? setInterval(() => {
+            reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
+            if (issuedRequestIds.length > 0) {
+              try {
+                channelRef.current?.postMessage({
+                  type: "LOGOUT_RESERVATION_RENEW",
+                  requestIds: [...issuedRequestIds],
+                  senderTabId: tabIdRef.current,
+                } satisfies AuthSyncMessage);
+              } catch {
+                // Ignore broadcast errors during slow logout
+              }
+            }
+          }, LOGOUT_RESERVATION_RENEW_INTERVAL_MS)
+        : null;
 
     try {
       let confirmedDiscard = false;
@@ -445,6 +480,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.location.reload();
       }
     } finally {
+      if (renewIntervalId !== null) {
+        clearInterval(renewIntervalId);
+      }
       if (!logoutCommitted) {
         releaseLogoutReservation(selfReservationId);
         for (const requestId of issuedRequestIds) {
