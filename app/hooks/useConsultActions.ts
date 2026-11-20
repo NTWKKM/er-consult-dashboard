@@ -43,7 +43,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       errorMessage,
       errorLogLabel,
     }: {
-      run: () => Promise<UpdateResults>;
+      run: (markBackgroundFailed: () => void) => Promise<UpdateResults>;
       holdLockUntilRemote: boolean;
       getSuccessMessage: () => string;
       errorMessage: string;
@@ -54,9 +54,14 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       setIsUpdating(true);
       beginSync();
 
+      let backgroundFailed = false;
+      const markBackgroundFailed = () => {
+        backgroundFailed = true;
+      };
+
       let result: UpdateResults;
       try {
-        result = await run();
+        result = await run(markBackgroundFailed);
       } catch (error) {
         console.error(errorLogLabel, error);
         addToast({ type: "error", message: errorMessage });
@@ -73,19 +78,39 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         return false;
       }
 
+      const emitSuccessToast = () => {
+        try {
+          addToast({ type: "success", message: getSuccessMessage() });
+        } catch (error) {
+          console.error(errorLogLabel, error);
+        }
+      };
+
       if (holdLockUntilRemote) {
         if (result.backgroundPromise) {
           // Hold transactional lock until server transaction settles to prevent concurrent duplicate writes
+          // and show final success toast only after the remote commit is confirmed.
           const release = () => {
             endSync();
             setIsUpdating(false);
             inFlightRef.current = false;
           };
-          void result.backgroundPromise.then(release, release);
+          void result.backgroundPromise.then(
+            () => {
+              release();
+              if (!backgroundFailed) {
+                emitSuccessToast();
+              }
+            },
+            () => {
+              release();
+            }
+          );
         } else {
           endSync();
           setIsUpdating(false);
           inFlightRef.current = false;
+          emitSuccessToast();
         }
       } else {
         setIsUpdating(false);
@@ -98,12 +123,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           endSync();
         }
         inFlightRef.current = false;
-      }
-
-      try {
-        addToast({ type: "success", message: getSuccessMessage() });
-      } catch (error) {
-        console.error(errorLogLabel, error);
+        emitSuccessToast();
       }
 
       try {
@@ -118,12 +138,20 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
   );
 
   const handleAccept = useCallback(async (): Promise<boolean> => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      addToast({
+        type: "error",
+        message: "ไม่สามารถรับเคสขณะออฟไลน์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต",
+      });
+      return false;
+    }
+
     return executeAction({
       holdLockUntilRemote: true,
       errorLogLabel: "Error accepting case:",
       errorMessage: "เกิดข้อผิดพลาดในการรับเคส",
       getSuccessMessage: () => `รับเคส HN: ${hn} สำเร็จ`,
-      run: () =>
+      run: (markBackgroundFailed) =>
         transactionalUpdateConsult(caseId, (current) => {
           // Guard against stale snapshots or missing departments
           if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
@@ -155,6 +183,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         }, {
           awaitRemote: false,
           onBackgroundError: (error: unknown) => {
+            markBackgroundFailed();
             const errorMessage = error instanceof Error ? error.message : "";
 
             if (errorMessage === "TRANSACTION_CONDITION_NOT_MET") {
@@ -226,12 +255,20 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       errorMessage: string,
       errorLogLabel: string
     ) => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        addToast({
+          type: "error",
+          message: "ไม่สามารถทำรายการนี้ขณะออฟไลน์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต",
+        });
+        return;
+      }
+
       await executeAction({
         holdLockUntilRemote: true,
         errorLogLabel,
         errorMessage,
         getSuccessMessage: () => successMessage,
-        run: () =>
+        run: (markBackgroundFailed) =>
           transactionalUpdateConsult(caseId, (current) => {
             if (!current.departments || !current.departments[departmentName] || current.departments[departmentName].status !== "pending") {
               return null;
@@ -256,6 +293,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           }, {
             awaitRemote: false,
             onBackgroundError: (error: unknown) => {
+              markBackgroundFailed();
               const errorMsg = error instanceof Error ? error.message : "";
               if (errorMsg === "TRANSACTION_CONDITION_NOT_MET") {
                 addToast({
@@ -265,7 +303,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
               } else {
                 addToast({
                   type: "error",
-                  message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช",
+                  message: "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล กรุณาลองใหม่อีกครั้ง",
                 });
               }
             },

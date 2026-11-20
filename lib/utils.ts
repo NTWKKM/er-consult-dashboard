@@ -16,14 +16,17 @@ export const formatTime = (iso: string) => {
 };
 
 /**
- * Sort consults by urgency first (urgent cases on top), then by creation date (newest first).
+ * Sort consults by urgency first (urgent cases on top), then by latest activity
+ * (`reconsultedAt ?? createdAt`, newest first) while preserving original `createdAt`.
  * Single source of truth for consult ordering — use this everywhere instead of inline sorts.
  */
 export function sortConsults(consults: Consult[]): Consult[] {
   return [...consults].sort((a, b) => {
     if (a.isUrgent && !b.isUrgent) return -1;
     if (!a.isUrgent && b.isUrgent) return 1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    const aTime = new Date(a.reconsultedAt ?? a.createdAt).getTime();
+    const bTime = new Date(b.reconsultedAt ?? b.createdAt).getTime();
+    return bTime - aTime;
   });
 }
 
@@ -52,10 +55,9 @@ interface Milestone {
 }
 
 /**
- * Generate a list of chronological milestones for a department, including transfers.
- * Returns up to 3 most recent milestones for space-sensitive UIs.
+ * Generate the full chronological list of milestones for a department, including transfers.
  */
-export function getMilestones(dept: ConsultDepartment | undefined, formatTime: (iso: string) => string|null) {
+export function getAllMilestones(dept: ConsultDepartment | undefined, formatTime: (iso: string) => string | null): Milestone[] {
   const milestones: Milestone[] = [
     { 
       label: "รับ", 
@@ -90,8 +92,14 @@ export function getMilestones(dept: ConsultDepartment | undefined, formatTime: (
 
   const allFiltered = [...milestones, ...transferMilestones].filter((m): m is Milestone => !!(m.time && m.raw));
 
-  // Sort chronologically, take last 3 (most recent)
-  return [...allFiltered]
-    .sort((a, b) => new Date(a.raw!).getTime() - new Date(b.raw!).getTime())
-    .slice(-3);
+  // Sort chronologically (oldest first)
+  return [...allFiltered].sort((a, b) => new Date(a.raw!).getTime() - new Date(b.raw!).getTime());
+}
+
+/**
+ * Generate a list of chronological milestones for a department, including transfers.
+ * Returns up to 3 most recent milestones for space-sensitive UIs.
+ */
+export function getMilestones(dept: ConsultDepartment | undefined, formatTime: (iso: string) => string|null) {
+  return getAllMilestones(dept, formatTime).slice(-3);
 }

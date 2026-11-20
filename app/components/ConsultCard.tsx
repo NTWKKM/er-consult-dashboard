@@ -193,8 +193,8 @@ function ConsultCard({ caseData, caseId, departmentName, onUpdate, animationDela
                     </svg>
                   </span>
                 )}
-                {!isTerminal && caseData.createdAt && (
-                  <ElapsedTime createdAt={caseData.createdAt} />
+                {!isTerminal && (caseData.reconsultedAt || caseData.createdAt) && (
+                  <ElapsedTime createdAt={caseData.reconsultedAt ?? caseData.createdAt} />
                 )}
               </div>
             </div>

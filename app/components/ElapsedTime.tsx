@@ -36,18 +36,14 @@ function getElapsedState(createdAt: string) {
  * Color escalates based on wait duration for urgency awareness.
  */
 export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: ElapsedTimeProps) {
-  const initial = getElapsedState(createdAt);
-  const [elapsed, setElapsed] = useState(initial.text);
-  const [totalMins, setTotalMins] = useState(initial.mins);
+  // Minute tick forces recalculation on each minute boundary while prop changes (e.g., Re-consult)
+  // immediately reflect the fresh createdAt on the very next render.
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
-    const update = () => {
-      const next = getElapsedState(createdAt);
-      setTotalMins(next.mins);
-      setElapsed(next.text);
-    };
+    const bump = () => setTick((t) => t + 1);
 
     // Calculate ms until the next minute boundary
     const createdMs = new Date(createdAt).getTime();
@@ -55,8 +51,8 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: Elapse
     const msUntilNextMinute = 60000 - (elapsedMs % 60000 || 60000);
 
     const timeout = setTimeout(() => {
-      update();
-      interval = setInterval(update, 60000);
+      bump();
+      interval = setInterval(bump, 60000);
     }, msUntilNextMinute);
 
     return () => {
@@ -65,6 +61,7 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: Elapse
     };
   }, [createdAt]);
 
+  const { mins: totalMins, text: elapsed } = getElapsedState(createdAt);
   const escalationClass = getElapsedClass(totalMins);
 
   return (

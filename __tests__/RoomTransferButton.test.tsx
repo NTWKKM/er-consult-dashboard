@@ -383,7 +383,7 @@ describe("RoomTransferButton", () => {
 
       // Spinner should appear
       await waitFor(() => {
-        expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+        expect(container.querySelector('[class*="animate-spin"]')).toBeInTheDocument();
       });
 
       // Clean up
@@ -417,14 +417,26 @@ describe("RoomTransferButton", () => {
   // -------------------------------------------------------------------------
   // Responsive resize alignment
   // -------------------------------------------------------------------------
-  describe("responsive resize alignment", () => {
-    it("recomputes listbox alignment on window resize while open", () => {
+  describe("portal positioning, viewport clamping & vertical flip-up", () => {
+    it("renders listbox in document.body portal to escape overflow-auto Table View containers", () => {
+      const { container } = render(
+        <div className="overflow-auto max-h-[164px]">
+          <RoomTransferButton consultId="test-consult-1" currentRoom="Urgent" />
+        </div>
+      );
+
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      const listbox = screen.getByRole("listbox");
+      expect(listbox.parentElement).toBe(document.body);
+      expect(container.contains(listbox)).toBe(false);
+      expect(listbox.className).toContain("fixed");
+    });
+
+    it("recomputes fixed horizontal position on window resize while open", () => {
       const originalInnerWidth = window.innerWidth;
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: 800,
-      });
+      const originalInnerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: 800 });
+      Object.defineProperty(window, "innerHeight", { writable: true, configurable: true, value: 600 });
 
       const { container } = renderButton();
       const wrapper = container.firstElementChild as HTMLElement;
@@ -432,368 +444,191 @@ describe("RoomTransferButton", () => {
       let mockLeft = 270;
       vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
         x: mockLeft,
-        y: 0,
+        y: 100,
         width: 30,
         height: 30,
-        top: 0,
+        top: 100,
         right: mockRight,
-        bottom: 30,
+        bottom: 130,
         left: mockLeft,
         toJSON: () => ({}),
       }));
 
       fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
-      expect(screen.getByRole("listbox").className).toContain("right-0");
+      // Right-aligned: 300 - 160 = 140px
+      expect(screen.getByRole("listbox").style.left).toBe("140px");
 
-      // Simulate viewport/anchor shift so right-0 would clip off the left edge
+      // Shift trigger near left viewport edge so right-align would go negative -> falls back to left-align (20px)
       mockRight = 50;
       mockLeft = 20;
       act(() => {
         window.dispatchEvent(new Event("resize"));
       });
-      expect(screen.getByRole("listbox").className).toContain("left-0");
+      expect(screen.getByRole("listbox").style.left).toBe("20px");
 
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: originalInnerWidth,
-      });
+      Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalInnerWidth });
+      Object.defineProperty(window, "innerHeight", { writable: true, configurable: true, value: originalInnerHeight });
     });
 
-    it("prefers left-0 when only left-0 fits menuWidth without the 8px margin, and keeps right-0 when both fit", () => {
+    it("clamps horizontal placement within viewport when neither right nor left alignment fits", () => {
       const originalInnerWidth = window.innerWidth;
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: 200,
-      });
+      Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: 220 });
 
       const { container } = renderButton();
       const wrapper = container.firstElementChild as HTMLElement;
-      // Fallback menuWidth is 160px (requiredWidth = 168px).
-      // When right = 150 (< 160) and left = 36 (36 + 160 = 196 <= 200, even though 36 + 168 = 204 > 200),
-      // only left-0 fits the menu itself so left-0 should be selected.
-      let mockRight = 150;
-      let mockLeft = 36;
       vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
-        x: mockLeft,
-        y: 0,
-        width: 114,
-        height: 30,
-        top: 0,
-        right: mockRight,
-        bottom: 30,
-        left: mockLeft,
-        toJSON: () => ({}),
-      }));
-
-      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
-      expect(screen.getByRole("listbox").className).toContain("left-0");
-
-      // When both anchors fit menuWidth and requiredWidth, right-0 is kept.
-      mockRight = 180;
-      mockLeft = 10;
-      act(() => {
-        window.dispatchEvent(new Event("resize"));
-      });
-      expect(screen.getByRole("listbox").className).toContain("right-0");
-
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: originalInnerWidth,
-      });
-    });
-
-    it("uses the nearest overflow-clipping ancestor bounds when computing left-0 vs right-0", () => {
-      const originalInnerWidth = window.innerWidth;
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: 1024,
-      });
-
-      const { container } = render(
-        <div data-testid="scroll-container" className="overflow-x-auto">
-          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" />
-        </div>
-      );
-
-      const scrollContainer = container.firstElementChild as HTMLElement;
-      const wrapper = scrollContainer.firstElementChild as HTMLElement;
-      vi.spyOn(scrollContainer, "getBoundingClientRect").mockImplementation(() => ({
-        x: 200,
-        y: 0,
-        width: 500,
-        height: 400,
-        top: 0,
-        right: 700,
-        bottom: 400,
-        left: 200,
-        toJSON: () => ({}),
-      }));
-      // In window coordinates right=250 >= 160, but relative to scrollContainer.left (200),
-      // right-0 would clip past 200 (250 - 160 = 90 < 200) while left-0 fits inside [200, 700].
-      vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
-        x: 220,
-        y: 0,
-        width: 30,
-        height: 30,
-        top: 0,
-        right: 250,
-        bottom: 30,
-        left: 220,
-        toJSON: () => ({}),
-      }));
-
-      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
-      expect(screen.getByRole("listbox").className).toContain("left-0");
-
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: originalInnerWidth,
-      });
-    });
-
-    it("clamps horizontal menu placement within viewport when neither anchor fits", () => {
-      const originalInnerWidth = window.innerWidth;
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: 320,
-      });
-
-      const { container } = renderButton();
-      const wrapper = container.firstElementChild as HTMLElement;
-      // Menu fallback width is 160px; mock rendered listbox width to 200px during open resize.
-      vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
-        x: 145,
-        y: 0,
+        x: 100,
+        y: 80,
         width: 22,
         height: 30,
-        top: 0,
-        right: 167,
-        bottom: 30,
-        left: 145,
+        top: 80,
+        right: 122,
+        bottom: 110,
+        left: 100,
         toJSON: () => ({}),
       }));
 
       fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
       const listbox = screen.getByRole("listbox");
-      Object.defineProperty(listbox, "offsetWidth", {
-        configurable: true,
-        value: 200,
-      });
+      Object.defineProperty(listbox, "offsetWidth", { configurable: true, value: 200 });
       act(() => {
         window.dispatchEvent(new Event("resize"));
       });
 
-      // With menuWidth=200 and trigger x=145..167 in a 320px viewport,
-      // clamping places left edge at viewport x=0 (offset -145px from trigger.left=145).
-      expect(listbox.style.left).toBe("-145px");
-      expect(listbox.style.right).toBe("auto");
+      // Clamped inside [8, 220 - 200 - 8] => 8px
+      expect(listbox.style.left).toBe("8px");
 
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: originalInnerWidth,
-      });
+      Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalInnerWidth });
     });
 
-    it("uses scrollable clientWidth excluding scrollbar so right-0 wins when menu would overflow into scrollbar", () => {
+    it("flips menu upward when bottom viewport space is insufficient", () => {
       const originalInnerWidth = window.innerWidth;
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: 1024,
-      });
+      const originalInnerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: 1024 });
+      Object.defineProperty(window, "innerHeight", { writable: true, configurable: true, value: 600 });
 
-      const { container } = render(
-        <div className="overflow-x-auto">
-          <RoomTransferButton consultId="test-consult-1" currentRoom="NT" />
-        </div>
-      );
-
-      const innerScroll = container.firstElementChild as HTMLElement;
-      const wrapper = innerScroll.firstElementChild as HTMLElement;
-
-      // Scroll container rect spans x=200..510, while clientWidth=290 limits scrollport to x=200..490 (20px scrollbar).
-      // At trigger x=335..365 (menuWidth=160, requiredWidth=168):
-      // - Ignoring clientWidth ([200, 510]) fails right margin (365-168=197 < 200) and picks left-0 (335+168=503 <= 510).
-      // - Using clientWidth ([200, 490]) rejects left-0 (335+160=495 > 490) and picks right-0 (365-160=205 >= 200).
-      vi.spyOn(innerScroll, "getBoundingClientRect").mockImplementation(() => ({
-        x: 200,
-        y: 0,
-        width: 310,
-        height: 400,
-        top: 0,
-        right: 510,
-        bottom: 400,
-        left: 200,
-        toJSON: () => ({}),
-      }));
-      Object.defineProperty(innerScroll, "clientWidth", {
-        configurable: true,
-        value: 290,
-      });
+      const { container } = renderButton();
+      const wrapper = container.firstElementChild as HTMLElement;
       vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
-        x: 335,
-        y: 0,
+        x: 400,
+        y: 520,
         width: 30,
         height: 30,
-        top: 0,
-        right: 365,
-        bottom: 30,
-        left: 335,
+        top: 520,
+        right: 430,
+        bottom: 550,
+        left: 400,
         toJSON: () => ({}),
       }));
 
       fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
-      expect(screen.getByRole("listbox").className).toContain("right-0");
+      const listbox = screen.getByRole("listbox");
+      expect(listbox.getAttribute("data-placement")).toBe("top");
+      // 520 - 4 (gap) - 232 (fallback height) = 284px
+      expect(listbox.style.top).toBe("284px");
 
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: originalInnerWidth,
-      });
+      Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalInnerWidth });
+      Object.defineProperty(window, "innerHeight", { writable: true, configurable: true, value: originalInnerHeight });
     });
 
-    it("intersects nested clipping ancestors when outer container narrows effective bounds", () => {
+    it("repositions on ancestor scroll (capture phase) while open and removes listener on close", () => {
       const originalInnerWidth = window.innerWidth;
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: 1024,
-      });
+      const originalInnerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: 800 });
+      Object.defineProperty(window, "innerHeight", { writable: true, configurable: true, value: 600 });
 
+      const removeWindowSpy = vi.spyOn(window, "removeEventListener");
       const { container } = render(
-        <div className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <RoomTransferButton consultId="test-consult-1" currentRoom="NT" />
-          </div>
-        </div>
-      );
-
-      const outerContainer = container.firstElementChild as HTMLElement;
-      const innerScroll = outerContainer.firstElementChild as HTMLElement;
-      const wrapper = innerScroll.firstElementChild as HTMLElement;
-
-      // Inner clips x=232..700 (clientWidth=468); outer narrows right edge to x=100..400 -> shared interval [232, 400].
-      // At trigger x=365..395 (menuWidth=160, requiredWidth=168):
-      // - Ignoring outer ([232, 700]) fails right margin (395-168=227 < 232) and picks left-0 (365+168=533 <= 700).
-      // - Intersecting outer ([232, 400]) rejects left-0 (365+160=525 > 400) and picks right-0 (395-160=235 >= 232).
-      vi.spyOn(outerContainer, "getBoundingClientRect").mockImplementation(() => ({
-        x: 100,
-        y: 0,
-        width: 300,
-        height: 400,
-        top: 0,
-        right: 400,
-        bottom: 400,
-        left: 100,
-        toJSON: () => ({}),
-      }));
-      vi.spyOn(innerScroll, "getBoundingClientRect").mockImplementation(() => ({
-        x: 232,
-        y: 0,
-        width: 468,
-        height: 400,
-        top: 0,
-        right: 700,
-        bottom: 400,
-        left: 232,
-        toJSON: () => ({}),
-      }));
-      Object.defineProperty(innerScroll, "clientWidth", {
-        configurable: true,
-        value: 468,
-      });
-      vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
-        x: 365,
-        y: 0,
-        width: 30,
-        height: 30,
-        top: 0,
-        right: 395,
-        bottom: 30,
-        left: 365,
-        toJSON: () => ({}),
-      }));
-
-      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
-      expect(screen.getByRole("listbox").className).toContain("right-0");
-
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: originalInnerWidth,
-      });
-    });
-
-    it("recalculates placement when a clipping ancestor scrolls while open and removes listener on close", () => {
-      const originalInnerWidth = window.innerWidth;
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: 800,
-      });
-
-      const { container } = render(
-        <div className="overflow-x-auto">
+        <div className="overflow-auto">
           <RoomTransferButton consultId="test-consult-1" currentRoom="NT" />
         </div>
       );
       const scrollContainer = container.firstElementChild as HTMLElement;
       const wrapper = scrollContainer.firstElementChild as HTMLElement;
-      const removeSpy = vi.spyOn(scrollContainer, "removeEventListener");
 
-      vi.spyOn(scrollContainer, "getBoundingClientRect").mockImplementation(() => ({
-        x: 200,
-        y: 0,
-        width: 400,
-        height: 400,
-        top: 0,
-        right: 600,
-        bottom: 400,
-        left: 200,
-        toJSON: () => ({}),
-      }));
-
-      let mockLeft = 400;
-      let mockRight = 430;
+      let mockTop = 100;
       vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(() => ({
-        x: mockLeft,
-        y: 0,
+        x: 400,
+        y: mockTop,
         width: 30,
         height: 30,
-        top: 0,
-        right: mockRight,
-        bottom: 30,
-        left: mockLeft,
+        top: mockTop,
+        right: 430,
+        bottom: mockTop + 30,
+        left: 400,
         toJSON: () => ({}),
       }));
 
       fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
-      expect(screen.getByRole("listbox").className).toContain("right-0");
+      expect(screen.getByRole("listbox").style.top).toBe("134px");
 
-      // Scroll container rightwards so trigger moves near container left edge (210..240)
-      mockLeft = 210;
-      mockRight = 240;
+      mockTop = 200;
       act(() => {
         scrollContainer.dispatchEvent(new Event("scroll"));
       });
-      expect(screen.getByRole("listbox").className).toContain("left-0");
+      expect(screen.getByRole("listbox").style.top).toBe("234px");
 
-      // Closing removes scroll listener
       fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
-      expect(removeSpy).toHaveBeenCalledWith("scroll", expect.any(Function));
+      expect(removeWindowSpy).toHaveBeenCalledWith("scroll", expect.any(Function), { capture: true });
 
-      Object.defineProperty(window, "innerWidth", {
-        writable: true,
-        configurable: true,
-        value: originalInnerWidth,
+      Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalInnerWidth });
+      Object.defineProperty(window, "innerHeight", { writable: true, configurable: true, value: originalInnerHeight });
+    });
+
+    it("clears open state when disabled so re-enabling keeps menu closed until clicked", () => {
+      const { rerender } = render(
+        <RoomTransferButton consultId="test-consult-1" currentRoom="NT" disabled={false} />
+      );
+
+      const trigger = screen.getByTitle("เปลี่ยนห้อง");
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+      rerender(
+        <RoomTransferButton consultId="test-consult-1" currentRoom="NT" disabled={true} />
+      );
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      rerender(
+        <RoomTransferButton consultId="test-consult-1" currentRoom="NT" disabled={false} />
+      );
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+
+    it("closes menu, prevents default, and focuses trigger on Tab and Shift+Tab", () => {
+      renderButton({ currentRoom: "NT" });
+      const trigger = screen.getByTitle("เปลี่ยนห้อง");
+
+      // Tab while menu is open
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      const tabEvent = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+      act(() => {
+        document.dispatchEvent(tabEvent);
       });
+      expect(tabEvent.defaultPrevented).toBe(true);
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(trigger);
+
+      // Shift+Tab while menu is open
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      const shiftTabEvent = new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        document.dispatchEvent(shiftTabEvent);
+      });
+      expect(shiftTabEvent.defaultPrevented).toBe(true);
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(trigger);
     });
   });
 });

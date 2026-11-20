@@ -1,9 +1,16 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ROOMS, RoomName } from "../../lib/constants";
 import { transferConsultRoom } from "../../lib/db";
 import { useToast } from "../contexts/ToastContext";
+
+interface PortalMenuPosition {
+  top: number;
+  left: number;
+  openUpward: boolean;
+}
 
 interface RoomTransferButtonProps {
   consultId: string;
@@ -23,12 +30,20 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [alignLeft, setAlignLeft] = useState(false);
-  const [clampOffsetLeft, setClampOffsetLeft] = useState<number | null>(null);
+  const [menuPos, setMenuPos] = useState<PortalMenuPosition>({
+    top: 0,
+    left: 0,
+    openUpward: false,
+  });
   const [isTransferring, setIsTransferring] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
+  if (disabled && (isOpen || focusedIndex !== -1)) {
+    setIsOpen(false);
+    setFocusedIndex(-1);
+  }
   const { addToast } = useToast();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const transferInFlightRef = useRef(false);
@@ -42,25 +57,14 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     });
   }, []);
 
-  useEffect(() => {
-    if (isOpen) {
-      setFocusedIndex(Math.max(0, sortedRooms.indexOf(currentRoom)));
-    } else {
-      setFocusedIndex(-1);
-    }
-  }, [isOpen, currentRoom, sortedRooms]);
-
-  useEffect(() => {
-    if (disabled) {
-      setIsOpen(false);
-    }
-  }, [disabled]);
+  const effectiveOpen = isOpen && !disabled;
 
   const handleTransfer = useCallback(async (newRoom: RoomName) => {
     if (transferInFlightRef.current || disabled) return;
 
     if (newRoom === currentRoom) {
       setIsOpen(false);
+      setFocusedIndex(-1);
       return;
     }
 
@@ -69,6 +73,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       setIsTransferring(true);
       onTransferStart?.();
       setIsOpen(false);
+      setFocusedIndex(-1);
       
       const { transferred, backgroundPromise } = await transferConsultRoom(
         consultId, 
@@ -101,17 +106,30 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const inTrigger = dropdownRef.current?.contains(target) ?? false;
+      const inMenu = listboxRef.current?.contains(target) ?? false;
+      if (!inTrigger && !inMenu) {
         setIsOpen(false);
+        setFocusedIndex(-1);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Return early if focus is not within the dropdown
-      if (!dropdownRef.current?.contains(document.activeElement)) return;
+      // Return early if focus is not within the trigger or portaled listbox
+      const active = document.activeElement;
+      const inTrigger = dropdownRef.current?.contains(active) ?? false;
+      const inMenu = listboxRef.current?.contains(active) ?? false;
+      if (!inTrigger && !inMenu) return;
 
       if (event.key === "Escape") {
         setIsOpen(false);
+        setFocusedIndex(-1);
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        setIsOpen(false);
+        setFocusedIndex(-1);
+        triggerRef.current?.focus();
       } else if (event.key === "ArrowDown") {
         event.preventDefault();
         setFocusedIndex((prev) => (prev < sortedRooms.length - 1 ? prev + 1 : 0));
@@ -124,7 +142,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       }
     };
 
-    if (isOpen) {
+    if (effectiveOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("keydown", handleKeyDown);
     }
@@ -132,169 +150,156 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, focusedIndex, sortedRooms, handleTransfer]);
+  }, [effectiveOpen, focusedIndex, sortedRooms, handleTransfer]);
 
   useEffect(() => {
-    if (focusedIndex >= 0 && itemRefs.current[focusedIndex]) {
+    if (effectiveOpen && focusedIndex >= 0 && itemRefs.current[focusedIndex]) {
       itemRefs.current[focusedIndex]?.focus();
     }
-  }, [focusedIndex]);
-
-
+  }, [effectiveOpen, focusedIndex]);
 
   useEffect(() => {
-    onOpenChange?.(isOpen);
-  }, [isOpen, onOpenChange]);
+    onOpenChange?.(effectiveOpen);
+  }, [effectiveOpen, onOpenChange]);
 
-  const getClippingAncestors = useCallback((): HTMLElement[] => {
-    if (!dropdownRef.current || typeof window === "undefined") return [];
-    const clippingAncestors: HTMLElement[] = [];
-    let ancestor: HTMLElement | null = dropdownRef.current.parentElement;
-    while (ancestor && ancestor !== document.body && ancestor !== document.documentElement) {
-      const style = window.getComputedStyle(ancestor);
-      const overflowX = style.overflowX || style.overflow;
-      const overflowY = style.overflowY || style.overflow;
-      const isClipping =
-        overflowX === "auto" ||
-        overflowX === "scroll" ||
-        overflowX === "hidden" ||
-        overflowX === "clip" ||
-        overflowY === "auto" ||
-        overflowY === "scroll" ||
-        ancestor.classList.contains("overflow-auto") ||
-        ancestor.classList.contains("overflow-x-auto") ||
-        ancestor.classList.contains("overflow-y-auto") ||
-        ancestor.classList.contains("overflow-hidden") ||
-        ancestor.classList.contains("overflow-clip");
-      if (isClipping) {
-        clippingAncestors.push(ancestor);
-      }
-      ancestor = ancestor.parentElement;
-    }
-    return clippingAncestors;
-  }, []);
-
-  const computeMenuPlacement = useCallback(() => {
+  const computeMenuPlacement = useCallback((): PortalMenuPosition => {
     if (!dropdownRef.current || typeof window === "undefined") {
-      return { alignLeft: false, clampOffsetLeft: null as number | null };
+      return { top: 0, left: 0, openUpward: false };
     }
     const rect = dropdownRef.current.getBoundingClientRect();
-    const renderedWidth =
-      listboxRef.current?.getBoundingClientRect().width ||
-      listboxRef.current?.offsetWidth ||
-      0;
+    const menuRect = listboxRef.current?.getBoundingClientRect();
     const fallbackWidth =
       (parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16) * 10;
-    const menuWidth = renderedWidth > 0 ? renderedWidth : fallbackWidth;
-    const requiredWidth = menuWidth + 8;
+    const menuWidth =
+      menuRect && menuRect.width > 0
+        ? menuRect.width
+        : listboxRef.current?.offsetWidth || fallbackWidth;
+    const menuHeight =
+      menuRect && menuRect.height > 0
+        ? menuRect.height
+        : listboxRef.current?.offsetHeight || 232;
 
-    let boundsLeft = 0;
-    let boundsRight = window.innerWidth;
-    for (const ancestor of getClippingAncestors()) {
-      const ancestorRect = ancestor.getBoundingClientRect();
-      if (ancestorRect.right <= ancestorRect.left) continue;
-      const style = window.getComputedStyle(ancestor);
-      const overflowX = style.overflowX || style.overflow;
-      const overflowY = style.overflowY || style.overflow;
-      const isScrollable =
-        overflowX === "auto" ||
-        overflowX === "scroll" ||
-        overflowY === "auto" ||
-        overflowY === "scroll" ||
-        ancestor.classList.contains("overflow-auto") ||
-        ancestor.classList.contains("overflow-x-auto") ||
-        ancestor.classList.contains("overflow-y-auto");
-      const hasClientDimensions = ancestor.clientWidth > 0;
-      const leftEdge =
-        isScrollable && hasClientDimensions
-          ? ancestorRect.left + ancestor.clientLeft
-          : ancestorRect.left;
-      const rightEdge =
-        isScrollable && hasClientDimensions
-          ? leftEdge + ancestor.clientWidth
-          : ancestorRect.right;
-      boundsLeft = Math.max(boundsLeft, leftEdge);
-      boundsRight = Math.min(boundsRight, rightEdge);
+    const viewportWidth = window.innerWidth || 1024;
+    const viewportHeight = window.innerHeight || 768;
+    const margin = 8;
+    const gap = 4;
+
+    // Prefer right-aligned to trigger; fall back to left-aligned; clamp within viewport
+    let left: number;
+    const rightAlignedLeft = rect.right - menuWidth;
+    if (rightAlignedLeft >= margin && rect.right <= viewportWidth - margin) {
+      left = rightAlignedLeft;
+    } else if (rect.left >= margin && rect.left + menuWidth <= viewportWidth - margin) {
+      left = rect.left;
+    } else {
+      const maxLeft = Math.max(margin, viewportWidth - menuWidth - margin);
+      left = Math.min(Math.max(rightAlignedLeft, margin), maxLeft);
     }
 
-    const fitsRight = rect.right - menuWidth >= boundsLeft && rect.right <= boundsRight;
-    const fitsLeft = rect.left >= boundsLeft && rect.left + menuWidth <= boundsRight;
+    // Flip upward automatically when bottom viewport space is insufficient (e.g. Table View bottom rows)
+    const spaceBelow = viewportHeight - rect.bottom - gap - margin;
+    const spaceAbove = rect.top - gap - margin;
+    const openUpward = spaceBelow < menuHeight && spaceAbove > spaceBelow;
+    const top = openUpward
+      ? Math.max(margin, rect.top - gap - menuHeight)
+      : Math.min(rect.bottom + gap, Math.max(margin, viewportHeight - menuHeight - margin));
 
-    if (fitsRight !== fitsLeft) {
-      return { alignLeft: fitsLeft, clampOffsetLeft: null as number | null };
-    }
-    if (!fitsRight && !fitsLeft) {
-      const availableWidth = boundsRight - boundsLeft;
-      if (menuWidth <= availableWidth) {
-        const clampedViewportLeft = Math.min(
-          Math.max(rect.right - menuWidth, boundsLeft),
-          boundsRight - menuWidth
-        );
-        return {
-          alignLeft: false,
-          clampOffsetLeft: clampedViewportLeft - rect.left,
-        };
-      }
-      return { alignLeft: false, clampOffsetLeft: null as number | null };
-    }
-
-    const fitsRightWithMargin =
-      rect.right - requiredWidth >= boundsLeft && rect.right <= boundsRight;
-    const fitsLeftWithMargin =
-      rect.left >= boundsLeft && rect.left + requiredWidth <= boundsRight;
-    return {
-      alignLeft: !fitsRightWithMargin && fitsLeftWithMargin,
-      clampOffsetLeft: null as number | null,
-    };
-  }, [getClippingAncestors]);
+    return { top, left, openUpward };
+  }, []);
 
   const updateMenuPlacement = useCallback(() => {
-    const placement = computeMenuPlacement();
-    setAlignLeft(placement.alignLeft);
-    setClampOffsetLeft(placement.clampOffsetLeft);
+    setMenuPos(computeMenuPlacement());
   }, [computeMenuPlacement]);
 
   useEffect(() => {
-    if (!isOpen) return;
-    updateMenuPlacement();
-    const clippingAncestors = getClippingAncestors();
+    if (!effectiveOpen) return;
+    // Re-measure after listbox paints so real menuHeight/menuWidth are accounted for
+    const rafId = window.requestAnimationFrame(updateMenuPlacement);
     window.addEventListener("resize", updateMenuPlacement);
-    clippingAncestors.forEach((ancestor) => {
-      ancestor.addEventListener("scroll", updateMenuPlacement, { passive: true });
-    });
+    // Capture-phase scroll listener tracks both window and nested scroll containers (e.g., Table View)
+    window.addEventListener("scroll", updateMenuPlacement, { passive: true, capture: true });
     return () => {
+      window.cancelAnimationFrame(rafId);
       window.removeEventListener("resize", updateMenuPlacement);
-      clippingAncestors.forEach((ancestor) => {
-        ancestor.removeEventListener("scroll", updateMenuPlacement);
-      });
+      window.removeEventListener("scroll", updateMenuPlacement, { capture: true });
     };
-  }, [isOpen, updateMenuPlacement, getClippingAncestors]);
+  }, [effectiveOpen, updateMenuPlacement]);
 
   const handleToggle = useCallback(() => {
-    if (!isOpen) {
+    if (!effectiveOpen) {
       updateMenuPlacement();
+      setFocusedIndex(Math.max(0, sortedRooms.indexOf(currentRoom)));
+      setIsOpen(true);
     } else {
-      setClampOffsetLeft(null);
+      setIsOpen(false);
+      setFocusedIndex(-1);
     }
-    setIsOpen((prev) => !prev);
-  }, [isOpen, updateMenuPlacement]);
+  }, [effectiveOpen, updateMenuPlacement, sortedRooms, currentRoom]);
+
+  const listboxElement = effectiveOpen ? (
+    <div
+      ref={listboxRef}
+      role="listbox"
+      data-placement={menuPos.openUpward ? "top" : "bottom"}
+      style={{
+        top: `${menuPos.top}px`,
+        left: `${menuPos.left}px`,
+      }}
+      className="fixed z-[100] w-40 rounded-[6px] border border-rule bg-paper-2 overflow-hidden animate-fade-in"
+    >
+      <div className="px-3 py-2 text-xs font-medium border-b border-rule bg-paper-3 text-muted">
+        ย้ายผู้ป่วยไปยัง...
+      </div>
+      <div className="max-h-56 overflow-y-auto">
+        {sortedRooms.map((room, index) => (
+          <button
+            key={room}
+            type="button"
+            ref={(el) => { itemRefs.current[index] = el; }}
+            onClick={() => handleTransfer(room)}
+            disabled={isTransferring || disabled}
+            tabIndex={focusedIndex === index ? 0 : -1}
+            role="option"
+            aria-selected={room === currentRoom}
+            className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center justify-between outline-none ${
+              isTransferring || disabled
+                ? "opacity-50 cursor-not-allowed"
+                : room === currentRoom
+                  ? "bg-cool-soft text-cool"
+                  : focusedIndex === index
+                    ? "bg-paper-3 text-ink"
+                    : "text-ink-2 hover:bg-paper-3"
+            }`}
+          >
+            <span>{room}</span>
+            {room === currentRoom && (
+              <svg aria-hidden="true" className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className="relative inline-block ml-1" ref={dropdownRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={handleToggle}
         disabled={isTransferring || disabled}
         title={disabled ? "กำลังดำเนินการงานอื่นอยู่…" : "เปลี่ยนห้อง"}
         aria-label="เปลี่ยนห้อง"
-        aria-expanded={isOpen}
+        aria-expanded={effectiveOpen}
         aria-haspopup="listbox"
         className={`p-1 rounded-[6px] transition-colors duration-200 text-cool ${
           isTransferring ? "opacity-50 cursor-not-allowed" : "hover:bg-cool-soft"
         }`}
       >
         {isTransferring ? (
-          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin"></div>
         ) : (
           <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -307,52 +312,9 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
         )}
       </button>
 
-      {isOpen && (
-        <div
-          ref={listboxRef}
-          role="listbox"
-          style={
-            clampOffsetLeft !== null
-              ? { left: `${clampOffsetLeft}px`, right: "auto" }
-              : undefined
-          }
-          className={`absolute z-50 mt-1 ${alignLeft ? "left-0" : "right-0"} w-40 rounded-[6px] border border-rule bg-paper-2 overflow-hidden animate-fade-in`}
-        >
-          <div className="px-3 py-2 text-xs font-medium border-b border-rule bg-paper-3 text-muted">
-            ย้ายผู้ป่วยไปยัง...
-          </div>
-          <div className="max-h-48 overflow-y-auto">
-            {sortedRooms.map((room, index) => (
-              <button
-                key={room}
-                type="button"
-                ref={(el) => { itemRefs.current[index] = el; }}
-                onClick={() => handleTransfer(room)}
-                disabled={isTransferring || disabled}
-                tabIndex={focusedIndex === index ? 0 : -1}
-                role="option"
-                aria-selected={room === currentRoom}
-                className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center justify-between outline-none ${
-                  isTransferring || disabled
-                    ? "opacity-50 cursor-not-allowed"
-                    : room === currentRoom
-                      ? "bg-cool-soft text-cool"
-                      : focusedIndex === index
-                        ? "bg-paper-3 text-ink"
-                        : "text-ink-2 hover:bg-paper-3"
-                }`}
-              >
-                <span>{room}</span>
-                {room === currentRoom && (
-                  <svg aria-hidden="true" className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {listboxElement && typeof document !== "undefined"
+        ? createPortal(listboxElement, document.body)
+        : null}
     </div>
   );
 };

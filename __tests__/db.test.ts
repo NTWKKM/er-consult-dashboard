@@ -60,6 +60,13 @@ vi.mock("firebase/firestore", () => ({
 // Now import the module under test
 // ---------------------------------------------------------------------------
 import {
+  addConsult,
+  clearRetainedSubmitDraft,
+  getLatestFailedSubmitDraft,
+  getRetainedSubmitDraft,
+  hasPendingOptimisticWrites,
+  subscribeToFailedSubmitDrafts,
+  MAX_HN_SEARCH_RESULTS,
   updateConsult,
   transactionalUpdateConsult,
   fetchCompletedConsultsPage,
@@ -633,15 +640,25 @@ describe("transactionalUpdateConsult", () => {
 // searchCompletedConsults
 // ===========================================================================
 describe("searchCompletedConsults", () => {
-  it("returns empty array when both searchHN and filterDate are omitted", async () => {
+  it("returns empty result when both searchHN and filterDate are omitted", async () => {
     const result = await searchCompletedConsults();
-    expect(result).toEqual([]);
+    expect(result).toEqual({
+      consults: [],
+      truncated: false,
+      hasMore: false,
+      lastDoc: null,
+    });
     expect(mockGetDocs).not.toHaveBeenCalled();
   });
 
-  it("returns empty array when both searchHN and filterDate are empty strings", async () => {
+  it("returns empty result when both searchHN and filterDate are empty strings", async () => {
     const result = await searchCompletedConsults("", "");
-    expect(result).toEqual([]);
+    expect(result).toEqual({
+      consults: [],
+      truncated: false,
+      hasMore: false,
+      lastDoc: null,
+    });
     expect(mockGetDocs).not.toHaveBeenCalled();
   });
 
@@ -668,8 +685,11 @@ describe("searchCompletedConsults", () => {
     expect(hnCalls.length).toBe(2);
     expect(hnCalls[0][1]).toBe(">=");
     expect(hnCalls[1][1]).toBe("<");
-    expect(result).toHaveLength(1);
-    expect(result[0].hn).toBe("123456");
+    expect(result.consults).toHaveLength(1);
+    expect(result.consults[0].hn).toBe("123456");
+    expect(result.truncated).toBe(false);
+    expect(result.hasMore).toBe(false);
+    expect(result.lastDoc).toBeNull();
   });
 
   it("filters out documents without hn", async () => {
@@ -702,8 +722,8 @@ describe("searchCompletedConsults", () => {
     );
 
     const result = await searchCompletedConsults("111");
-    expect(result).toHaveLength(1);
-    expect(result[0].hn).toBe("111");
+    expect(result.consults).toHaveLength(1);
+    expect(result.consults[0].hn).toBe("111");
   });
 
   it("sorts results by createdAt descending when searching by HN", async () => {
@@ -734,8 +754,8 @@ describe("searchCompletedConsults", () => {
     );
 
     const result = await searchCompletedConsults("555");
-    expect(result[0].createdAt).toBe("2024-06-01T00:00:00.000Z");
-    expect(result[1].createdAt).toBe("2024-01-01T00:00:00.000Z");
+    expect(result.consults[0].createdAt).toBe("2024-06-01T00:00:00.000Z");
+    expect(result.consults[1].createdAt).toBe("2024-01-01T00:00:00.000Z");
   });
 
   it("queries by date range when only filterDate is provided", async () => {
@@ -748,7 +768,7 @@ describe("searchCompletedConsults", () => {
     expect(whereCalls.some((c) => c[0] === "createdAt" && c[1] === "<")).toBe(true);
   });
 
-  it("applies date filter client-side when both HN and filterDate are provided", async () => {
+  it("applies date bounds in server query with inequality ordering when both HN and filterDate are provided", async () => {
     // Doc inside the date range (UTC: 2024-05-10 midnight, offset 0)
     const inside = {
       hn: "789",
@@ -782,13 +802,689 @@ describe("searchCompletedConsults", () => {
 
     try {
       const result = await searchCompletedConsults("789", "2024-05-10");
-      expect(result.length).toBe(1);
-      expect(result[0].createdAt).toBe("2024-05-10T12:00:00.000Z");
-      const outsideIncluded = result.find((c) => c.createdAt === "2024-05-11T12:00:00.000Z");
+      expect(result.consults.length).toBe(1);
+      expect(result.consults[0].createdAt).toBe("2024-05-10T12:00:00.000Z");
+      const outsideIncluded = result.consults.find((c) => c.createdAt === "2024-05-11T12:00:00.000Z");
       expect(outsideIncluded).toBeUndefined();
+
+      // Verify server-side date bounds and inequality ordering before limit(MAX_HN_SEARCH_RESULTS + 1)
+      const whereCalls = (mockWhere as Mock).mock.calls;
+      expect(whereCalls.some((c) => c[0] === "createdAt" && c[1] === ">=")).toBe(true);
+      expect(whereCalls.some((c) => c[0] === "createdAt" && c[1] === "<")).toBe(true);
+      expect(mockOrderBy).toHaveBeenNthCalledWith(1, "hn", "asc");
+      expect(mockOrderBy).toHaveBeenNthCalledWith(2, "createdAt", "desc");
+      expect(mockLimit).toHaveBeenCalledWith(MAX_HN_SEARCH_RESULTS + 1);
     } finally {
       // Restore timezone offset
       offsetSpy.mockRestore();
+    }
+  });
+
+  it("exposes truncated, hasMore, and continuation lastDoc when HN search exceeds MAX_HN_SEARCH_RESULTS", async () => {
+    const docs = Array.from({ length: MAX_HN_SEARCH_RESULTS + 1 }, (_, idx) =>
+      makeDocSnapshot(`c-${idx}`, {
+        hn: `100${idx}`,
+        firstName: "A",
+        lastName: "B",
+        room: "NT",
+        problem: "P",
+        createdAt: `2024-05-10T00:${String(idx % 60).padStart(2, "0")}:00.000Z`,
+        status: "completed",
+        isUrgent: false,
+        departments: {},
+      })
+    );
+    mockGetDocs.mockResolvedValueOnce(makeQuerySnapshot(docs));
+
+    const firstPage = await searchCompletedConsults("100");
+    expect(firstPage.consults).toHaveLength(MAX_HN_SEARCH_RESULTS);
+    expect(firstPage.truncated).toBe(true);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.lastDoc?.id).toBe(`c-${MAX_HN_SEARCH_RESULTS - 1}`);
+
+    mockGetDocs.mockResolvedValueOnce(makeQuerySnapshot([docs[MAX_HN_SEARCH_RESULTS]]));
+    const nextPage = await searchCompletedConsults("100", undefined, firstPage.lastDoc!);
+    expect(mockStartAfter).toHaveBeenCalledWith(firstPage.lastDoc);
+    expect(nextPage.consults).toHaveLength(1);
+    expect(nextPage.truncated).toBe(false);
+    expect(nextPage.hasMore).toBe(false);
+    expect(nextPage.lastDoc).toBeNull();
+  });
+});
+
+describe("addConsult optimistic draft retention", () => {
+  beforeEach(() => {
+    clearRetainedSubmitDraft();
+  });
+
+  it("retains retryable draft until background write settles, clears on resolve, and preserves on reject", async () => {
+    let resolveWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveWrite = resolve;
+      })
+    );
+
+    const onBackgroundError = vi.fn();
+    const onBackgroundSuccess = vi.fn();
+    const created = await addConsult(
+      {
+        hn: "123456",
+        firstName: "สมชาย",
+        lastName: "ใจดี",
+        room: "NT",
+        problem: "Pain",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, onBackgroundError, onBackgroundSuccess }
+    );
+
+    expect(hasPendingOptimisticWrites()).toBe(true);
+    expect(getRetainedSubmitDraft(created.id)?.status).toBe("pending");
+    expect(getLatestFailedSubmitDraft()).toBeNull();
+
+    resolveWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(hasPendingOptimisticWrites()).toBe(false);
+    expect(getRetainedSubmitDraft(created.id)).toBeUndefined();
+    expect(onBackgroundSuccess).toHaveBeenCalledWith(created);
+
+    // Rejection retains retryable failed draft and invokes onBackgroundError with the draft
+    let rejectWrite!: (err: unknown) => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectWrite = reject;
+      })
+    );
+
+    const failedConsult = await addConsult(
+      {
+        hn: "654321",
+        firstName: "สมหญิง",
+        lastName: "ใจดี",
+        room: "Urgent",
+        problem: "Fever",
+        isUrgent: true,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, onBackgroundError }
+    );
+
+    const writeError = new Error("permission-denied");
+    rejectWrite(writeError);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onBackgroundError).toHaveBeenCalledWith(writeError, failedConsult, {
+      notifiedListenerCount: 0,
+    });
+    expect(getRetainedSubmitDraft(failedConsult.id)?.status).toBe("failed");
+    expect(getLatestFailedSubmitDraft()?.id).toBe(failedConsult.id);
+    clearRetainedSubmitDraft(failedConsult.id);
+    expect(getLatestFailedSubmitDraft()).toBeNull();
+  });
+
+  it("persists pending and failed drafts in sessionStorage across simulated page reloads", async () => {
+    window.sessionStorage.clear();
+    let resolveOriginalWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveOriginalWrite = resolve;
+      })
+    );
+
+    const pendingConsult = await addConsult(
+      {
+        hn: "998877",
+        firstName: "Reload",
+        lastName: "Patient",
+        room: "NT",
+        problem: "Reload test",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    // Simulate page reload by resetting module cache and re-importing lib/db
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
+
+    // Reconcile orphaned pending draft when server confirms doc does not exist -> promoted to failed
+    mockGetDoc.mockResolvedValueOnce({
+      ...makeDocSnapshot(pendingConsult.id, null, false),
+      metadata: { fromCache: false, hasPendingWrites: false },
+    });
+    const recovered = await reloadedDb.reconcileReloadedSubmitDrafts();
+    expect(recovered?.id).toBe(pendingConsult.id);
+    expect(recovered?.hn).toBe("998877");
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("failed");
+
+    // Settle the original module's pending write so pendingOptimisticWrites is clean for subsequent tests
+    resolveOriginalWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // If reconciled when doc is already committed on server, draft is cleared cleanly
+    window.sessionStorage.clear();
+    vi.resetModules();
+    const freshDb = await import("@/lib/db");
+    let resolveFreshWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveFreshWrite = resolve;
+      })
+    );
+    const syncedConsult = await freshDb.addConsult(
+      {
+        hn: "776655",
+        firstName: "Synced",
+        lastName: "Patient",
+        room: "Urgent",
+        problem: "Already synced",
+        isUrgent: false,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    vi.resetModules();
+    const afterReloadDb = await import("@/lib/db");
+    mockGetDoc.mockResolvedValueOnce({
+      ...makeDocSnapshot(syncedConsult.id, { ...syncedConsult }, true),
+      metadata: { hasPendingWrites: false },
+    });
+    const afterReconcile = await afterReloadDb.reconcileReloadedSubmitDrafts();
+    expect(afterReconcile).toBeNull();
+    expect(afterReloadDb.getRetainedSubmitDraft(syncedConsult.id)).toBeUndefined();
+
+    resolveFreshWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.sessionStorage.clear();
+  });
+
+  it("monitors reloaded pending drafts after reload and surfaces failure when a pending write is later rejected", async () => {
+    window.sessionStorage.clear();
+    let resolvePendingWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolvePendingWrite = resolve;
+      })
+    );
+
+    const pendingConsult = await addConsult(
+      {
+        hn: "554433",
+        firstName: "Offline",
+        lastName: "Reload",
+        room: "Resus Team 1",
+        problem: "Chest pain",
+        isUrgent: true,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    // Simulate reload while write is still queued in persistentLocalCache
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+
+    const unsubMock = vi.fn();
+    let snapshotNext!: (snap: { exists: () => boolean; metadata?: { hasPendingWrites?: boolean } }) => void;
+    let snapshotError!: (err: unknown) => void;
+    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext, onErr) => {
+      snapshotNext = onNext;
+      snapshotError = onErr;
+      return unsubMock;
+    });
+
+    const onFailed = vi.fn();
+    const stopMonitoring = reloadedDb.monitorReloadedPendingSubmitDrafts(onFailed);
+    expect(mockOnSnapshot).toHaveBeenCalledTimes(1);
+
+    // Initial cache snapshot shows hasPendingWrites: true -> stays pending
+    snapshotNext({ exists: () => true, metadata: { hasPendingWrites: true } });
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
+
+    // Server later rejects the queued write -> transitions to failed, notifies caller, remains retryable
+    const rulesErr = new Error("permission-denied");
+    snapshotError(rulesErr);
+
+    expect(onFailed).toHaveBeenCalledWith(
+      expect.objectContaining({ id: pendingConsult.id, hn: "554433" }),
+      rulesErr
+    );
+    expect(unsubMock).toHaveBeenCalledTimes(1);
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("failed");
+    expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(pendingConsult.id);
+
+    // Also verify rollback snapshot (!exists && !hasPendingWrites) marks draft failed
+    stopMonitoring();
+    window.sessionStorage.clear();
+    vi.resetModules();
+    const reloadedDb2 = await import("@/lib/db");
+    let resolveWrite2!: () => void;
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite2 = resolve; }));
+    const rollbackConsult = await reloadedDb2.addConsult(
+      {
+        hn: "665544",
+        firstName: "Rollback",
+        lastName: "Case",
+        room: "NT",
+        problem: "Sync rollback",
+        isUrgent: false,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    vi.resetModules();
+    const afterReload2 = await import("@/lib/db");
+    const unsubMock2 = vi.fn();
+    let snapshotNext2!: (snap: {
+      exists: () => boolean;
+      metadata?: { fromCache?: boolean; hasPendingWrites?: boolean };
+    }) => void;
+    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
+      snapshotNext2 = onNext;
+      return unsubMock2;
+    });
+
+    const onFailed2 = vi.fn();
+    afterReload2.monitorReloadedPendingSubmitDrafts(onFailed2);
+    snapshotNext2({ exists: () => true, metadata: { hasPendingWrites: true } });
+    expect(onFailed2).not.toHaveBeenCalled();
+
+    snapshotNext2({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } });
+    expect(onFailed2).toHaveBeenCalledWith(
+      expect.objectContaining({ id: rollbackConsult.id, hn: "665544" }),
+      undefined
+    );
+    expect(afterReload2.getLatestFailedSubmitDraft()?.id).toBe(rollbackConsult.id);
+
+    resolvePendingWrite();
+    resolveWrite2();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.sessionStorage.clear();
+  });
+
+  it("leaves draft pending on cold-cache miss and clears without failing when server-existing snapshot arrives", async () => {
+    window.sessionStorage.clear();
+    let resolveWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite = resolve; }));
+
+    const coldConsult = await addConsult(
+      {
+        hn: "112233",
+        firstName: "Cold",
+        lastName: "Cache",
+        room: "Urgent",
+        problem: "Cold cache reload",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+    const unsubMock = vi.fn();
+    let snapshotNext!: (snap: {
+      exists: () => boolean;
+      metadata?: { fromCache?: boolean; hasPendingWrites?: boolean };
+    }) => void;
+    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
+      snapshotNext = onNext;
+      return unsubMock;
+    });
+
+    const onFailed = vi.fn();
+    reloadedDb.monitorReloadedPendingSubmitDrafts(onFailed);
+
+    // Cold-cache miss (fromCache: true, hasPendingWrites: false) must NOT fail or unsubscribe
+    snapshotNext({ exists: () => false, metadata: { fromCache: true, hasPendingWrites: false } });
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(unsubMock).not.toHaveBeenCalled();
+    expect(reloadedDb.getRetainedSubmitDraft(coldConsult.id)?.status).toBe("pending");
+    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
+
+    // Server later confirms document exists -> clears draft without failing or retrying
+    snapshotNext({ exists: () => true, metadata: { fromCache: false, hasPendingWrites: false } });
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(unsubMock).toHaveBeenCalledTimes(1);
+    expect(reloadedDb.getRetainedSubmitDraft(coldConsult.id)).toBeUndefined();
+    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
+
+    resolveWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.sessionStorage.clear();
+  });
+
+  it("invalidates outstanding producers when clearRetainedSubmitDraft clears drafts", async () => {
+    window.sessionStorage.clear();
+    let rejectWrite!: (err: unknown) => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectWrite = reject;
+      })
+    );
+
+    const onBackgroundError = vi.fn();
+    const listenerSpy = vi.fn();
+    const unsubListener = subscribeToFailedSubmitDrafts(listenerSpy);
+
+    const consult = await addConsult(
+      {
+        hn: "445566",
+        firstName: "Cleared",
+        lastName: "BeforeReject",
+        room: "NT",
+        problem: "Logout clear race",
+        isUrgent: false,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, onBackgroundError }
+    );
+
+    // Clear all drafts (e.g. logout) before the background write settles
+    clearRetainedSubmitDraft();
+    expect(getRetainedSubmitDraft(consult.id)).toBeUndefined();
+
+    rejectWrite(new Error("permission-denied"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Cleared producer must NOT resurrect draft or notify consumers
+    expect(getRetainedSubmitDraft(consult.id)).toBeUndefined();
+    expect(getLatestFailedSubmitDraft()).toBeNull();
+    expect(onBackgroundError).not.toHaveBeenCalled();
+    expect(listenerSpy).not.toHaveBeenCalled();
+    unsubListener();
+
+    // Also verify reconcileReloadedSubmitDrafts ignores result after clearRetainedSubmitDraft()
+    window.sessionStorage.setItem(
+      "er_consult_submit_drafts_v1",
+      JSON.stringify([{ consult, status: "pending" }])
+    );
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+    let resolveGetDoc!: (snap: unknown) => void;
+    mockGetDoc.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGetDoc = resolve;
+      })
+    );
+
+    const reconcilePromise = reloadedDb.reconcileReloadedSubmitDrafts();
+    reloadedDb.clearRetainedSubmitDraft();
+    resolveGetDoc({
+      ...makeDocSnapshot(consult.id, null, false),
+      metadata: { fromCache: false, hasPendingWrites: false },
+    });
+
+    const reconciled = await reconcilePromise;
+    expect(reconciled).toBeNull();
+    expect(reloadedDb.getRetainedSubmitDraft(consult.id)).toBeUndefined();
+    window.sessionStorage.clear();
+  });
+
+  it("keeps draft pending when reconcile getDoc rejects with unavailable and clears on subsequent server-confirmed read", async () => {
+    window.sessionStorage.clear();
+    let resolveWrite!: () => void;
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite = resolve; }));
+
+    const pendingConsult = await addConsult(
+      {
+        hn: "334455",
+        firstName: "Offline",
+        lastName: "Unavailable",
+        room: "NT",
+        problem: "Unavailable read test",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+
+    vi.resetModules();
+    const reloadedDb = await import("@/lib/db");
+
+    // Offline read rejects with unavailable -> must stay pending, not failed
+    mockGetDoc.mockRejectedValueOnce(Object.assign(new Error("Client is offline"), { code: "unavailable" }));
+    const firstReconcile = await reloadedDb.reconcileReloadedSubmitDrafts();
+    expect(firstReconcile).toBeNull();
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
+    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
+
+    // Follow-up read confirms document exists on server -> clears draft cleanly
+    mockGetDoc.mockResolvedValueOnce({
+      ...makeDocSnapshot(pendingConsult.id, { ...pendingConsult }, true),
+      metadata: { fromCache: false, hasPendingWrites: false },
+    });
+    const secondReconcile = await reloadedDb.reconcileReloadedSubmitDrafts();
+    expect(secondReconcile).toBeNull();
+    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)).toBeUndefined();
+
+    resolveWrite();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.sessionStorage.clear();
+  });
+
+  it("persists replacesDraftId across reload and retires superseded failed draft when replacement commits or fails", async () => {
+    window.sessionStorage.clear();
+    let rejectFirst!: (err: unknown) => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-a" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
+
+    const draftA = await addConsult(
+      {
+        hn: "121212",
+        firstName: "First",
+        lastName: "Failed",
+        room: "NT",
+        problem: "Draft A",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+    rejectFirst(new Error("offline-1"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(draftA.id).toBe("draft-a");
+    expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
+
+    // Retry offline as draft B replacing draft A, then reload before B settles
+    let resolveB!: () => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-b" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveB = resolve; }));
+    const draftB = await addConsult(
+      {
+        hn: "121212",
+        firstName: "First",
+        lastName: "Failed",
+        room: "NT",
+        problem: "Draft B",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, replacesDraftId: draftA.id }
+    );
+    expect(draftB.id).toBe("draft-b");
+
+    try {
+      // A stays retained while B is pending, but is hidden behind pending replacement B
+      expect(getRetainedSubmitDraft(draftA.id)?.status).toBe("failed");
+      expect(getRetainedSubmitDraft(draftB.id)?.replacesDraftId).toBe(draftA.id);
+      expect(getLatestFailedSubmitDraft()).toBeNull();
+
+      // Simulate reload while B is still pending -> monitor sees B fail -> retires A, retains B
+      vi.resetModules();
+      const reloadedDb = await import("@/lib/db");
+      let snapshotNext!: (snap: { exists: () => boolean; metadata?: { fromCache?: boolean; hasPendingWrites?: boolean } }) => void;
+      mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
+        snapshotNext = onNext;
+        return vi.fn();
+      });
+
+      reloadedDb.monitorReloadedPendingSubmitDrafts();
+      snapshotNext({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } });
+
+      expect(reloadedDb.getRetainedSubmitDraft(draftA.id)).toBeUndefined();
+      expect(reloadedDb.getRetainedSubmitDraft(draftB.id)?.status).toBe("failed");
+      expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(draftB.id);
+    } finally {
+      resolveB();
+      await Promise.resolve();
+      await Promise.resolve();
+      window.sessionStorage.clear();
+    }
+  });
+
+  it("retires superseded failed draft A when replacement B commits successfully after reload", async () => {
+    window.sessionStorage.clear();
+    let rejectFirst!: (err: unknown) => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-commit-a" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
+
+    const draftA = await addConsult(
+      {
+        hn: "232323",
+        firstName: "Commit",
+        lastName: "First",
+        room: "NT",
+        problem: "Draft A before commit",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+    rejectFirst(new Error("offline-1"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
+
+    let resolveB!: () => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-commit-b" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveB = resolve; }));
+    const draftB = await addConsult(
+      {
+        hn: "232323",
+        firstName: "Commit",
+        lastName: "Second",
+        room: "NT",
+        problem: "Draft B replacement",
+        isUrgent: false,
+        status: "pending",
+        departments: { "Gen Sx": { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false, replacesDraftId: draftA.id }
+    );
+
+    try {
+      // Simulate reload while B is still pending -> monitor sees server commit for B -> retires A and clears B
+      vi.resetModules();
+      const reloadedDb = await import("@/lib/db");
+      let snapshotNext!: (snap: { exists: () => boolean; metadata?: { fromCache?: boolean; hasPendingWrites?: boolean } }) => void;
+      mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
+        snapshotNext = onNext;
+        return vi.fn();
+      });
+
+      reloadedDb.monitorReloadedPendingSubmitDrafts();
+      snapshotNext({ exists: () => true, metadata: { fromCache: false, hasPendingWrites: false } });
+
+      expect(reloadedDb.getRetainedSubmitDraft(draftA.id)).toBeUndefined();
+      expect(reloadedDb.getRetainedSubmitDraft(draftB.id)).toBeUndefined();
+      expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
+    } finally {
+      resolveB();
+      await Promise.resolve();
+      await Promise.resolve();
+      window.sessionStorage.clear();
+    }
+  });
+
+  it("prevents replacement retry B from being queued when sessionStorage fails so A cannot duplicate after reload", async () => {
+    window.sessionStorage.clear();
+    let rejectFirst!: (err: unknown) => void;
+    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-quota-a" } as never);
+    mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
+
+    const draftA = await addConsult(
+      {
+        hn: "454545",
+        firstName: "Quota",
+        lastName: "First",
+        room: "Urgent",
+        problem: "Draft A",
+        isUrgent: false,
+        status: "pending",
+        departments: { Ortho: { status: "pending", completedAt: null } },
+      },
+      { awaitRemote: false }
+    );
+    rejectFirst(new Error("offline-1"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
+
+    const setDocCallsBeforeRetry = mockSetDoc.mock.calls.length;
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    });
+
+    try {
+      mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-quota-b" } as never);
+      await expect(
+        addConsult(
+          {
+            hn: "454545",
+            firstName: "Quota",
+            lastName: "Retry",
+            room: "Urgent",
+            problem: "Draft B blocked",
+            isUrgent: false,
+            status: "pending",
+            departments: { Ortho: { status: "pending", completedAt: null } },
+          },
+          { awaitRemote: false, replacesDraftId: draftA.id }
+        )
+      ).rejects.toThrow();
+
+      // Replacement B must not have been queued in Firestore or retained in memory
+      expect(mockSetDoc).toHaveBeenCalledTimes(setDocCallsBeforeRetry);
+      expect(getRetainedSubmitDraft("draft-quota-b")).toBeUndefined();
+      expect(getRetainedSubmitDraft(draftA.id)?.status).toBe("failed");
+
+      // Reload still retains only draft A with no hidden pending B
+      vi.resetModules();
+      const reloadedDb = await import("@/lib/db");
+      expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
+    } finally {
+      setItemSpy.mockRestore();
+      window.sessionStorage.clear();
     }
   });
 });

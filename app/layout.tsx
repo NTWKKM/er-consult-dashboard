@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { SettingsProvider } from "./contexts/SettingsContext";
@@ -36,6 +36,18 @@ const notoSansThai = localFont({
 export const metadata: Metadata = {
   title: "ER Consult MNRH",
   description: "ระบบส่งปรึกษา ER มหาราช",
+  appleWebApp: {
+    capable: true,
+    title: "ER Consult MNRH",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f8f7f3" },
+    { media: "(prefers-color-scheme: dark)", color: "#1c1f24" },
+  ],
 };
 
 export default function RootLayout({

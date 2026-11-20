@@ -1,18 +1,37 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { addConsult } from "@/lib/db";
-import { ALL_DEPARTMENTS, ROOMS, RoomName } from "@/lib/constants";
+import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft, reconcileReloadedSubmitDrafts, subscribeToFailedSubmitDrafts, type Consult } from "@/lib/db";
+import { isSubmissionBlockedByLogout } from "@/lib/logoutReservation";
+import {
+  ALL_DEPARTMENTS,
+  MAX_HN_LENGTH,
+  MAX_PATIENT_NAME_LENGTH,
+  MAX_PROBLEM_CREATE_LENGTH,
+  ROOMS,
+  RoomName,
+} from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
+import { usePendingConsults } from "../contexts/ConsultsContext";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
 
 export default function SubmitPage() {
   const router = useRouter();
   const { addToast } = useToast();
+  const { cases: activePendingCases } = usePendingConsults();
+  const isOnline = useNetworkStatus();
   const hnRef = useRef<HTMLInputElement>(null);
   const submitInFlightRef = useRef(false);
+  const submitOperationTokenRef = useRef(0);
+  const activeSubmitTokenRef = useRef<number | null>(null);
+  const redirectOwnerTokenRef = useRef<number | null>(null);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
+  const retriedDraftIdRef = useRef<string | null>(null);
+  const formDirtyRef = useRef(false);
+  const formHasValuesRef = useRef(false);
+  const handledFailedIdsRef = useRef<Set<string>>(new Set());
 
   const [hn, setHn] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -23,41 +42,75 @@ export default function SubmitPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isMac, setIsMac] = useState(false);
+  const [pendingRecoverableDraft, setPendingRecoverableDraftState] = useState<Consult | null>(null);
+  const pendingRecoverableDraftRef = useRef<Consult | null>(null);
+
+  const setPendingRecoverableDraft = useCallback((draft: Consult | null) => {
+    // Update the ref synchronously so in-flight submit continuations in the same batch see it immediately
+    pendingRecoverableDraftRef.current = draft;
+    setPendingRecoverableDraftState(draft);
+  }, []);
+
+  useEffect(() => {
+    formHasValuesRef.current = Boolean(
+      hn || firstName || lastName || room || problem || selectedDepts.length > 0
+    );
+  }, [hn, firstName, lastName, room, problem, selectedDepts]);
 
   // Auto-focus HN field on mount & detect OS
   useEffect(() => {
     hnRef.current?.focus();
     
+    let active = true;
     // Replace @ts-expect-error with a typed navigator narrow
     const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
     const platform = nav.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent;
     
-    setIsMac(platform.toUpperCase().indexOf('MAC') >= 0);
+    void Promise.resolve().then(() => {
+      if (active) {
+        setIsMac(platform.toUpperCase().indexOf('MAC') >= 0);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const validateForm = useCallback(() => {
     const newErrors: { [key: string]: string } = {};
+    const trimmedHn = hn.trim();
+    const trimmedFirstName = firstName.trim();
+    const trimmedLastName = lastName.trim();
+    const trimmedProblem = problem.trim();
 
-    if (!hn.trim()) {
+    if (!trimmedHn) {
       newErrors.hn = "กรุณากรอก HN";
-    } else if (!/^\d+$/.test(hn.trim())) {
+    } else if (!/^\d+$/.test(trimmedHn)) {
       newErrors.hn = "HN ต้องเป็นตัวเลขเท่านั้น";
+    } else if (trimmedHn.length > MAX_HN_LENGTH) {
+      newErrors.hn = `HN ต้องไม่เกิน ${MAX_HN_LENGTH} หลัก`;
     }
 
-    if (!firstName.trim()) {
+    if (!trimmedFirstName) {
       newErrors.firstName = "กรุณากรอกชื่อ";
+    } else if (trimmedFirstName.length > MAX_PATIENT_NAME_LENGTH) {
+      newErrors.firstName = `ชื่อต้องไม่เกิน ${MAX_PATIENT_NAME_LENGTH} ตัวอักษร`;
     }
 
-    if (!lastName.trim()) {
+    if (!trimmedLastName) {
       newErrors.lastName = "กรุณากรอกนามสกุล";
+    } else if (trimmedLastName.length > MAX_PATIENT_NAME_LENGTH) {
+      newErrors.lastName = `นามสกุลต้องไม่เกิน ${MAX_PATIENT_NAME_LENGTH} ตัวอักษร`;
     }
 
     if (!room) {
       newErrors.room = "กรุณาเลือกห้องตรวจ";
     }
 
-    if (!problem.trim()) {
+    if (!trimmedProblem) {
       newErrors.problem = "กรุณากรอกรายละเอียดปัญหา";
+    } else if (trimmedProblem.length > MAX_PROBLEM_CREATE_LENGTH) {
+      newErrors.problem = `รายละเอียดปัญหาต้องไม่เกิน ${MAX_PROBLEM_CREATE_LENGTH.toLocaleString()} ตัวอักษร`;
     }
 
     if (selectedDepts.length === 0) {
@@ -69,6 +122,7 @@ export default function SubmitPage() {
   }, [hn, firstName, lastName, room, problem, selectedDepts]);
 
   const handleCheckboxChange = (dept: string) => {
+    formDirtyRef.current = true;
     setSelectedDepts((prev) =>
       prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]
     );
@@ -82,12 +136,50 @@ export default function SubmitPage() {
     }
   };
 
+  // Zero-read duplicate consult detection against already-subscribed pending cases
+  const duplicatePendingMatches = useMemo(() => {
+    const trimmedHn = hn.trim();
+    if (!trimmedHn || selectedDepts.length === 0) return [];
+    const matches: { dept: string; room: string }[] = [];
+    const seen = new Set<string>();
+    for (const c of activePendingCases) {
+      if (c.hn.trim() !== trimmedHn) continue;
+      for (const dept of selectedDepts) {
+        if (c.departments[dept]?.status === "pending" && !seen.has(dept)) {
+          seen.add(dept);
+          matches.push({ dept, room: c.room });
+        }
+      }
+    }
+    return matches;
+  }, [hn, selectedDepts, activePendingCases]);
+
   const handleSubmit = useCallback(async (isUrgent: boolean = false) => {
     if (submitInFlightRef.current) return;
+    if (isSubmissionBlockedByLogout()) {
+      addToast({
+        type: "error",
+        message: "กำลังออกจากระบบในแท็บอื่น กรุณารอสักครู่ก่อนส่งเคส",
+        duration: 5000,
+      });
+      return;
+    }
 
     const currentErrors = validateForm();
     if (Object.keys(currentErrors).length > 0) {
-      addToast({ type: "error", message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+      const hasMissingRequired =
+        !hn.trim() ||
+        !firstName.trim() ||
+        !lastName.trim() ||
+        !room ||
+        !problem.trim() ||
+        selectedDepts.length === 0;
+      addToast({
+        type: "error",
+        message: hasMissingRequired
+          ? "กรุณากรอกข้อมูลให้ครบถ้วน"
+          : Object.values(currentErrors)[0],
+      });
       
       // UX Improvement: Auto-focus and scroll to the first error field
       const firstErrorKey = Object.keys(currentErrors)[0];
@@ -101,6 +193,8 @@ export default function SubmitPage() {
       return;
     }
 
+    const operationToken = ++submitOperationTokenRef.current;
+    activeSubmitTokenRef.current = operationToken;
     submitInFlightRef.current = true;
     setIsLoading(true);
 
@@ -109,26 +203,142 @@ export default function SubmitPage() {
       departmentsMap[dept] = { status: "pending", completedAt: null };
     });
 
+    const submittedDraft = {
+      hn: hn.trim(),
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      room: room as RoomName,
+      problem: problem.trim(),
+      selectedDepts: [...selectedDepts],
+    };
+    const previousFailedDraftId = retriedDraftIdRef.current;
+
     try {
-      await addConsult({
-        hn: hn.trim(),
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        room: room as RoomName,
-        problem: problem.trim(),
+      const payload = {
+        hn: submittedDraft.hn,
+        firstName: submittedDraft.firstName,
+        lastName: submittedDraft.lastName,
+        room: submittedDraft.room,
+        problem: submittedDraft.problem,
         isUrgent,
         departments: departmentsMap,
-        status: "pending",
-      });
+        status: "pending" as const,
+      };
+      if (isOnline) {
+        await addConsult(payload);
+        if (previousFailedDraftId && typeof clearRetainedSubmitDraft === "function") {
+          clearRetainedSubmitDraft(previousFailedDraftId);
+          retriedDraftIdRef.current = null;
+        }
+      } else {
+        await addConsult(payload, {
+          awaitRemote: false,
+          ...(previousFailedDraftId ? { replacesDraftId: previousFailedDraftId } : {}),
+          onBackgroundSuccess: () => {
+            if (previousFailedDraftId && typeof clearRetainedSubmitDraft === "function") {
+              clearRetainedSubmitDraft(previousFailedDraftId);
+              if (retriedDraftIdRef.current === previousFailedDraftId) {
+                retriedDraftIdRef.current = null;
+              }
+            }
+          },
+          onBackgroundError: (_err, failedConsult, context) => {
+            if (failedConsult?.id) {
+              handledFailedIdsRef.current.add(failedConsult.id);
+              // Clear superseded previous retry draft only after the new failed draft has been retained
+              if (
+                previousFailedDraftId &&
+                previousFailedDraftId !== failedConsult.id &&
+                typeof clearRetainedSubmitDraft === "function"
+              ) {
+                clearRetainedSubmitDraft(previousFailedDraftId);
+              }
+            }
+
+            if (!isMountedRef.current) {
+              const hasActiveSubmitListener = (context?.notifiedListenerCount ?? 0) > 0;
+              const isAlreadyOnSubmit =
+                typeof window !== "undefined" && window.location.pathname === "/submit";
+              if (hasActiveSubmitListener || isAlreadyOnSubmit) {
+                return;
+              }
+              // ToastProvider lives in the root layout, so users still receive failed-sync alerts after redirect
+              addToast({
+                type: "error",
+                message: `ซิงค์เคส HN: ${submittedDraft.hn} ไม่สำเร็จ กรุณากลับไปหน้า "ส่งเคสปรึกษา" เพื่อลองส่งใหม่`,
+                duration: 6000,
+              });
+              return;
+            }
+
+            if (redirectOwnerTokenRef.current === operationToken && redirectTimerRef.current !== null) {
+              clearTimeout(redirectTimerRef.current);
+              redirectTimerRef.current = null;
+              redirectOwnerTokenRef.current = null;
+            }
+            const ownsSubmitGuard = activeSubmitTokenRef.current === operationToken;
+            if (ownsSubmitGuard) {
+              activeSubmitTokenRef.current = null;
+              submitInFlightRef.current = false;
+              setIsLoading(false);
+            }
+
+            if (!ownsSubmitGuard || formDirtyRef.current || formHasValuesRef.current) {
+              if (failedConsult) {
+                setPendingRecoverableDraft(failedConsult);
+              }
+              addToast({
+                type: "error",
+                message: `ซิงค์เคส HN: ${submittedDraft.hn} ไม่สำเร็จ สามารถกดกู้คืนข้อมูลร่างได้ด้านบน`,
+                duration: 5000,
+              });
+              return;
+            }
+
+            // Assign retry identity only when automatically restoring this failed draft into the form
+            if (failedConsult?.id) {
+              retriedDraftIdRef.current = failedConsult.id;
+            }
+            setHn(submittedDraft.hn);
+            setFirstName(submittedDraft.firstName);
+            setLastName(submittedDraft.lastName);
+            setRoom(submittedDraft.room);
+            setProblem(submittedDraft.problem);
+            setSelectedDepts(submittedDraft.selectedDepts);
+            setErrors({});
+            formDirtyRef.current = false;
+            setPendingRecoverableDraft(null);
+            addToast({
+              type: "error",
+              message: "ซิงค์เคสที่บันทึกขณะออฟไลน์ไม่สำเร็จ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
+              duration: 5000,
+            });
+          },
+        });
+      }
 
       addToast({
         type: "success",
-        message: isUrgent ? "✓ ส่งเคสปรึกษา FAST TRACK สำเร็จ!" : "✓ ส่งเคสปรึกษาสำเร็จ!",
+        message: !isOnline
+          ? "✓ บันทึกเคสในเครื่องแล้ว (จะซิงค์อัตโนมัติเมื่อกลับมาออนไลน์)"
+          : isUrgent
+            ? "✓ ส่งเคสปรึกษา FAST TRACK สำเร็จ!"
+            : "✓ ส่งเคสปรึกษาสำเร็จ!",
         duration: 3000,
       });
 
       if (!isMountedRef.current) return;
 
+      const activeRecoveryDraft = pendingRecoverableDraftRef.current;
+      const hasDifferentPendingRecovery = Boolean(
+        activeRecoveryDraft && activeRecoveryDraft.id !== previousFailedDraftId
+      );
+
+      // Reset only visible form inputs; any optimistic write draft remains retained in lib/db.ts until settled.
+      if (retriedDraftIdRef.current === previousFailedDraftId) {
+        retriedDraftIdRef.current = null;
+      }
+      formDirtyRef.current = false;
       setHn("");
       setFirstName("");
       setLastName("");
@@ -137,8 +347,24 @@ export default function SubmitPage() {
       setSelectedDepts([]);
       setErrors({});
 
+      if (hasDifferentPendingRecovery) {
+        // Preserve the unrelated draft awaiting user recovery action and keep staff on /submit
+        if (activeSubmitTokenRef.current === operationToken) {
+          activeSubmitTokenRef.current = null;
+          submitInFlightRef.current = false;
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      setPendingRecoverableDraft(null);
+
+      if (redirectTimerRef.current !== null) {
+        clearTimeout(redirectTimerRef.current);
+      }
+      redirectOwnerTokenRef.current = operationToken;
       redirectTimerRef.current = setTimeout(() => {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && redirectOwnerTokenRef.current === operationToken) {
           router.push("/");
         }
       }, 1500);
@@ -150,21 +376,90 @@ export default function SubmitPage() {
         message: error instanceof Error ? `เกิดข้อผิดพลาด: ${error.message}` : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
         duration: 5000,
       });
-      submitInFlightRef.current = false;
-      setIsLoading(false);
+      if (activeSubmitTokenRef.current === operationToken) {
+        activeSubmitTokenRef.current = null;
+        submitInFlightRef.current = false;
+        setIsLoading(false);
+      }
     }
-  }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router]);
+  }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router, isOnline, setPendingRecoverableDraft]);
+
+  const restoreDraft = useCallback(
+    (
+      draft: Consult,
+      options?: { silentToast?: boolean }
+    ) => {
+      if (!isMountedRef.current || submitInFlightRef.current) return;
+      retriedDraftIdRef.current = draft.id;
+      formDirtyRef.current = false;
+      setPendingRecoverableDraft(null);
+      setHn(draft.hn);
+      setFirstName(draft.firstName);
+      setLastName(draft.lastName);
+      setRoom(draft.room);
+      setProblem(draft.problem);
+      setSelectedDepts(Object.keys(draft.departments));
+      setErrors({});
+      if (!options?.silentToast) {
+        addToast({
+          type: "error",
+          message: "พบเคสที่ซิงค์ไม่สำเร็จก่อนหน้านี้ ระบบได้กู้คืนข้อมูลให้แล้ว กรุณาลองส่งใหม่อีกครั้ง",
+          duration: 5000,
+        });
+      }
+    },
+    [addToast, setPendingRecoverableDraft]
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
+    const handleRecoveredDraft = (draft: Consult) => {
+      if (!isMountedRef.current) return;
+      if (handledFailedIdsRef.current.has(draft.id)) return;
+      handledFailedIdsRef.current.add(draft.id);
+
+      const isIdleAndUntouched =
+        !formDirtyRef.current &&
+        !submitInFlightRef.current &&
+        !formHasValuesRef.current;
+
+      if (isIdleAndUntouched) {
+        restoreDraft(draft);
+      } else {
+        setPendingRecoverableDraft(draft);
+        addToast({
+          type: "error",
+          message: `พบเคส HN: ${draft.hn} ที่ซิงค์ไม่สำเร็จ สามารถกดกู้คืนข้อมูลร่างได้ด้านบน`,
+          duration: 5000,
+        });
+      }
+    };
+
+    const failedDraft = typeof getLatestFailedSubmitDraft === "function" ? getLatestFailedSubmitDraft() : null;
+    if (failedDraft) {
+      void Promise.resolve().then(() => handleRecoveredDraft(failedDraft));
+    } else if (typeof reconcileReloadedSubmitDrafts === "function") {
+      void reconcileReloadedSubmitDrafts().then((reconciledDraft) => {
+        if (reconciledDraft) {
+          handleRecoveredDraft(reconciledDraft);
+        }
+      });
+    }
+    const unsubscribeFailed =
+      typeof subscribeToFailedSubmitDrafts === "function"
+        ? subscribeToFailedSubmitDrafts((draft) => {
+            handleRecoveredDraft(draft);
+          })
+        : () => {};
     return () => {
       isMountedRef.current = false;
+      unsubscribeFailed();
       if (redirectTimerRef.current !== null) {
         clearTimeout(redirectTimerRef.current);
         redirectTimerRef.current = null;
       }
     };
-  }, []);
+  }, [addToast, restoreDraft, setPendingRecoverableDraft]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -184,8 +479,8 @@ export default function SubmitPage() {
   const inputClasses = (fieldName: string) =>
     `w-full px-3 py-2.5 border rounded-[6px] focus:outline-none focus:ring-2 transition-colors duration-200 text-sm ${
       errors[fieldName]
-        ? "border-bad focus:border-bad focus:ring-bad/25 bg-bad-soft text-ink placeholder-muted"
-        : "border-rule-2 bg-paper-3 text-ink placeholder-muted focus:border-accent focus:ring-accent/25 hover:border-muted"
+        ? "border-bad focus:border-bad focus:ring-bad/25 bg-bad-soft text-ink placeholder:text-ink-2/70"
+        : "border-rule-2 bg-paper-3 text-ink placeholder:text-muted focus:border-accent focus:ring-accent/25 hover:border-muted"
     }`;
 
   const labelClasses = "flex items-center gap-1.5 text-xs font-medium mb-2 text-ink-2";
@@ -206,7 +501,58 @@ export default function SubmitPage() {
         </div>
 
         <div className="p-5 md:p-6 rounded-[10px] relative z-0 border border-rule bg-paper-2 transition-colors">
-          <form className="space-y-5">
+          {pendingRecoverableDraft && (
+            <div
+              role="region"
+              aria-label="กู้คืนข้อมูลร่างเคส"
+              className="mb-4 p-3 rounded-[6px] border border-bad/40 bg-bad-soft flex flex-wrap items-center justify-between gap-2"
+            >
+              <p className="text-xs font-medium text-ink">
+                พบข้อมูลเคสที่ส่งไม่สำเร็จก่อนหน้านี้ (HN:{" "}
+                <span className="measured font-semibold">{pendingRecoverableDraft.hn}</span>)
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => restoreDraft(pendingRecoverableDraft, { silentToast: true })}
+                  className="px-2.5 py-1 rounded-[6px] text-xs font-medium bg-accent text-accent-ink hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                >
+                  กู้คืนข้อมูลร่าง
+                </button>
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => {
+                    if (typeof clearRetainedSubmitDraft === "function") {
+                      clearRetainedSubmitDraft(pendingRecoverableDraft.id);
+                    }
+                    const nextDraft =
+                      typeof getLatestFailedSubmitDraft === "function"
+                        ? getLatestFailedSubmitDraft()
+                        : null;
+                    if (nextDraft && nextDraft.id !== pendingRecoverableDraft.id) {
+                      handledFailedIdsRef.current.add(nextDraft.id);
+                      setPendingRecoverableDraft(nextDraft);
+                    } else {
+                      setPendingRecoverableDraft(null);
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-[6px] text-xs font-medium border border-rule-2 bg-paper-3 text-ink-2 hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  ละทิ้งร่าง
+                </button>
+              </div>
+            </div>
+          )}
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSubmit(false);
+            }}
+            className="space-y-5"
+          >
             <fieldset disabled={isLoading} className="space-y-5">
               {/* Step 1: HN + Name row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -222,16 +568,21 @@ export default function SubmitPage() {
                     type="text"
                     id="hn"
                     inputMode="numeric"
+                    pattern="[0-9]*"
                     value={hn}
+                    aria-invalid={Boolean(errors.hn)}
+                    aria-describedby={errors.hn ? "hn-error" : undefined}
                     onChange={(e) => {
-                      setHn(e.target.value);
+                      formDirtyRef.current = true;
+                      const digitsOnly = e.target.value.replace(/\D/g, "");
+                      setHn(digitsOnly);
                       if (errors.hn) setErrors((prev) => { const n = { ...prev }; delete n.hn; return n; });
                     }}
                     className={`${inputClasses("hn")} measured`}
                     placeholder="เช่น 1234567"
                     required
                   />
-                  {errors.hn && <p className="text-bad text-xs mt-1 font-medium">{errors.hn}</p>}
+                  {errors.hn && <p id="hn-error" className="text-bad text-xs mt-1 font-medium">{errors.hn}</p>}
                 </div>
                 <div>
                   <label htmlFor="firstName" className={labelClasses}>
@@ -244,7 +595,10 @@ export default function SubmitPage() {
                     type="text"
                     id="firstName"
                     value={firstName}
+                    aria-invalid={Boolean(errors.firstName)}
+                    aria-describedby={errors.firstName ? "firstName-error" : undefined}
                     onChange={(e) => {
+                      formDirtyRef.current = true;
                       setFirstName(e.target.value);
                       if (errors.firstName) setErrors((prev) => { const n = { ...prev }; delete n.firstName; return n; });
                     }}
@@ -252,7 +606,7 @@ export default function SubmitPage() {
                     placeholder="ชื่อผู้ป่วย"
                     required
                   />
-                  {errors.firstName && <p className="text-bad text-xs mt-1 font-medium">{errors.firstName}</p>}
+                  {errors.firstName && <p id="firstName-error" className="text-bad text-xs mt-1 font-medium">{errors.firstName}</p>}
                 </div>
                 <div>
                   <label htmlFor="lastName" className={labelClasses}>
@@ -265,7 +619,10 @@ export default function SubmitPage() {
                     type="text"
                     id="lastName"
                     value={lastName}
+                    aria-invalid={Boolean(errors.lastName)}
+                    aria-describedby={errors.lastName ? "lastName-error" : undefined}
                     onChange={(e) => {
+                      formDirtyRef.current = true;
                       setLastName(e.target.value);
                       if (errors.lastName) setErrors((prev) => { const n = { ...prev }; delete n.lastName; return n; });
                     }}
@@ -273,7 +630,7 @@ export default function SubmitPage() {
                     placeholder="นามสกุลผู้ป่วย"
                     required
                   />
-                  {errors.lastName && <p className="text-bad text-xs mt-1 font-medium">{errors.lastName}</p>}
+                  {errors.lastName && <p id="lastName-error" className="text-bad text-xs mt-1 font-medium">{errors.lastName}</p>}
                 </div>
               </div>
 
@@ -289,21 +646,24 @@ export default function SubmitPage() {
                 <select
                   id="room"
                   value={room}
+                  aria-invalid={Boolean(errors.room)}
+                  aria-describedby={errors.room ? "room-error" : undefined}
                   onChange={(e) => {
+                    formDirtyRef.current = true;
                     setRoom(e.target.value as RoomName | "");
                     if (errors.room) setErrors((prev) => { const n = { ...prev }; delete n.room; return n; });
                   }}
                   className={inputClasses("room")}
                   required
                 >
-                  <option value="">เลือกห้องตรวจ</option>
+                  <option value="" className="bg-paper-2 text-muted">เลือกห้องตรวจ</option>
                   {ROOMS.map((r) => (
-                    <option key={r} value={r}>
+                    <option key={r} value={r} className="bg-paper-2 text-ink">
                       {r}
                     </option>
                   ))}
                 </select>
-                {errors.room && <p className="text-bad text-xs mt-1 font-medium">{errors.room}</p>}
+                {errors.room && <p id="room-error" className="text-bad text-xs mt-1 font-medium">{errors.room}</p>}
               </div>
 
               {/* Step 3: Problem */}
@@ -317,7 +677,10 @@ export default function SubmitPage() {
                 <textarea
                   id="problem"
                   value={problem}
+                  aria-invalid={Boolean(errors.problem)}
+                  aria-describedby={errors.problem ? "problem-error" : undefined}
                   onChange={(e) => {
+                    formDirtyRef.current = true;
                     setProblem(e.target.value);
                     if (errors.problem) setErrors((prev) => { const n = { ...prev }; delete n.problem; return n; });
                   }}
@@ -326,7 +689,7 @@ export default function SubmitPage() {
                   placeholder="เช่น TBI with GCS 9, Blunt abdomen…"
                   required
                 />
-                {errors.problem && <p className="text-bad text-xs mt-1 font-medium">{errors.problem}</p>}
+                {errors.problem && <p id="problem-error" className="text-bad text-xs mt-1 font-medium">{errors.problem}</p>}
               </div>
 
               {/* Step 4: Departments */}
@@ -360,10 +723,10 @@ export default function SubmitPage() {
                       />
                       <label
                         htmlFor={dept}
-                        className={`flex items-center justify-center gap-1.5 p-2.5 rounded-[6px] border cursor-pointer transition-colors duration-200 font-medium text-xs whitespace-nowrap peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus ${
+                        className={`flex items-center justify-center gap-1.5 p-2.5 min-h-[42px] rounded-[6px] border cursor-pointer transition-colors duration-200 font-medium text-xs whitespace-nowrap peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus ${
                           selectedDepts.includes(dept)
                             ? "bg-ok text-paper border-ok"
-                            : "bg-paper-3 text-ink-2 border-rule-2 hover:border-ok/60 hover:text-ink"
+                            : "bg-paper-3 text-ink border-rule-2 hover:border-ok/60 hover:bg-paper-2"
                         }`}
                       >
                         {selectedDepts.includes(dept) && (
@@ -389,6 +752,17 @@ export default function SubmitPage() {
                     </p>
                   </div>
                 )}
+                {duplicatePendingMatches.length > 0 && (
+                  <div role="alert" className="mt-2 p-2.5 rounded-[6px] border bg-accent-soft border-accent/40">
+                    <p className="text-xs font-medium text-accent">
+                      คำเตือน: HN {hn.trim()} มีเคสรอปรึกษาค้างอยู่แล้วในแผนก{" "}
+                      <span className="font-semibold text-ink">
+                        {duplicatePendingMatches.map((m) => `${m.dept} (${m.room})`).join(", ")}
+                      </span>{" "}
+                      (กรุณาตรวจสอบก่อนส่งซ้ำ)
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Submit buttons */}
@@ -396,8 +770,7 @@ export default function SubmitPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-2">
                     <button
-                      type="button"
-                      onClick={() => handleSubmit(false)}
+                      type="submit"
                       disabled={isLoading}
                       className={`w-full font-medium py-3 px-2.5 sm:px-4 rounded-[6px] transition-opacity duration-200 text-sm flex items-center justify-center gap-1.5 sm:gap-2 tap-feedback whitespace-nowrap ${
                         isLoading

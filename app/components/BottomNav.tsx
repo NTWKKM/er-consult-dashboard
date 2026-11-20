@@ -2,44 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "../contexts/AuthContext";
-import { useEffect, useState } from "react";
-import { subscribeToConsultsByStatus } from "@/lib/db";
+import { usePendingConsults } from "../contexts/ConsultsContext";
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const { user } = useAuth();
-  const [pendingCount, setPendingCount] = useState(0);
-
-  // Subscribe to pending count for mobile badge only when authenticated and viewport is below lg breakpoint
-  useEffect(() => {
-    if (!user || typeof window === "undefined") return;
-
-    const mediaQuery = window.matchMedia?.("(max-width: 1023px)");
-    let unsubscribe: (() => void) | null = null;
-
-    const syncSubscription = () => {
-      const isMobile = mediaQuery ? mediaQuery.matches : true;
-      if (isMobile && !unsubscribe) {
-        unsubscribe = subscribeToConsultsByStatus(
-          "pending",
-          (data) => setPendingCount(data.length),
-          () => {} // silently ignore errors for badge
-        );
-      } else if (!isMobile && unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
-      }
-    };
-
-    syncSubscription();
-    mediaQuery?.addEventListener?.("change", syncSubscription);
-
-    return () => {
-      mediaQuery?.removeEventListener?.("change", syncSubscription);
-      unsubscribe?.();
-    };
-  }, [user]);
+  const { cases } = usePendingConsults();
+  const pendingCount = cases.length;
 
   const isHome = pathname === "/";
   const isSubmit = pathname === "/submit";

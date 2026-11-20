@@ -1,10 +1,11 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type UpdateData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type QueryConstraint, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
 import { ConsultSchema, type Consult, type ConsultDepartment, type ConsultTransfer } from "./schema";
-import { ZodError } from "zod";
+import { isSubmissionBlockedByLogout } from "./logoutReservation";
+import { z, ZodError } from "zod";
 
 export type { Consult, ConsultDepartment, ConsultTransfer };
 
@@ -199,36 +200,71 @@ export async function fetchCompletedConsultsPage(
  * Search completed consults by exact HN or date range.
  * This provides server-side filtering to bypass pagination limitations.
  */
+export const MAX_HN_SEARCH_RESULTS = 100;
+
+export interface SearchCompletedConsultsResult {
+    consults: Consult[];
+    truncated: boolean;
+    hasMore: boolean;
+    lastDoc: QueryDocumentSnapshot<DocumentData> | null;
+}
+
 export async function searchCompletedConsults(
     searchHN?: string,
-    filterDate?: string
-): Promise<Consult[]> {
+    filterDate?: string,
+    lastDoc?: QueryDocumentSnapshot<DocumentData>
+): Promise<SearchCompletedConsultsResult> {
     const database = requireDb();
-    let consults: Consult[] = [];
+    const trimmedHN = searchHN?.trim() ?? "";
 
-    // If searching by HN, query by exact HN with server-side status filter.
-    // NOTE: Queries on "hn" may require a composite index if you later add ordering
-    // or additional where clauses beyond status filtering.
-    if (searchHN) {
-        const q = query(
-            collection(database, COLLECTION_NAME),
-            where("hn", ">=", searchHN),
-            where("hn", "<", searchHN + "\uf8ff"),
-            where("status", "==", "completed")
-        );
+    // If searching by HN, query by prefix with server-side status (and optional date bounds)
+    // before applying a bounded limit to protect Firebase Spark Plan daily read quotas (50k reads/day).
+    if (trimmedHN) {
+        const constraints: QueryConstraint[] = [
+            where("status", "==", "completed"),
+            where("hn", ">=", trimmedHN),
+            where("hn", "<", trimmedHN + "\uf8ff"),
+        ];
+
+        if (filterDate) {
+            const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
+            constraints.push(
+                where("createdAt", ">=", start),
+                where("createdAt", "<", endExclusive)
+            );
+        }
+
+        // Preserve Firestore inequality ordering: HN range first, then createdAt when date-bounded
+        constraints.push(orderBy("hn", "asc"));
+        if (filterDate) {
+            constraints.push(orderBy("createdAt", "desc"));
+        }
+        if (lastDoc) {
+            constraints.push(startAfter(lastDoc));
+        }
+        constraints.push(limit(MAX_HN_SEARCH_RESULTS + 1));
+
+        const q = query(collection(database, COLLECTION_NAME), ...constraints);
         const snapshot = await getDocs(q);
+        const hasMore = snapshot.docs.length > MAX_HN_SEARCH_RESULTS;
+        const pageDocs = hasMore ? snapshot.docs.slice(0, MAX_HN_SEARCH_RESULTS) : snapshot.docs;
+        const nextCursor = hasMore ? (pageDocs[pageDocs.length - 1] ?? null) : null;
 
-        consults = snapshot.docs
+        let consults = pageDocs
             .map(mapDocToConsult)
             .filter((c): c is Consult => c !== null && Boolean(c.hn));
-
 
         if (filterDate) {
             const { start, endExclusive } = getUtcRangeForLocalDate(filterDate);
             consults = consults.filter(c => c.createdAt && c.createdAt >= start && c.createdAt < endExclusive);
         }
 
-        return consults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return {
+            consults: consults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+            truncated: hasMore,
+            hasMore,
+            lastDoc: nextCursor,
+        };
     }
 
     // If only filtering by date, use the existing status + createdAt index
@@ -244,13 +280,22 @@ export async function searchCompletedConsults(
         );
         
         const snapshot = await getDocs(q);
-        return snapshot.docs
-            .map(mapDocToConsult)
-            .filter((c): c is Consult => c !== null && Boolean(c.hn));
-
+        return {
+            consults: snapshot.docs
+                .map(mapDocToConsult)
+                .filter((c): c is Consult => c !== null && Boolean(c.hn)),
+            truncated: false,
+            hasMore: false,
+            lastDoc: null,
+        };
     }
 
-    return [];
+    return {
+        consults: [],
+        truncated: false,
+        hasMore: false,
+        lastDoc: null,
+    };
 }
 
 export type ExportTruncationReason = "limit_exceeded" | "unconfirmed_completeness";
@@ -267,6 +312,305 @@ export function isPermissionDeniedError(err: unknown): boolean {
 
 const pendingOptimisticWrites = new Set<Promise<unknown>>();
 let optimisticWriteSeq = 0;
+
+export function hasPendingOptimisticWrites(): boolean {
+    return pendingOptimisticWrites.size > 0;
+}
+
+export interface RetainedSubmitDraft {
+    consult: Consult;
+    status: "pending" | "failed";
+    error?: unknown;
+    replacesDraftId?: string;
+}
+
+const SUBMIT_DRAFTS_STORAGE_KEY = "er_consult_submit_drafts_v1";
+const PersistedSubmitDraftSchema = z.object({
+    consult: ConsultSchema,
+    status: z.enum(["pending", "failed"]),
+    replacesDraftId: z.string().optional(),
+});
+
+const retainedSubmitDrafts = new Map<string, RetainedSubmitDraft>();
+const activeSubmitWriteIds = new Set<string>();
+const draftTokens = new Map<string, number>();
+let submitDraftGeneration = 0;
+let nextDraftToken = 0;
+const failedDraftListeners = new Set<(draft: Consult, error?: unknown) => void>();
+let draftsHydrated = false;
+
+export function hasRetainedSubmitDrafts(): boolean {
+    ensureDraftsHydrated();
+    return retainedSubmitDrafts.size > 0;
+}
+
+export function subscribeToFailedSubmitDrafts(
+    listener: (draft: Consult, error?: unknown) => void
+): () => void {
+    failedDraftListeners.add(listener);
+    return () => {
+        failedDraftListeners.delete(listener);
+    };
+}
+
+function notifyFailedDraftListeners(draft: Consult, error?: unknown): number {
+    let notified = 0;
+    for (const listener of failedDraftListeners) {
+        notified += 1;
+        try {
+            listener(draft, error);
+        } catch {
+            // Isolate listener errors
+        }
+    }
+    return notified;
+}
+
+function persistSubmitDrafts(): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+        if (!window.sessionStorage) return false;
+        if (retainedSubmitDrafts.size === 0) {
+            window.sessionStorage.removeItem(SUBMIT_DRAFTS_STORAGE_KEY);
+            return true;
+        }
+        const serialized = Array.from(retainedSubmitDrafts.values()).map(
+            ({ consult, status, replacesDraftId }) => ({
+                consult,
+                status,
+                ...(replacesDraftId ? { replacesDraftId } : {}),
+            })
+        );
+        window.sessionStorage.setItem(SUBMIT_DRAFTS_STORAGE_KEY, JSON.stringify(serialized));
+        return true;
+    } catch {
+        // Ignore storage quota or private-browsing errors unless the caller checks the return value
+        return false;
+    }
+}
+
+function retireSupersededDraft(replacesDraftId: string | undefined, replacementId: string): void {
+    if (!replacesDraftId || replacesDraftId === replacementId) return;
+    retainedSubmitDrafts.delete(replacesDraftId);
+    activeSubmitWriteIds.delete(replacesDraftId);
+    draftTokens.delete(replacesDraftId);
+}
+
+function isUnavailableFirestoreError(err: unknown): boolean {
+    if (typeof err !== "object" || err === null) return false;
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "string" && (code === "unavailable" || code.endsWith("/unavailable"));
+}
+
+function ensureDraftsHydrated(): void {
+    if (draftsHydrated) return;
+    draftsHydrated = true;
+    if (typeof window === "undefined") return;
+    try {
+        const raw = window.sessionStorage?.getItem(SUBMIT_DRAFTS_STORAGE_KEY);
+        if (!raw) return;
+        const parsed: unknown = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return;
+        for (const item of parsed) {
+            const validated = PersistedSubmitDraftSchema.safeParse(item);
+            if (validated.success && !retainedSubmitDrafts.has(validated.data.consult.id)) {
+                retainedSubmitDrafts.set(validated.data.consult.id, {
+                    consult: validated.data.consult,
+                    status: validated.data.status,
+                    ...(validated.data.replacesDraftId
+                        ? { replacesDraftId: validated.data.replacesDraftId }
+                        : {}),
+                });
+                draftTokens.set(validated.data.consult.id, ++nextDraftToken);
+            }
+        }
+    } catch {
+        // Ignore malformed storage entries
+    }
+}
+
+export function getLatestFailedSubmitDraft(): Consult | null {
+    ensureDraftsHydrated();
+    const supersededByPending = new Set<string>();
+    for (const entry of retainedSubmitDrafts.values()) {
+        if (entry.status === "pending" && entry.replacesDraftId) {
+            supersededByPending.add(entry.replacesDraftId);
+        }
+    }
+    let latest: Consult | null = null;
+    for (const entry of retainedSubmitDrafts.values()) {
+        if (entry.status === "failed" && !supersededByPending.has(entry.consult.id)) {
+            latest = entry.consult;
+        }
+    }
+    return latest;
+}
+
+export function getRetainedSubmitDraft(id: string): RetainedSubmitDraft | undefined {
+    ensureDraftsHydrated();
+    return retainedSubmitDrafts.get(id);
+}
+
+export function clearRetainedSubmitDraft(id?: string): void {
+    ensureDraftsHydrated();
+    if (id === undefined) {
+        submitDraftGeneration += 1;
+        retainedSubmitDrafts.clear();
+        activeSubmitWriteIds.clear();
+        draftTokens.clear();
+        persistSubmitDrafts();
+        return;
+    }
+    retainedSubmitDrafts.delete(id);
+    activeSubmitWriteIds.delete(id);
+    draftTokens.delete(id);
+    persistSubmitDrafts();
+}
+
+/**
+ * Reconciles submit drafts loaded from sessionStorage after a page reload before an
+ * optimistic write settled. Clears drafts already committed to Firestore and promotes
+ * server-confirmed missing or errored drafts to "failed" so the user can retry them.
+ */
+export async function reconcileReloadedSubmitDrafts(): Promise<Consult | null> {
+    ensureDraftsHydrated();
+    if (!db) return getLatestFailedSubmitDraft();
+
+    const captureGeneration = submitDraftGeneration;
+    const orphanedPending = Array.from(retainedSubmitDrafts.entries())
+        .filter(([id, entry]) => entry.status === "pending" && !activeSubmitWriteIds.has(id))
+        .map(([id, entry]) => ({ id, entry, token: draftTokens.get(id) }));
+
+    let mutated = false;
+    for (const { id, entry, token } of orphanedPending) {
+        const isStillOwned = () =>
+            submitDraftGeneration === captureGeneration &&
+            draftTokens.get(id) === token &&
+            retainedSubmitDrafts.has(id);
+
+        try {
+            const docSnap = await getDoc(doc(db, COLLECTION_NAME, id));
+            if (!isStillOwned()) continue;
+            if (docSnap.exists() && !docSnap.metadata?.hasPendingWrites) {
+                retainedSubmitDrafts.delete(id);
+                draftTokens.delete(id);
+                retireSupersededDraft(entry.replacesDraftId, id);
+                mutated = true;
+            } else if (!docSnap.exists() && docSnap.metadata?.fromCache === false) {
+                retainedSubmitDrafts.set(id, { ...entry, status: "failed" });
+                retireSupersededDraft(entry.replacesDraftId, id);
+                mutated = true;
+            }
+        } catch (err) {
+            if (!isStillOwned()) continue;
+            if (isUnavailableFirestoreError(err)) {
+                // Offline/unavailable read cannot confirm absence; keep pending for monitor or retry
+                continue;
+            }
+            retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
+            retireSupersededDraft(entry.replacesDraftId, id);
+            mutated = true;
+        }
+    }
+
+    if (submitDraftGeneration !== captureGeneration) {
+        return null;
+    }
+
+    if (mutated) {
+        persistSubmitDrafts();
+    }
+    return getLatestFailedSubmitDraft();
+}
+
+/**
+ * Monitors reloaded "pending" submit drafts across all routes via Firestore metadata-aware
+ * snapshot listeners until each draft either commits remotely or fails/rolls back.
+ * Invokes `onFailed` once per draft that fails after reload and keeps it retryable in sessionStorage.
+ */
+export function monitorReloadedPendingSubmitDrafts(
+    onFailed?: (draft: Consult, error?: unknown) => void
+): () => void {
+    ensureDraftsHydrated();
+    if (!db) return () => {};
+
+    const database = db;
+    const captureGeneration = submitDraftGeneration;
+    const unsubscribers: Array<() => void> = [];
+
+    for (const [id, entry] of retainedSubmitDrafts.entries()) {
+        if (entry.status !== "pending" || activeSubmitWriteIds.has(id)) {
+            continue;
+        }
+
+        const captureToken = draftTokens.get(id);
+        let settled = false;
+        let unsubscribe: (() => void) | null = null;
+        const isStillOwned = () =>
+            submitDraftGeneration === captureGeneration &&
+            draftTokens.get(id) === captureToken &&
+            retainedSubmitDrafts.has(id);
+        const finish = () => {
+            settled = true;
+            if (unsubscribe) {
+                unsubscribe();
+                unsubscribe = null;
+            }
+        };
+        const markFailed = (err?: unknown) => {
+            if (settled) return;
+            finish();
+            if (!isStillOwned()) return;
+            retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
+            retireSupersededDraft(entry.replacesDraftId, id);
+            persistSubmitDrafts();
+            onFailed?.(entry.consult, err);
+            notifyFailedDraftListeners(entry.consult, err);
+        };
+
+        unsubscribe = onSnapshot(
+            doc(database, COLLECTION_NAME, id),
+            { includeMetadataChanges: true },
+            (docSnap) => {
+                if (settled) return;
+                if (!isStillOwned()) {
+                    finish();
+                    return;
+                }
+                const hasPendingWrites = Boolean(docSnap.metadata?.hasPendingWrites);
+                if (docSnap.exists() && !hasPendingWrites) {
+                    // Server commit confirmed — remove retained draft and any draft it replaced
+                    finish();
+                    retainedSubmitDrafts.delete(id);
+                    draftTokens.delete(id);
+                    retireSupersededDraft(entry.replacesDraftId, id);
+                    persistSubmitDrafts();
+                    return;
+                }
+                if (!docSnap.exists() && !hasPendingWrites && docSnap.metadata?.fromCache === false) {
+                    // Server-confirmed missing document (queued write was rejected/rolled back)
+                    markFailed();
+                }
+            },
+            (err) => {
+                markFailed(err);
+            }
+        );
+
+        unsubscribers.push(() => {
+            if (unsubscribe) {
+                unsubscribe();
+                unsubscribe = null;
+            }
+        });
+    }
+
+    return () => {
+        for (const unsub of unsubscribers) {
+            unsub();
+        }
+    };
+}
 
 function trackOptimisticWrite<T>(promise: Promise<T>): Promise<T> {
     optimisticWriteSeq += 1;
@@ -485,7 +829,25 @@ export async function getConsultById(id: string): Promise<Consult | undefined> {
     return undefined;
 }
 
-export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promise<Consult> {
+export interface AddConsultOptions {
+    awaitRemote?: boolean;
+    replacesDraftId?: string;
+    onBackgroundError?: (
+        error: unknown,
+        draft: Consult,
+        context?: { notifiedListenerCount: number }
+    ) => void;
+    onBackgroundSuccess?: (consult: Consult) => void;
+}
+
+export async function addConsult(
+    data: Omit<Consult, "id" | "createdAt">,
+    options: AddConsultOptions = {}
+): Promise<Consult> {
+    if (isSubmissionBlockedByLogout()) {
+        throw new Error("กำลังออกจากระบบ กรุณารอสักครู่หรือรีเฟรชหน้าก่อนส่งเคสใหม่");
+    }
+    const { awaitRemote = true, replacesDraftId, onBackgroundError, onBackgroundSuccess } = options;
     const database = requireDb();
     // Generate an ID for the new document using Firestore native doc()
     const newDocRef = doc(collection(database, COLLECTION_NAME));
@@ -494,8 +856,67 @@ export async function addConsult(data: Omit<Consult, "id" | "createdAt">): Promi
         id: newDocRef.id,
         createdAt: new Date().toISOString(),
     };
-    
-    await setDoc(newDocRef, newConsult);
+
+    if (!awaitRemote) {
+        // Optimistic offline-first write: retain a retryable draft across navigation/reloads
+        // until the Firestore write settles so hospital Wi-Fi drops never lose submissions.
+        ensureDraftsHydrated();
+        const captureGeneration = submitDraftGeneration;
+        const captureToken = ++nextDraftToken;
+        draftTokens.set(newConsult.id, captureToken);
+        activeSubmitWriteIds.add(newConsult.id);
+        retainedSubmitDrafts.set(newConsult.id, {
+            consult: newConsult,
+            status: "pending",
+            ...(replacesDraftId ? { replacesDraftId } : {}),
+        });
+        const persisted = persistSubmitDrafts();
+        if (replacesDraftId && !persisted) {
+            // Abort queueing replacement write if the replacement link cannot be persisted across reloads
+            retainedSubmitDrafts.delete(newConsult.id);
+            activeSubmitWriteIds.delete(newConsult.id);
+            draftTokens.delete(newConsult.id);
+            throw new Error(
+                "ไม่สามารถบันทึกข้อมูลการส่งซ้ำลงในหน่วยความจำชั่วคราวได้ กรุณาลองใหม่อีกครั้งเมื่อกลับมาออนไลน์"
+            );
+        }
+
+        const isStillOwned = () =>
+            submitDraftGeneration === captureGeneration &&
+            draftTokens.get(newConsult.id) === captureToken &&
+            retainedSubmitDrafts.has(newConsult.id);
+
+        const writePromise = trackOptimisticWrite(setDoc(newDocRef, newConsult));
+        void writePromise.then(
+            () => {
+                activeSubmitWriteIds.delete(newConsult.id);
+                if (!isStillOwned()) return;
+                retainedSubmitDrafts.delete(newConsult.id);
+                draftTokens.delete(newConsult.id);
+                retireSupersededDraft(replacesDraftId, newConsult.id);
+                persistSubmitDrafts();
+                onBackgroundSuccess?.(newConsult);
+            },
+            (err) => {
+                activeSubmitWriteIds.delete(newConsult.id);
+                if (!isStillOwned()) return;
+                retainedSubmitDrafts.set(newConsult.id, {
+                    consult: newConsult,
+                    status: "failed",
+                    error: err,
+                    ...(replacesDraftId ? { replacesDraftId } : {}),
+                });
+                retireSupersededDraft(replacesDraftId, newConsult.id);
+                persistSubmitDrafts();
+                const notifiedListenerCount = failedDraftListeners.size;
+                onBackgroundError?.(err, newConsult, { notifiedListenerCount });
+                notifyFailedDraftListeners(newConsult, err);
+            }
+        );
+        return newConsult;
+    }
+
+    await trackOptimisticWrite(setDoc(newDocRef, newConsult));
     return newConsult;
 }
 
