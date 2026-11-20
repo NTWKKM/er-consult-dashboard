@@ -10,9 +10,20 @@ import {
   hasRetainedSubmitDrafts,
 } from "../../lib/db";
 import {
+  type LogoutReservationStore,
   releaseLogoutReservation,
   reserveSubmissionsForLogout,
 } from "../../lib/logoutReservation";
+
+type LogoutReservationActions = Pick<
+  LogoutReservationStore,
+  "reserveSubmissionsForLogout" | "releaseLogoutReservation"
+>;
+
+const DEFAULT_LOGOUT_RESERVATION_STORE: LogoutReservationActions = {
+  reserveSubmissionsForLogout,
+  releaseLogoutReservation,
+};
 
 interface AuthContextType {
   user: User | null;
@@ -173,7 +184,14 @@ async function confirmPendingWritesBeforeLogout(
   return { canProceed: true, confirmedDiscard: false };
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({
+  children,
+  reservationStore,
+}: {
+  children: React.ReactNode;
+  reservationStore?: LogoutReservationActions;
+}) {
+  const activeReservationStore = reservationStore ?? DEFAULT_LOGOUT_RESERVATION_STORE;
   const [user, setUser] = useState<User | null>(null);
   const [isAuthorizedStaff, setIsAuthorizedStaff] = useState(false);
   const [loading, setLoading] = useState(Boolean(auth));
@@ -252,7 +270,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             if (msg.activeLogoutReservationId) {
               // Newly opened or bfcache-restored tabs must respect an in-flight logout reservation
-              reserveSubmissionsForLogout(msg.activeLogoutReservationId, LOGOUT_RESERVATION_TTL_MS);
+              activeReservationStore.reserveSubmissionsForLogout(
+                msg.activeLogoutReservationId,
+                LOGOUT_RESERVATION_TTL_MS
+              );
               peerReservationsRef.current.set(msg.activeLogoutReservationId, msg.tabId);
             }
           }
@@ -264,7 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           for (const [requestId, ownerTabId] of peerReservationsRef.current.entries()) {
             if (ownerTabId === msg.tabId) {
-              releaseLogoutReservation(requestId);
+              activeReservationStore.releaseLogoutReservation(requestId);
               peerReservationsRef.current.delete(requestId);
             }
           }
@@ -272,7 +293,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         case "LOGOUT_CHECK_REQUEST":
           if (msg.senderTabId !== myTabId) {
             // Reserve peer submissions before reading dirty state so no new submit starts mid-logout check
-            reserveSubmissionsForLogout(msg.requestId, LOGOUT_RESERVATION_TTL_MS);
+            activeReservationStore.reserveSubmissionsForLogout(
+              msg.requestId,
+              LOGOUT_RESERVATION_TTL_MS
+            );
             peerReservationsRef.current.set(msg.requestId, msg.senderTabId);
             channel.postMessage({
               type: "LOGOUT_CHECK_RESPONSE",
@@ -294,14 +318,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (msg.senderTabId !== myTabId) {
             for (const requestId of msg.requestIds) {
               if (peerReservationsRef.current.get(requestId) === msg.senderTabId) {
-                reserveSubmissionsForLogout(requestId, LOGOUT_RESERVATION_TTL_MS);
+                activeReservationStore.reserveSubmissionsForLogout(
+                  requestId,
+                  LOGOUT_RESERVATION_TTL_MS
+                );
               }
             }
           }
           break;
         case "LOGOUT_RESERVATION_RELEASE":
           if (msg.senderTabId !== myTabId) {
-            releaseLogoutReservation(msg.requestId);
+            activeReservationStore.releaseLogoutReservation(msg.requestId);
             peerReservationsRef.current.delete(msg.requestId);
           }
           break;
@@ -323,7 +350,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             clearRetainedSubmitDraft();
             for (const [requestId, ownerTabId] of peerReservationsRef.current.entries()) {
               if (ownerTabId === msg.senderTabId) {
-                releaseLogoutReservation(requestId);
+                activeReservationStore.releaseLogoutReservation(requestId);
                 peerReservationsRef.current.delete(requestId);
               }
             }
@@ -400,13 +427,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       channelRef.current = null;
       peerTabs.clear();
       for (const reservationId of peerReservations.keys()) {
-        releaseLogoutReservation(reservationId);
+        activeReservationStore.releaseLogoutReservation(reservationId);
       }
       peerReservations.clear();
       pendingPeerChecks.clear();
       channel.close();
     };
-  }, []);
+  }, [activeReservationStore]);
 
   const queryPeerTabsBeforeLogout = useCallback(async (issuedRequestIds?: string[]): Promise<PeerTabDirtyState> => {
     const channel = channelRef.current;
@@ -520,14 +547,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logoutConsentedRef.current = false;
     preserveDraftOnSignOutDeclineRef.current = false;
     joinedDirtyDuringLogoutRef.current = { hasPending: false, hasDrafts: false };
-    reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
+    activeReservationStore.reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
     const issuedRequestIds: string[] = [];
     let logoutCommitted = false;
     // Periodically renew the short-lived lease while confirmation or signOut is in flight
     const renewIntervalId =
       typeof window !== "undefined"
         ? setInterval(() => {
-            reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
+            activeReservationStore.reserveSubmissionsForLogout(
+              selfReservationId,
+              LOGOUT_RESERVATION_TTL_MS
+            );
             try {
               channelRef.current?.postMessage({
                 type: "LOGOUT_RESERVATION_RENEW",
@@ -639,7 +669,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       activeLogoutReservationIdRef.current = null;
       logoutConsentedRef.current = false;
       joinedDirtyDuringLogoutRef.current = { hasPending: false, hasDrafts: false };
-      releaseLogoutReservation(selfReservationId);
+      activeReservationStore.releaseLogoutReservation(selfReservationId);
       if (!logoutCommitted) {
         for (const requestId of [selfReservationId, ...issuedRequestIds]) {
           try {
@@ -655,7 +685,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       logoutInProgressRef.current = false;
     }
-  }, [queryPeerTabsBeforeLogout]);
+  }, [queryPeerTabsBeforeLogout, activeReservationStore]);
 
   return (
     <AuthContext.Provider value={{ user, loading, isAuthorizedStaff, logout }}>

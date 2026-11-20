@@ -47,6 +47,7 @@ vi.mock("@/lib/db", () => ({
 import { AuthProvider, useAuth } from "@/app/contexts/AuthContext";
 import {
   clearAllLogoutReservationsForTests,
+  createLogoutReservationStore,
   isSubmissionBlockedByLogout,
 } from "@/lib/logoutReservation";
 
@@ -1532,14 +1533,13 @@ describe("AuthContext", () => {
   });
 
   it("includes tabId in self logout reservation IDs so overlapping attempts across tabs stay isolated", async () => {
-    const observerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
-    const observedAcks: Array<{ type: string; tabId?: string; activeLogoutReservationId?: string }> = [];
-    observerChannel.onmessage = (event) => {
-      const msg = event.data as { type: string; tabId?: string; activeLogoutReservationId?: string };
-      if (msg.type === "HELLO_ACK" && msg.activeLogoutReservationId) {
-        observedAcks.push(msg);
-      }
-    };
+    const storeA = createLogoutReservationStore();
+    const storeB = createLogoutReservationStore();
+    const storeC = createLogoutReservationStore();
+    const reserveSpyA = vi.spyOn(storeA, "reserveSubmissionsForLogout");
+    const reserveSpyB = vi.spyOn(storeB, "reserveSubmissionsForLogout");
+    const reserveSpyC = vi.spyOn(storeC, "reserveSubmissionsForLogout");
+    const releaseSpyC = vi.spyOn(storeC, "releaseLogoutReservation");
 
     let rejectSignOutA!: (err: unknown) => void;
     let resolveSignOutB!: () => void;
@@ -1560,80 +1560,92 @@ describe("AuthContext", () => {
     const logoutResultsA: unknown[] = [];
     const logoutResultsB: unknown[] = [];
 
-    try {
-      // Mount Tab A and start pending signOut #1
-      const renderA = render(
-        <AuthProvider>
-          <AuthProbe onLogoutResult={(err) => logoutResultsA.push(err)} />
-        </AuthProvider>
-      );
-      const cbA = authCallback!;
-      await act(async () => {
-        cbA(makeMockStaffUser());
-        await Promise.resolve();
-      });
-      fireEvent.click(screen.getAllByRole("button", { name: "Logout" })[0]);
-      await waitFor(() => {
-        expect(mockSignOut).toHaveBeenCalledTimes(1);
-      });
+    // Mount Tab A with its own isolated reservation store and start pending signOut #1
+    const renderA = render(
+      <AuthProvider reservationStore={storeA}>
+        <AuthProbe onLogoutResult={(err) => logoutResultsA.push(err)} />
+      </AuthProvider>
+    );
+    const cbA = authCallback!;
+    await act(async () => {
+      cbA(makeMockStaffUser());
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Logout" })[0]);
+    await waitFor(() => {
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
+    const resIdA = reserveSpyA.mock.calls.find(([id]) => id.startsWith("self-logout-"))?.[0];
+    expect(resIdA).toBeDefined();
+    expect(storeA.isSubmissionBlockedByLogout()).toBe(true);
+    expect(storeC.isSubmissionBlockedByLogout()).toBe(false);
 
-      // Mount Tab B simultaneously and start pending signOut #2 (overlapping attempt)
-      const renderB = render(
-        <AuthProvider>
-          <AuthProbe onLogoutResult={(err) => logoutResultsB.push(err)} />
-        </AuthProvider>
-      );
-      const cbB = authCallback!;
-      await act(async () => {
-        cbB(makeMockStaffUser());
-        await Promise.resolve();
-      });
-      fireEvent.click(screen.getAllByRole("button", { name: "Logout" })[1]);
-      await waitFor(() => {
-        expect(mockSignOut).toHaveBeenCalledTimes(2);
-      });
+    // Mount Tab B with its own isolated store simultaneously and start pending signOut #2
+    const renderB = render(
+      <AuthProvider reservationStore={storeB}>
+        <AuthProbe onLogoutResult={(err) => logoutResultsB.push(err)} />
+      </AuthProvider>
+    );
+    const cbB = authCallback!;
+    await act(async () => {
+      cbB(makeMockStaffUser());
+      await Promise.resolve();
+    });
+    reserveSpyB.mockClear();
+    fireEvent.click(screen.getAllByRole("button", { name: "Logout" })[1]);
+    await waitFor(() => {
+      expect(mockSignOut).toHaveBeenCalledTimes(2);
+    });
+    const resIdB = reserveSpyB.mock.calls.find(([id]) => id.startsWith("self-logout-"))?.[0];
+    expect(resIdB).toBeDefined();
+    expect(resIdB).not.toBe(resIdA);
+    expect(storeB.isSubmissionBlockedByLogout()).toBe(true);
+    expect(storeC.isSubmissionBlockedByLogout()).toBe(false);
 
-      // Mount third receiving Tab C while BOTH A and B have signOut pending
-      const renderC = render(
-        <AuthProvider>
-          <AuthProbe />
-        </AuthProvider>
-      );
+    // Mount third receiving Tab C with its own isolated store while BOTH A and B have signOut pending
+    const renderC = render(
+      <AuthProvider reservationStore={storeC}>
+        <AuthProbe />
+      </AuthProvider>
+    );
 
-      await waitFor(() => {
-        const distinctIds = new Set(observedAcks.map((m) => m.activeLogoutReservationId));
-        expect(distinctIds.size).toBe(2);
-        expect(isSubmissionBlockedByLogout()).toBe(true);
-      });
+    await waitFor(() => {
+      const reservedByC = reserveSpyC.mock.calls.map(([id]) => id);
+      expect(reservedByC).toContain(resIdA);
+      expect(reservedByC).toContain(resIdB);
+      expect(storeC.isSubmissionBlockedByLogout()).toBe(true);
+    });
 
-      // Reject first attempt (Tab A) while Tab B remains pending -> submissions MUST stay blocked in Tab C
-      const firstErr = new Error("signOut-a-failed");
-      await act(async () => {
-        rejectSignOutA(firstErr);
-        await Promise.resolve();
-      });
-      await waitFor(() => {
-        expect(logoutResultsA).toHaveLength(1);
-      });
-      expect(logoutResultsA[0]).toBe(firstErr);
-      expect(isSubmissionBlockedByLogout()).toBe(true);
+    // Reject first attempt (Tab A) and wait for Tab C to process A's release;
+    // Tab C's isolated store MUST remain blocked solely because Tab B is still pending
+    const firstErr = new Error("signOut-a-failed");
+    await act(async () => {
+      rejectSignOutA(firstErr);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(logoutResultsA).toHaveLength(1);
+      expect(releaseSpyC.mock.calls.map(([id]) => id)).toContain(resIdA);
+    });
+    expect(logoutResultsA[0]).toBe(firstErr);
+    expect(storeC.isSubmissionBlockedByLogout()).toBe(true);
 
-      // Now resolve second attempt (Tab B) -> submissions resume cleanly
-      await act(async () => {
-        resolveSignOutB();
-        await Promise.resolve();
-      });
-      await waitFor(() => {
-        expect(logoutResultsB).toHaveLength(1);
-        expect(isSubmissionBlockedByLogout()).toBe(false);
-      });
-      expect(logoutResultsB[0]).toBeNull();
+    // Now resolve second attempt (Tab B) and verify Tab C processes B's release and unblocks
+    await act(async () => {
+      resolveSignOutB();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(logoutResultsB).toHaveLength(1);
+      expect(releaseSpyC.mock.calls.map(([id]) => id)).toContain(resIdB);
+      expect(storeC.isSubmissionBlockedByLogout()).toBe(false);
+    });
+    expect(logoutResultsB[0]).toBeNull();
+    expect(storeA.isSubmissionBlockedByLogout()).toBe(false);
+    expect(storeB.isSubmissionBlockedByLogout()).toBe(false);
 
-      renderC.unmount();
-      renderB.unmount();
-      renderA.unmount();
-    } finally {
-      observerChannel.close();
-    }
+    renderC.unmount();
+    renderB.unmount();
+    renderA.unmount();
   });
 });
