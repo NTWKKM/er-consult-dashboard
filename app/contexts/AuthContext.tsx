@@ -473,11 +473,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           logoutInProgressRef.current ||
           holdClearOnConsentTabRef.current ||
           preserveDraftOnSignOutDeclineRef.current ||
-          (helloHandshakeStateRef.current === "unknown" && hasLocalDirtyState)
+          (hasLocalDirtyState &&
+            (helloHandshakeStateRef.current === "pending" ||
+              helloHandshakeStateRef.current === "unknown"))
         ) {
           // Preserve dirty draft until consent resolves or explicit LOGOUT_CLEAR_DRAFTS arrives
-        } else if (helloHandshakeStateRef.current === "pending") {
-          pendingNullClearAfterHandshakeRef.current = true;
         } else {
           clearRetainedSubmitDraft();
         }
@@ -488,15 +488,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
-
-      if (handshakeTimerRef.current !== null) {
-        clearTimeout(handshakeTimerRef.current);
-        handshakeTimerRef.current = null;
-      }
-      helloHandshakeStateRef.current = "settled";
-      pendingNullClearAfterHandshakeRef.current = false;
-      preserveDraftOnSignOutDeclineRef.current = false;
-      holdClearOnConsentTabRef.current = null;
 
       void checkIsAuthorizedStaff(currentUser).then((authorized) => {
         if (!cancelled && generation === authGeneration) {
@@ -517,7 +508,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     if (logoutInProgressRef.current) return;
     logoutInProgressRef.current = true;
-    const selfReservationId = `self-logout-${++logoutSequenceRef.current}`;
+    const ownerTabId = tabIdRef.current || "local";
+    const selfReservationId = `self-logout-${ownerTabId}-${++logoutSequenceRef.current}`;
     activeLogoutReservationIdRef.current = selfReservationId;
     logoutConsentedRef.current = false;
     preserveDraftOnSignOutDeclineRef.current = false;

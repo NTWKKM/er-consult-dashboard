@@ -1391,7 +1391,7 @@ describe("AuthContext", () => {
       expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
       restoredRender.unmount();
 
-      // Scenario 2: Clean tab with no consent hold clears retained drafts once the 120ms handshake settles
+      // Scenario 2: Clean tab with no consent hold clears cleanly without blocking
       mockHasRetainedSubmitDrafts.mockReturnValue(false);
       render(
         <AuthProvider>
@@ -1401,11 +1401,7 @@ describe("AuthContext", () => {
       act(() => {
         authCallback!(null);
       });
-      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
-
-      await waitFor(() => {
-        expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
-      });
+      expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
     } finally {
       peerChannel.close();
     }
@@ -1472,6 +1468,135 @@ describe("AuthContext", () => {
       expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
     } finally {
       peerChannel.close();
+    }
+  });
+
+  it("does not clear handshake protection on signed-in notification before delayed HELLO_ACK and declined consent", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; hasDrafts?: boolean }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; hasDrafts?: boolean });
+    };
+
+    try {
+      mockHasRetainedSubmitDrafts.mockReturnValue(true);
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      // Tab announces HELLO on mount while holding a retained draft
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "HELLO" && m.hasDrafts === true)).toBe(true);
+      });
+
+      // Signed-in currentUser notification arrives BEFORE HELLO_ACK -> must NOT settle handshake protection
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      // Null-user notification arrives before delayed HELLO_ACK -> draft MUST remain preserved
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // Delayed HELLO_ACK arrives after handshake window, then initiator declines consent
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 150);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      peerChannel.postMessage({
+        type: "HELLO_ACK",
+        tabId: "initiator-after-signin",
+        activeLogoutReservationId: "init-res-after-signin",
+        awaitConsentBeforeClear: true,
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+      peerChannel.postMessage({
+        type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
+        senderTabId: "initiator-after-signin",
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("includes tabId in self logout reservation IDs so multiple tabs do not collide", async () => {
+    const channelA = new BroadcastChannel("er_consult_auth_sync_v1");
+    const messagesSeenByA: Array<{ type: string; activeLogoutReservationId?: string }> = [];
+    channelA.onmessage = (event) => {
+      messagesSeenByA.push(event.data as { type: string; activeLogoutReservationId?: string });
+    };
+
+    let resolveSignOutA!: () => void;
+    let resolveSignOutB!: () => void;
+    mockSignOut
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSignOutA = resolve; }))
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSignOutB = resolve; }));
+
+    try {
+      const renderA = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+      const cbA = authCallback!;
+      await act(async () => {
+        cbA(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+      });
+      channelA.postMessage({ type: "HELLO", tabId: "observer-a" });
+      await waitFor(() => {
+        expect(messagesSeenByA.some((m) => m.type === "HELLO_ACK" && m.activeLogoutReservationId)).toBe(true);
+      });
+      const resIdA = messagesSeenByA.find((m) => m.type === "HELLO_ACK" && m.activeLogoutReservationId)
+        ?.activeLogoutReservationId;
+      renderA.unmount();
+      resolveSignOutA();
+
+      messagesSeenByA.length = 0;
+      const renderB = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+      const cbB = authCallback!;
+      await act(async () => {
+        cbB(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(2);
+      });
+      channelA.postMessage({ type: "HELLO", tabId: "observer-b" });
+      await waitFor(() => {
+        expect(messagesSeenByA.some((m) => m.type === "HELLO_ACK" && m.activeLogoutReservationId)).toBe(true);
+      });
+      const resIdB = messagesSeenByA.find((m) => m.type === "HELLO_ACK" && m.activeLogoutReservationId)
+        ?.activeLogoutReservationId;
+      renderB.unmount();
+      resolveSignOutB();
+
+      expect(resIdA).toBeDefined();
+      expect(resIdB).toBeDefined();
+      expect(resIdA).not.toBe(resIdB);
+    } finally {
+      channelA.close();
     }
   });
 });
