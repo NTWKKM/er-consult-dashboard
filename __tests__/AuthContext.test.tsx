@@ -1780,11 +1780,25 @@ describe("AuthContext", () => {
         expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
       });
 
-      // Move close to expiry, wait for a deferred renewal tick, then move past the original TTL
-      offsetMs = 4000;
-      await new Promise<void>((resolve) => setTimeout(resolve, 2300));
-      offsetMs = 6000;
+      // Jump the clock far past the TTL without letting any renewal callback run
+      offsetMs = 60_000;
       expect(isSubmissionBlockedByLogout()).toBe(true);
+      const actualDb = await vi.importActual<typeof import("@/lib/db")>("@/lib/db");
+      await expect(
+        actualDb.addConsult(
+          {
+            hn: "737373",
+            firstName: "Ttl",
+            lastName: "Jump",
+            room: "NT",
+            problem: "Should stay blocked",
+            isUrgent: false,
+            status: "pending",
+            departments: { "Gen Sx": { status: "pending", completedAt: null } },
+          },
+          { awaitRemote: false }
+        )
+      ).rejects.toThrow(/กำลังออกจากระบบ/);
 
       await act(async () => {
         authCallback!(null);
