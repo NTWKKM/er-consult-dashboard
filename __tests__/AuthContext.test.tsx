@@ -1608,6 +1608,11 @@ describe("AuthContext", () => {
         <AuthProbe />
       </AuthProvider>
     );
+    const cbC = authCallback!;
+    await act(async () => {
+      cbC(makeMockStaffUser());
+      await Promise.resolve();
+    });
 
     await waitFor(() => {
       const reservedByC = reserveSpyC.mock.calls.map(([id]) => id);
@@ -1616,8 +1621,31 @@ describe("AuthContext", () => {
       expect(storeC.isSubmissionBlockedByLogout()).toBe(true);
     });
 
-    // Reject first attempt (Tab A) and wait for Tab C to process A's release;
-    // Tab C's isolated store MUST remain blocked solely because Tab B is still pending
+    // Resolve second attempt (Tab B) while Tab A remains pending
+    await act(async () => {
+      resolveSignOutB();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(logoutResultsB).toHaveLength(1);
+    });
+    expect(logoutResultsB[0]).toBeNull();
+    // Tab C has not applied its signed-out state yet, so both reservations remain active
+    expect(releaseSpyC.mock.calls.map(([id]) => id)).not.toContain(resIdB);
+    expect(storeC.isSubmissionBlockedByLogout()).toBe(true);
+
+    // Deliver null-user notification to Tab C; C releases B's reservation but still holds A's
+    await act(async () => {
+      cbC(null);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(releaseSpyC.mock.calls.map(([id]) => id)).toContain(resIdB);
+    });
+    expect(releaseSpyC.mock.calls.map(([id]) => id)).not.toContain(resIdA);
+    expect(storeC.isSubmissionBlockedByLogout()).toBe(true);
+
+    // Now reject first attempt (Tab A), deliver A's release, and verify no reservation remains
     const firstErr = new Error("signOut-a-failed");
     await act(async () => {
       rejectSignOutA(firstErr);
@@ -1626,26 +1654,93 @@ describe("AuthContext", () => {
     await waitFor(() => {
       expect(logoutResultsA).toHaveLength(1);
       expect(releaseSpyC.mock.calls.map(([id]) => id)).toContain(resIdA);
-    });
-    expect(logoutResultsA[0]).toBe(firstErr);
-    expect(storeC.isSubmissionBlockedByLogout()).toBe(true);
-
-    // Now resolve second attempt (Tab B) and verify Tab C processes B's release and unblocks
-    await act(async () => {
-      resolveSignOutB();
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(logoutResultsB).toHaveLength(1);
-      expect(releaseSpyC.mock.calls.map(([id]) => id)).toContain(resIdB);
       expect(storeC.isSubmissionBlockedByLogout()).toBe(false);
     });
-    expect(logoutResultsB[0]).toBeNull();
-    expect(storeA.isSubmissionBlockedByLogout()).toBe(false);
+    expect(logoutResultsA[0]).toBe(firstErr);
     expect(storeB.isSubmissionBlockedByLogout()).toBe(false);
+
+    // Deliver null-user notification to Tab A so its deferred release of B's clear settles too
+    await act(async () => {
+      cbA(null);
+      await Promise.resolve();
+    });
+    expect(storeA.isSubmissionBlockedByLogout()).toBe(false);
 
     renderC.unmount();
     renderB.unmount();
     renderA.unmount();
   });
+
+  it("keeps receiving tab submission guard active across LOGOUT_CLEAR_DRAFTS until null-user notification arrives", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const responses: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      responses.push(event.data as { type: string; requestId?: string });
+    };
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_CHECK_REQUEST",
+        requestId: "clear-before-null-req",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(
+          responses.some(
+            (m) => m.type === "LOGOUT_CHECK_RESPONSE" && m.requestId === "clear-before-null-req"
+          )
+        ).toBe(true);
+      });
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+
+      // Deliver LOGOUT_CLEAR_DRAFTS before onAuthStateChanged delivers null user
+      peerChannel.postMessage({
+        type: "LOGOUT_CLEAR_DRAFTS",
+        senderTabId: "initiating-tab",
+      });
+      await waitFor(() => {
+        expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
+      });
+
+      // Submission guard must remain active until this tab applies its signed-out state
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+      const actualDb = await vi.importActual<typeof import("@/lib/db")>("@/lib/db");
+      await expect(
+        actualDb.addConsult(
+          {
+            hn: "828282",
+            firstName: "Clear",
+            lastName: "BeforeNull",
+            room: "NT",
+            problem: "Should be blocked until null user arrives",
+            isUrgent: false,
+            status: "pending",
+            departments: { "Gen Sx": { status: "pending", completedAt: null } },
+          },
+          { awaitRemote: false }
+        )
+      ).rejects.toThrow(/กำลังออกจากระบบ/);
+
+      // Once null-user notification arrives, signed-out state is applied and guard releases
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      expect(isSubmissionBlockedByLogout()).toBe(false);
+    } finally {
+      peerChannel.close();
+    }
+  }, 15000);
 });

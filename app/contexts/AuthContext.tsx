@@ -192,9 +192,14 @@ export function AuthProvider({
   reservationStore?: LogoutReservationActions;
 }) {
   const activeReservationStore = reservationStore ?? DEFAULT_LOGOUT_RESERVATION_STORE;
+  const activeReservationStoreRef = useRef(activeReservationStore);
+  useEffect(() => {
+    activeReservationStoreRef.current = activeReservationStore;
+  }, [activeReservationStore]);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthorizedStaff, setIsAuthorizedStaff] = useState(false);
   const [loading, setLoading] = useState(Boolean(auth));
+  const signedOutAppliedRef = useRef(!auth);
   const logoutInProgressRef = useRef(false);
   const logoutSequenceRef = useRef(0);
   const activeLogoutReservationIdRef = useRef<string | null>(null);
@@ -212,6 +217,7 @@ export function AuthProvider({
   const channelRef = useRef<BroadcastChannel | null>(null);
   const peerTabsRef = useRef<Set<string>>(new Set());
   const peerReservationsRef = useRef<Map<string, string>>(new Map());
+  const pendingSignedOutReservationsRef = useRef<Set<string>>(new Set());
   const pendingPeerChecksRef = useRef<
     Map<string, (response: { tabId: string; hasPending: boolean; hasDrafts: boolean }) => void>
   >(new Map());
@@ -350,7 +356,11 @@ export function AuthProvider({
             clearRetainedSubmitDraft();
             for (const [requestId, ownerTabId] of peerReservationsRef.current.entries()) {
               if (ownerTabId === msg.senderTabId) {
-                activeReservationStore.releaseLogoutReservation(requestId);
+                if (signedOutAppliedRef.current) {
+                  activeReservationStore.releaseLogoutReservation(requestId);
+                } else {
+                  pendingSignedOutReservationsRef.current.add(requestId);
+                }
                 peerReservationsRef.current.delete(requestId);
               }
             }
@@ -413,6 +423,7 @@ export function AuthProvider({
 
     const peerTabs = peerTabsRef.current;
     const peerReservations = peerReservationsRef.current;
+    const pendingSignedOutReservations = pendingSignedOutReservationsRef.current;
     const pendingPeerChecks = pendingPeerChecksRef.current;
     return () => {
       window.removeEventListener("pageshow", handlePageShow);
@@ -430,6 +441,10 @@ export function AuthProvider({
         activeReservationStore.releaseLogoutReservation(reservationId);
       }
       peerReservations.clear();
+      for (const reservationId of pendingSignedOutReservations.values()) {
+        activeReservationStore.releaseLogoutReservation(reservationId);
+      }
+      pendingSignedOutReservations.clear();
       pendingPeerChecks.clear();
       channel.close();
     };
@@ -515,13 +530,19 @@ export function AuthProvider({
           clearRetainedSubmitDraft();
         }
         if (!cancelled && generation === authGeneration) {
+          signedOutAppliedRef.current = true;
           setUser(null);
           setIsAuthorizedStaff(false);
           setLoading(false);
+          for (const reservationId of pendingSignedOutReservationsRef.current) {
+            activeReservationStoreRef.current.releaseLogoutReservation(reservationId);
+          }
+          pendingSignedOutReservationsRef.current.clear();
         }
         return;
       }
 
+      signedOutAppliedRef.current = false;
       void checkIsAuthorizedStaff(currentUser).then((authorized) => {
         if (!cancelled && generation === authGeneration) {
           setUser(currentUser);
