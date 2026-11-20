@@ -65,6 +65,13 @@ describe("AuthContext", () => {
   const originalLocation = window.location;
   const reloadSpy = vi.fn();
 
+  const makeMockStaffUser = () => ({
+    uid: "staff-1",
+    email: "staff@mnrh.com",
+    emailVerified: true,
+    getIdTokenResult: vi.fn().mockResolvedValue({ claims: { staff: true } }),
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     authCallback = null;
@@ -144,8 +151,9 @@ describe("AuthContext", () => {
       </AuthProvider>
     );
 
-    act(() => {
-      authCallback!(null);
+    await act(async () => {
+      authCallback!(makeMockStaffUser());
+      await Promise.resolve();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
@@ -174,8 +182,9 @@ describe("AuthContext", () => {
         </AuthProvider>
       );
 
-      act(() => {
-        authCallback!(null);
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
       });
 
       await act(async () => {
@@ -184,6 +193,7 @@ describe("AuthContext", () => {
       });
 
       expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
       expect(mockSignOut).not.toHaveBeenCalled();
       expect(mockTerminate).not.toHaveBeenCalled();
       expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
@@ -208,8 +218,9 @@ describe("AuthContext", () => {
         </AuthProvider>
       );
 
-      act(() => {
-        authCallback!(null);
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
       });
 
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
@@ -238,8 +249,9 @@ describe("AuthContext", () => {
       </AuthProvider>
     );
 
-    act(() => {
-      authCallback!(null);
+    await act(async () => {
+      authCallback!(makeMockStaffUser());
+      await Promise.resolve();
     });
 
     // First attempt: user declines discarding failed draft recovery data
@@ -279,8 +291,9 @@ describe("AuthContext", () => {
         </AuthProvider>
       );
 
-      act(() => {
-        authCallback!(null);
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
       });
 
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
@@ -314,8 +327,9 @@ describe("AuthContext", () => {
       </AuthProvider>
     );
 
-    act(() => {
-      authCallback!(null);
+    await act(async () => {
+      authCallback!(makeMockStaffUser());
+      await Promise.resolve();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
@@ -334,5 +348,91 @@ describe("AuthContext", () => {
     expect(mockSignOut).not.toHaveBeenCalled();
     expect(mockTerminate).not.toHaveBeenCalled();
     expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+  });
+
+  it("clears retained drafts when another tab signs out and Firebase delivers null user", async () => {
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await act(async () => {
+      authCallback!(makeMockStaffUser());
+      await Promise.resolve();
+    });
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+    // Another tab calls signOut() -> this tab receives null in onAuthStateChanged
+    act(() => {
+      authCallback!(null);
+    });
+
+    expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("uid")).toHaveTextContent("null");
+    expect(screen.getByTestId("staff")).toHaveTextContent("false");
+  });
+
+  it("coordinates draft-discard checks across peer tabs before logout completes", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; senderTabId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string; senderTabId?: string };
+      peerMessages.push(msg);
+      if (msg.type === "HELLO") {
+        peerChannel.postMessage({ type: "HELLO_ACK", tabId: "peer-tab-2" });
+      } else if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "peer-tab-2",
+          hasPending: false,
+          hasDrafts: true,
+        });
+      }
+    };
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      // Allow BroadcastChannel HELLO / HELLO_ACK handshake to settle
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "HELLO")).toBe(true);
+      });
+
+      // Local tab has no drafts, but peer-tab-2 reports retained drafts -> prompts & aborts on Cancel
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+        await new Promise((r) => setTimeout(r, 20));
+      });
+
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("ข้อมูลร่าง"));
+      expect(mockSignOut).not.toHaveBeenCalled();
+      expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(false);
+
+      // User confirms -> clears drafts locally and broadcasts LOGOUT_CLEAR_DRAFTS to peer tab
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(2);
+        expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+        expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(true);
+      });
+    } finally {
+      peerChannel.close();
+    }
   });
 });

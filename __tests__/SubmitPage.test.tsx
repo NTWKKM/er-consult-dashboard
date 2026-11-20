@@ -53,6 +53,7 @@ function fillValidSubmitForm() {
 describe("SubmitPage mount and redirect safety", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAddConsult.mockReset();
     mockPendingCases = [];
     mockIsOnline = true;
     vi.useFakeTimers();
@@ -620,6 +621,225 @@ describe("SubmitPage mount and redirect safety", () => {
     expect(screen.getByText("909090")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /กู้คืนข้อมูลร่าง/ })).toBeInTheDocument();
     expect(screen.getByLabelText(/HN/i)).toHaveValue("");
+    expect(screen.getByRole("button", { name: /ส่ง Consult/i })).not.toBeDisabled();
+  });
+
+  it("does not assign retry identity when showing banner over a dirty form, while manual and auto-restore preserve retry identity", async () => {
+    mockIsOnline = false;
+    let onBgError1: ((err: unknown, draft: Consult) => void) | undefined;
+    const failedDraft1 = makeConsult({
+      id: "banner-only-draft-1",
+      hn: "123456",
+      firstName: "สมชาย",
+      lastName: "ใจดี",
+      room: "Resus Team 1",
+      problem: "First case",
+      departments: { "Gen Sx": { status: "pending", completedAt: null } },
+    });
+    mockAddConsult
+      .mockImplementationOnce(async (_payload, options) => {
+        onBgError1 = options?.onBackgroundError;
+        return failedDraft1;
+      })
+      .mockResolvedValueOnce(makeConsult({ id: "unrelated-case-2", hn: "888777" }));
+
+    render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    // User starts filling an unrelated second case before failedDraft1 rejects
+    fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "888777" } });
+    fireEvent.change(screen.getByPlaceholderText("ชื่อผู้ป่วย"), { target: { value: "เคสใหม่" } });
+    fireEvent.change(screen.getByPlaceholderText("นามสกุลผู้ป่วย"), { target: { value: "ไม่เกี่ยวข้อง" } });
+    fireEvent.change(screen.getByLabelText(/ห้องตรวจ/i), { target: { value: "Urgent" } });
+    fireEvent.change(screen.getByLabelText(/รายละเอียดปัญหา/i), { target: { value: "Separate patient" } });
+    fireEvent.click(screen.getByLabelText("Ortho"));
+
+    await act(async () => {
+      onBgError1?.(new Error("offline reject"), failedDraft1);
+      await Promise.resolve();
+    });
+
+    // Recovery banner is shown for failedDraft1, and submitting the unrelated case must NOT supersede failedDraft1
+    expect(screen.getByRole("region", { name: "กู้คืนข้อมูลร่างเคส" })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalledWith("banner-only-draft-1");
+    expect(mockAddConsult).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hn: "888777" }),
+      expect.not.objectContaining({ replacesDraftId: "banner-only-draft-1" })
+    );
+
+    // Clicking restore assigns retry identity so editing & resubmitting replaces failedDraft1
+    fireEvent.click(screen.getByRole("button", { name: /กู้คืนข้อมูลร่าง/ }));
+    fireEvent.change(screen.getByLabelText(/รายละเอียดปัญหา/i), { target: { value: "Edited after banner restore" } });
+    mockAddConsult.mockResolvedValueOnce(makeConsult({ id: "retry-after-restore" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    expect(mockAddConsult).toHaveBeenLastCalledWith(
+      expect.objectContaining({ problem: "Edited after banner restore" }),
+      expect.objectContaining({ replacesDraftId: "banner-only-draft-1" })
+    );
+  });
+
+  it("preserves auto-restore retry identity when an edited auto-restored draft is resubmitted", async () => {
+    mockIsOnline = false;
+    let onBgErrorAuto: ((err: unknown, draft: Consult) => void) | undefined;
+    const autoRestoredDraft = makeConsult({
+      id: "auto-restore-draft-2",
+      hn: "555111",
+      firstName: "อัตโนมัติ",
+      lastName: "กู้คืน",
+      room: "NT",
+      problem: "Auto-restored case",
+      departments: { "Gen Sx": { status: "pending", completedAt: null } },
+    });
+    mockAddConsult.mockImplementationOnce(async (_payload, options) => {
+      onBgErrorAuto = options?.onBackgroundError;
+      return autoRestoredDraft;
+    });
+
+    render(<SubmitPage />);
+    fillValidSubmitForm();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    // Form is now blank/untouched -> background failure auto-restores into the form
+    await act(async () => {
+      onBgErrorAuto?.(new Error("offline reject"), autoRestoredDraft);
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("123456");
+
+    fireEvent.change(screen.getByLabelText(/รายละเอียดปัญหา/i), { target: { value: "Edited after auto-restore" } });
+    mockAddConsult.mockResolvedValueOnce(makeConsult({ id: "retry-after-auto" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    expect(mockAddConsult).toHaveBeenLastCalledWith(
+      expect.objectContaining({ problem: "Edited after auto-restore" }),
+      expect.objectContaining({ replacesDraftId: "auto-restore-draft-2" })
+    );
+  });
+
+  it("keeps active submit guard locked and preserves earlier failed draft when older submission fails during a newer submit", async () => {
+    let resolveReconcile!: (draft: Consult | null) => void;
+    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
+      new Promise<Consult | null>((resolve) => {
+        resolveReconcile = resolve;
+      })
+    );
+
+    let onBgError1: ((err: unknown, draft: Consult) => void) | undefined;
+    const failedDraft1 = makeConsult({
+      id: "older-offline-1",
+      hn: "222333",
+      firstName: "เคสแรก",
+      lastName: "ล้มเหลว",
+      room: "Urgent",
+      problem: "Older offline failure",
+      departments: { Ortho: { status: "pending", completedAt: null } },
+    });
+
+    let resolveSubmit2!: (c: Consult) => void;
+    mockIsOnline = false;
+    mockAddConsult
+      .mockImplementationOnce(async (_payload, options) => {
+        onBgError1 = options?.onBackgroundError;
+        return failedDraft1;
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise<Consult>((resolve) => {
+            resolveSubmit2 = resolve;
+          })
+      );
+
+    render(<SubmitPage />);
+
+    // Dirty form before reconcile finishes so seed recovery shows in banner instead of auto-restoring
+    fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "222333" } });
+    fireEvent.change(screen.getByPlaceholderText("ชื่อผู้ป่วย"), { target: { value: "เคสแรก" } });
+    fireEvent.change(screen.getByPlaceholderText("นามสกุลผู้ป่วย"), { target: { value: "ล้มเหลว" } });
+    fireEvent.change(screen.getByLabelText(/ห้องตรวจ/i), { target: { value: "Urgent" } });
+    fireEvent.change(screen.getByLabelText(/รายละเอียดปัญหา/i), { target: { value: "Older offline failure" } });
+    fireEvent.click(screen.getByLabelText("Ortho"));
+
+    await act(async () => {
+      resolveReconcile(
+        makeConsult({
+          id: "seed-recovery-0",
+          hn: "000111",
+          firstName: "เริ่มต้น",
+          lastName: "ทดสอบ",
+          room: "NT",
+          problem: "Seed recovery",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      );
+      await Promise.resolve();
+    });
+
+    // Submit 1 (offline) succeeds into queue and unlocks submit guard because seed recovery banner is pending
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    // User immediately starts Submission 2 (held pending)
+    fillValidSubmitForm();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+    const submitBtn = screen.getAllByRole("button", { name: /กำลังส่ง/ })[0];
+    expect(submitBtn).toBeDisabled();
+
+    // Older Submission 1 rejects while Submission 2 is still in-flight
+    mockAddToast.mockClear();
+    await act(async () => {
+      onBgError1?.(new Error("older offline failure"), failedDraft1);
+      await Promise.resolve();
+    });
+
+    // Earlier failed draft is preserved & reported, while Submission 2's in-flight guard stays locked!
+    expect(mockAddToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "error",
+        message: expect.stringContaining("222333"),
+      })
+    );
+    expect(screen.getByText("222333")).toBeInTheDocument();
+    expect(submitBtn).toBeDisabled();
+
+    // Double-submit click while Submission 2 is still active must remain blocked
+    fireEvent.click(submitBtn);
+    expect(mockAddConsult).toHaveBeenCalledTimes(2);
+
+    // Finish Submission 2 cleanly -> stays on /submit preserving failedDraft1 banner and unlocks form
+    await act(async () => {
+      resolveSubmit2(makeConsult({ id: "newer-online-2", hn: "123456" }));
+      await Promise.resolve();
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.getByText("222333")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /ส่ง Consult/i })).not.toBeDisabled();
   });
 });

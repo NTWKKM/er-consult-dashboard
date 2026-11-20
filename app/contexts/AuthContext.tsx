@@ -43,9 +43,31 @@ async function checkIsAuthorizedStaff(currentUser: User): Promise<boolean> {
 }
 
 const PENDING_WRITE_SYNC_TIMEOUT_MS = 1200;
+const AUTH_SYNC_CHANNEL = "er_consult_auth_sync_v1";
+const PEER_LOGOUT_CHECK_TIMEOUT_MS = 120;
+
+interface PeerTabDirtyState {
+  hasPending: boolean;
+  hasDrafts: boolean;
+}
+
+type AuthSyncMessage =
+  | { type: "HELLO"; tabId: string }
+  | { type: "HELLO_ACK"; tabId: string }
+  | { type: "BYE"; tabId: string }
+  | { type: "LOGOUT_CHECK_REQUEST"; requestId: string; senderTabId: string }
+  | {
+      type: "LOGOUT_CHECK_RESPONSE";
+      requestId: string;
+      tabId: string;
+      hasPending: boolean;
+      hasDrafts: boolean;
+    }
+  | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string };
 
 async function confirmPendingWritesBeforeLogout(
-  firestoreDb: Firestore | null
+  firestoreDb: Firestore | null,
+  queryPeerTabs?: () => Promise<PeerTabDirtyState>
 ): Promise<{ canProceed: boolean; confirmedDiscard: boolean }> {
   const confirmDiscard = (message: string) =>
     typeof window !== "undefined" &&
@@ -94,8 +116,9 @@ async function confirmPendingWritesBeforeLogout(
     writesSettled = false;
   }
 
-  const hasPending = !writesSettled;
-  const hasDrafts = hasRetainedSubmitDrafts();
+  const peerState = queryPeerTabs ? await queryPeerTabs() : { hasPending: false, hasDrafts: false };
+  const hasPending = !writesSettled || peerState.hasPending;
+  const hasDrafts = hasRetainedSubmitDrafts() || peerState.hasDrafts;
 
   if (hasPending && hasDrafts) {
     return { canProceed: confirmDiscard(combinedMessage), confirmedDiscard: true };
@@ -115,6 +138,144 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthorizedStaff, setIsAuthorizedStaff] = useState(false);
   const [loading, setLoading] = useState(Boolean(auth));
   const logoutInProgressRef = useRef(false);
+  const tabIdRef = useRef<string>("");
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const peerTabsRef = useRef<Set<string>>(new Set());
+  const pendingPeerChecksRef = useRef<
+    Map<string, (response: { tabId: string; hasPending: boolean; hasDrafts: boolean }) => void>
+  >(new Map());
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
+      return;
+    }
+
+    if (!tabIdRef.current) {
+      tabIdRef.current =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    }
+    const channel = new BroadcastChannel(AUTH_SYNC_CHANNEL);
+    channelRef.current = channel;
+    const myTabId = tabIdRef.current;
+
+    channel.onmessage = (event: MessageEvent<AuthSyncMessage>) => {
+      const msg = event.data;
+      if (!msg || typeof msg !== "object") return;
+
+      switch (msg.type) {
+        case "HELLO":
+          if (msg.tabId !== myTabId) {
+            peerTabsRef.current.add(msg.tabId);
+            channel.postMessage({ type: "HELLO_ACK", tabId: myTabId } satisfies AuthSyncMessage);
+          }
+          break;
+        case "HELLO_ACK":
+          if (msg.tabId !== myTabId) {
+            peerTabsRef.current.add(msg.tabId);
+          }
+          break;
+        case "BYE":
+          peerTabsRef.current.delete(msg.tabId);
+          break;
+        case "LOGOUT_CHECK_REQUEST":
+          if (msg.senderTabId !== myTabId) {
+            channel.postMessage({
+              type: "LOGOUT_CHECK_RESPONSE",
+              requestId: msg.requestId,
+              tabId: myTabId,
+              hasPending: hasPendingOptimisticWrites(),
+              hasDrafts: hasRetainedSubmitDrafts(),
+            } satisfies AuthSyncMessage);
+          }
+          break;
+        case "LOGOUT_CHECK_RESPONSE": {
+          const handler = pendingPeerChecksRef.current.get(msg.requestId);
+          if (handler) {
+            handler({ tabId: msg.tabId, hasPending: msg.hasPending, hasDrafts: msg.hasDrafts });
+          }
+          break;
+        }
+        case "LOGOUT_CLEAR_DRAFTS":
+          if (msg.senderTabId !== myTabId) {
+            clearRetainedSubmitDraft();
+          }
+          break;
+      }
+    };
+
+    channel.postMessage({ type: "HELLO", tabId: myTabId } satisfies AuthSyncMessage);
+
+    const notifyBye = () => {
+      try {
+        channel.postMessage({ type: "BYE", tabId: myTabId } satisfies AuthSyncMessage);
+      } catch {
+        // Ignore if channel is already closed
+      }
+    };
+    window.addEventListener("pagehide", notifyBye);
+
+    const peerTabs = peerTabsRef.current;
+    const pendingPeerChecks = pendingPeerChecksRef.current;
+    return () => {
+      window.removeEventListener("pagehide", notifyBye);
+      notifyBye();
+      channelRef.current = null;
+      peerTabs.clear();
+      pendingPeerChecks.clear();
+      channel.close();
+    };
+  }, []);
+
+  const queryPeerTabsBeforeLogout = useCallback(async (): Promise<PeerTabDirtyState> => {
+    const channel = channelRef.current;
+    const peers = peerTabsRef.current;
+    if (!channel || peers.size === 0) {
+      return { hasPending: false, hasDrafts: false };
+    }
+
+    const expectedPeers = new Set(peers);
+    const responded = new Set<string>();
+    let peerPending = false;
+    let peerDrafts = false;
+    const requestId = `${tabIdRef.current}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        pendingPeerChecksRef.current.delete(requestId);
+        for (const peerId of expectedPeers) {
+          if (!responded.has(peerId)) {
+            peerTabsRef.current.delete(peerId);
+          }
+        }
+        resolve();
+      };
+
+      const timeoutId = setTimeout(finish, PEER_LOGOUT_CHECK_TIMEOUT_MS);
+
+      pendingPeerChecksRef.current.set(requestId, ({ tabId, hasPending, hasDrafts }) => {
+        responded.add(tabId);
+        if (hasPending) peerPending = true;
+        if (hasDrafts) peerDrafts = true;
+        if ((peerPending && peerDrafts) || responded.size >= expectedPeers.size) {
+          finish();
+        }
+      });
+
+      channel.postMessage({
+        type: "LOGOUT_CHECK_REQUEST",
+        requestId,
+        senderTabId: tabIdRef.current,
+      } satisfies AuthSyncMessage);
+    });
+
+    return { hasPending: peerPending, hasDrafts: peerDrafts };
+  }, []);
 
   useEffect(() => {
     if (!auth) {
@@ -126,6 +287,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       const generation = ++authGeneration;
       if (!currentUser) {
+        // Invalidate retained PHI drafts in every tab as soon as Firebase reports signed-out state
+        clearRetainedSubmitDraft();
         if (!cancelled && generation === authGeneration) {
           setUser(null);
           setIsAuthorizedStaff(false);
@@ -157,22 +320,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       let confirmedDiscard = false;
       if (typeof window !== "undefined") {
-        const initialCheck = await confirmPendingWritesBeforeLogout(db);
+        const initialCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsBeforeLogout);
         if (!initialCheck.canProceed) {
           return;
         }
         confirmedDiscard = initialCheck.confirmedDiscard;
 
-        // Re-check immediately before signOut/cleanup in case a late write started during the async wait
-        if (!confirmedDiscard && (hasPendingOptimisticWrites() || hasRetainedSubmitDrafts())) {
-          const lateCheck = await confirmPendingWritesBeforeLogout(db);
-          if (!lateCheck.canProceed) {
-            return;
+        // Re-check immediately before signOut/cleanup in case a late write or peer draft appeared during wait
+        if (!confirmedDiscard) {
+          const latePeerState = await queryPeerTabsBeforeLogout();
+          if (
+            hasPendingOptimisticWrites() ||
+            hasRetainedSubmitDrafts() ||
+            latePeerState.hasPending ||
+            latePeerState.hasDrafts
+          ) {
+            const lateCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsBeforeLogout);
+            if (!lateCheck.canProceed) {
+              return;
+            }
           }
         }
       }
 
       clearRetainedSubmitDraft();
+      try {
+        channelRef.current?.postMessage({
+          type: "LOGOUT_CLEAR_DRAFTS",
+          senderTabId: tabIdRef.current,
+        } satisfies AuthSyncMessage);
+      } catch {
+        // Ignore broadcast errors during logout
+      }
 
       if (auth) {
         await signOut(auth);
@@ -191,7 +370,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       logoutInProgressRef.current = false;
     }
-  }, []);
+  }, [queryPeerTabsBeforeLogout]);
 
   return (
     <AuthContext.Provider value={{ user, loading, isAuthorizedStaff, logout }}>

@@ -22,6 +22,9 @@ export default function SubmitPage() {
   const isOnline = useNetworkStatus();
   const hnRef = useRef<HTMLInputElement>(null);
   const submitInFlightRef = useRef(false);
+  const submitOperationTokenRef = useRef(0);
+  const activeSubmitTokenRef = useRef<number | null>(null);
+  const redirectOwnerTokenRef = useRef<number | null>(null);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
   const retriedDraftIdRef = useRef<string | null>(null);
@@ -181,6 +184,8 @@ export default function SubmitPage() {
       return;
     }
 
+    const operationToken = ++submitOperationTokenRef.current;
+    activeSubmitTokenRef.current = operationToken;
     submitInFlightRef.current = true;
     setIsLoading(true);
 
@@ -257,17 +262,19 @@ export default function SubmitPage() {
               return;
             }
 
-            if (redirectTimerRef.current !== null) {
+            if (redirectOwnerTokenRef.current === operationToken && redirectTimerRef.current !== null) {
               clearTimeout(redirectTimerRef.current);
               redirectTimerRef.current = null;
+              redirectOwnerTokenRef.current = null;
             }
-            if (failedConsult?.id) {
-              retriedDraftIdRef.current = failedConsult.id;
+            const ownsSubmitGuard = activeSubmitTokenRef.current === operationToken;
+            if (ownsSubmitGuard) {
+              activeSubmitTokenRef.current = null;
+              submitInFlightRef.current = false;
+              setIsLoading(false);
             }
-            submitInFlightRef.current = false;
-            setIsLoading(false);
 
-            if (formDirtyRef.current || formHasValuesRef.current) {
+            if (!ownsSubmitGuard || formDirtyRef.current || formHasValuesRef.current) {
               if (failedConsult) {
                 setPendingRecoverableDraft(failedConsult);
               }
@@ -279,6 +286,10 @@ export default function SubmitPage() {
               return;
             }
 
+            // Assign retry identity only when automatically restoring this failed draft into the form
+            if (failedConsult?.id) {
+              retriedDraftIdRef.current = failedConsult.id;
+            }
             setHn(submittedDraft.hn);
             setFirstName(submittedDraft.firstName);
             setLastName(submittedDraft.lastName);
@@ -315,6 +326,9 @@ export default function SubmitPage() {
       );
 
       // Reset only visible form inputs; any optimistic write draft remains retained in lib/db.ts until settled.
+      if (retriedDraftIdRef.current === previousFailedDraftId) {
+        retriedDraftIdRef.current = null;
+      }
       formDirtyRef.current = false;
       setHn("");
       setFirstName("");
@@ -326,15 +340,22 @@ export default function SubmitPage() {
 
       if (hasDifferentPendingRecovery) {
         // Preserve the unrelated draft awaiting user recovery action and keep staff on /submit
-        submitInFlightRef.current = false;
-        setIsLoading(false);
+        if (activeSubmitTokenRef.current === operationToken) {
+          activeSubmitTokenRef.current = null;
+          submitInFlightRef.current = false;
+          setIsLoading(false);
+        }
         return;
       }
 
       setPendingRecoverableDraft(null);
 
+      if (redirectTimerRef.current !== null) {
+        clearTimeout(redirectTimerRef.current);
+      }
+      redirectOwnerTokenRef.current = operationToken;
       redirectTimerRef.current = setTimeout(() => {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && redirectOwnerTokenRef.current === operationToken) {
           router.push("/");
         }
       }, 1500);
@@ -346,8 +367,11 @@ export default function SubmitPage() {
         message: error instanceof Error ? `เกิดข้อผิดพลาด: ${error.message}` : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
         duration: 5000,
       });
-      submitInFlightRef.current = false;
-      setIsLoading(false);
+      if (activeSubmitTokenRef.current === operationToken) {
+        activeSubmitTokenRef.current = null;
+        submitInFlightRef.current = false;
+        setIsLoading(false);
+      }
     }
   }, [validateForm, hn, firstName, lastName, room, problem, selectedDepts, addToast, router, isOnline, setPendingRecoverableDraft]);
 
