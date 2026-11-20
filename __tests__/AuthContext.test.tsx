@@ -1410,4 +1410,68 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   });
+
+  it("preserves dirty drafts when HELLO_ACK is delayed beyond the 120 ms handshake window and consent is later declined", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; hasDrafts?: boolean }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; hasDrafts?: boolean });
+    };
+
+    try {
+      mockHasRetainedSubmitDrafts.mockReturnValue(true);
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      peerMessages.length = 0;
+      window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+
+      // Null-user arrives before any HELLO_ACK
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // Wait beyond the 120 ms handshake window WITHOUT sending HELLO_ACK -> outcome is unknown -> dirty draft preserved
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 180);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // A subsequent null-user while outcome is still unknown also preserves the dirty draft
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // Delayed HELLO_ACK arrives after > 120 ms, followed by declined consent
+      peerChannel.postMessage({
+        type: "HELLO_ACK",
+        tabId: "initiator-delayed-ack",
+        activeLogoutReservationId: "init-res-delayed",
+        awaitConsentBeforeClear: true,
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+      peerChannel.postMessage({
+        type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
+        senderTabId: "initiator-delayed-ack",
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+    } finally {
+      peerChannel.close();
+    }
+  });
 });

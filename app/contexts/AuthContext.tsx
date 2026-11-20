@@ -183,7 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutConsentedRef = useRef(false);
   const holdClearOnConsentTabRef = useRef<string | null>(null);
   const preserveDraftOnSignOutDeclineRef = useRef(false);
-  const helloHandshakePendingRef = useRef(false);
+  const helloHandshakeStateRef = useRef<"settled" | "pending" | "unknown">("settled");
   const pendingNullClearAfterHandshakeRef = useRef(false);
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const joinedDirtyDuringLogoutRef = useRef<{ hasPending: boolean; hasDrafts: boolean }>({
@@ -318,6 +318,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (msg.senderTabId !== myTabId) {
             preserveDraftOnSignOutDeclineRef.current = false;
             pendingNullClearAfterHandshakeRef.current = false;
+            helloHandshakeStateRef.current = "settled";
             holdClearOnConsentTabRef.current = null;
             clearRetainedSubmitDraft();
           }
@@ -327,18 +328,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const announceHello = () => {
       // Protect drafts from an immediate null-user event until the peer HELLO handshake window settles
-      helloHandshakePendingRef.current = true;
+      helloHandshakeStateRef.current = "pending";
       if (handshakeTimerRef.current !== null) {
         clearTimeout(handshakeTimerRef.current);
       }
       handshakeTimerRef.current = setTimeout(() => {
-        helloHandshakePendingRef.current = false;
         handshakeTimerRef.current = null;
+        if (helloHandshakeStateRef.current === "pending") {
+          helloHandshakeStateRef.current = "unknown";
+        }
+        const hasLocalDirtyState = hasPendingOptimisticWrites() || hasRetainedSubmitDrafts();
         if (
           pendingNullClearAfterHandshakeRef.current &&
           !logoutInProgressRef.current &&
           !holdClearOnConsentTabRef.current &&
-          !preserveDraftOnSignOutDeclineRef.current
+          !preserveDraftOnSignOutDeclineRef.current &&
+          !hasLocalDirtyState
         ) {
           pendingNullClearAfterHandshakeRef.current = false;
           clearRetainedSubmitDraft();
@@ -383,7 +388,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(handshakeTimerRef.current);
         handshakeTimerRef.current = null;
       }
-      helloHandshakePendingRef.current = false;
+      helloHandshakeStateRef.current = "settled";
       pendingNullClearAfterHandshakeRef.current = false;
       notifyBye();
       channelRef.current = null;
@@ -462,14 +467,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       const generation = ++authGeneration;
       if (!currentUser) {
-        // Defer draft invalidation while the HELLO handshake, logout consent flow, or decline hold is active
+        // Defer draft invalidation while handshake, unknown dirty outcome, consent flow, or decline hold is active
+        const hasLocalDirtyState = hasPendingOptimisticWrites() || hasRetainedSubmitDrafts();
         if (
           logoutInProgressRef.current ||
           holdClearOnConsentTabRef.current ||
-          preserveDraftOnSignOutDeclineRef.current
+          preserveDraftOnSignOutDeclineRef.current ||
+          (helloHandshakeStateRef.current === "unknown" && hasLocalDirtyState)
         ) {
-          // Hold clear until consent resolves or explicit clear arrives
-        } else if (helloHandshakePendingRef.current) {
+          // Preserve dirty draft until consent resolves or explicit LOGOUT_CLEAR_DRAFTS arrives
+        } else if (helloHandshakeStateRef.current === "pending") {
           pendingNullClearAfterHandshakeRef.current = true;
         } else {
           clearRetainedSubmitDraft();
@@ -486,7 +493,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(handshakeTimerRef.current);
         handshakeTimerRef.current = null;
       }
-      helloHandshakePendingRef.current = false;
+      helloHandshakeStateRef.current = "settled";
       pendingNullClearAfterHandshakeRef.current = false;
       preserveDraftOnSignOutDeclineRef.current = false;
       holdClearOnConsentTabRef.current = null;
