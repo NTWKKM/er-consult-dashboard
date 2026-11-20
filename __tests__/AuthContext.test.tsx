@@ -1743,4 +1743,57 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   }, 15000);
+
+  it("keeps deferred peer reservation alive past the TTL until the null-user notification arrives", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const responses: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      responses.push(event.data as { type: string; requestId?: string });
+    };
+    const baseNow = Date.now();
+    let offsetMs = 0;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => baseNow + offsetMs);
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_CHECK_REQUEST",
+        requestId: "ttl-deferred-req",
+        senderTabId: "initiating-tab",
+      });
+      await waitFor(() => {
+        expect(
+          responses.some((m) => m.type === "LOGOUT_CHECK_RESPONSE" && m.requestId === "ttl-deferred-req")
+        ).toBe(true);
+      });
+      peerChannel.postMessage({ type: "LOGOUT_CLEAR_DRAFTS", senderTabId: "initiating-tab" });
+      await waitFor(() => {
+        expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
+      });
+
+      // Move close to expiry, wait for a deferred renewal tick, then move past the original TTL
+      offsetMs = 4000;
+      await new Promise<void>((resolve) => setTimeout(resolve, 2300));
+      offsetMs = 6000;
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      expect(isSubmissionBlockedByLogout()).toBe(false);
+    } finally {
+      nowSpy.mockRestore();
+      peerChannel.close();
+    }
+  }, 15000);
 });

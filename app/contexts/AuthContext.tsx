@@ -425,7 +425,14 @@ export function AuthProvider({
     const peerReservations = peerReservationsRef.current;
     const pendingSignedOutReservations = pendingSignedOutReservationsRef.current;
     const pendingPeerChecks = pendingPeerChecksRef.current;
+    // Keep deferred reservations alive past the TTL until this tab applies its signed-out state
+    const deferredRenewIntervalId = setInterval(() => {
+      for (const reservationId of pendingSignedOutReservations) {
+        activeReservationStore.reserveSubmissionsForLogout(reservationId, LOGOUT_RESERVATION_TTL_MS);
+      }
+    }, LOGOUT_RESERVATION_RENEW_INTERVAL_MS);
     return () => {
+      clearInterval(deferredRenewIntervalId);
       window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("pagehide", notifyBye);
       if (handshakeTimerRef.current !== null) {
