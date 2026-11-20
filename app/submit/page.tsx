@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { addConsult, clearRetainedSubmitDraft, getLatestFailedSubmitDraft, reconcileReloadedSubmitDrafts, subscribeToFailedSubmitDrafts, type Consult } from "@/lib/db";
+import { isSubmissionBlockedByLogout } from "@/lib/logoutReservation";
 import {
   ALL_DEPARTMENTS,
   MAX_HN_LENGTH,
@@ -155,6 +156,14 @@ export default function SubmitPage() {
 
   const handleSubmit = useCallback(async (isUrgent: boolean = false) => {
     if (submitInFlightRef.current) return;
+    if (isSubmissionBlockedByLogout()) {
+      addToast({
+        type: "error",
+        message: "กำลังออกจากระบบในแท็บอื่น กรุณารอสักครู่ก่อนส่งเคส",
+        duration: 5000,
+      });
+      return;
+    }
 
     const currentErrors = validateForm();
     if (Object.keys(currentErrors).length > 0) {
@@ -380,7 +389,7 @@ export default function SubmitPage() {
       draft: Consult,
       options?: { silentToast?: boolean }
     ) => {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || submitInFlightRef.current) return;
       retriedDraftIdRef.current = draft.id;
       formDirtyRef.current = false;
       setPendingRecoverableDraft(null);
@@ -505,20 +514,22 @@ export default function SubmitPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={isLoading}
                   onClick={() => restoreDraft(pendingRecoverableDraft, { silentToast: true })}
-                  className="px-2.5 py-1 rounded-[6px] text-xs font-medium bg-accent text-accent-ink hover:opacity-90 transition-opacity"
+                  className="px-2.5 py-1 rounded-[6px] text-xs font-medium bg-accent text-accent-ink hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 >
                   กู้คืนข้อมูลร่าง
                 </button>
                 <button
                   type="button"
+                  disabled={isLoading}
                   onClick={() => {
                     if (typeof clearRetainedSubmitDraft === "function") {
                       clearRetainedSubmitDraft(pendingRecoverableDraft.id);
                     }
                     setPendingRecoverableDraft(null);
                   }}
-                  className="px-2.5 py-1 rounded-[6px] text-xs font-medium border border-rule-2 bg-paper-3 text-ink-2 hover:text-ink transition-colors"
+                  className="px-2.5 py-1 rounded-[6px] text-xs font-medium border border-rule-2 bg-paper-3 text-ink-2 hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   ละทิ้งร่าง
                 </button>

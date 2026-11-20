@@ -3,9 +3,11 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, isAuthorizedStaff, logout } = useAuth();
+  const { addToast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -42,7 +44,18 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           </p>
           <button
             type="button"
-            onClick={() => void logout()}
+            onClick={() => {
+              void Promise.resolve(logout()).catch((error) => {
+                addToast({
+                  type: "error",
+                  message:
+                    error instanceof Error
+                      ? `ออกจากระบบไม่สำเร็จ: ${error.message}`
+                      : "ออกจากระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+                  duration: 5000,
+                });
+              });
+            }}
             className="px-4 py-2.5 rounded-[6px] bg-bad text-paper font-medium text-sm hover:opacity-90 transition-opacity tap-feedback"
           >
             ออกจากระบบ

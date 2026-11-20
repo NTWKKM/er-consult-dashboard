@@ -45,15 +45,27 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { AuthProvider, useAuth } from "@/app/contexts/AuthContext";
+import {
+  clearAllLogoutReservationsForTests,
+  isSubmissionBlockedByLogout,
+} from "@/lib/logoutReservation";
 
-function AuthProbe() {
+function AuthProbe({ onLogoutResult }: { onLogoutResult?: (err: unknown) => void }) {
   const { user, loading, isAuthorizedStaff, logout } = useAuth();
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="uid">{user?.uid ?? "null"}</span>
       <span data-testid="staff">{String(isAuthorizedStaff)}</span>
-      <button type="button" onClick={() => void logout()}>
+      <button
+        type="button"
+        onClick={() => {
+          void logout().then(
+            () => onLogoutResult?.(null),
+            (err) => onLogoutResult?.(err)
+          );
+        }}
+      >
         Logout
       </button>
     </div>
@@ -94,6 +106,7 @@ describe("AuthContext", () => {
   });
 
   afterEach(() => {
+    clearAllLogoutReservationsForTests();
     vi.restoreAllMocks();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -412,15 +425,20 @@ describe("AuthContext", () => {
       });
 
       // Local tab has no drafts, but peer-tab-2 reports retained drafts -> prompts & aborts on Cancel
-      await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
-        await new Promise((r) => setTimeout(r, 20));
-      });
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
 
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("ข้อมูลร่าง"));
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(confirmSpy).toHaveBeenCalledWith(
+        expect.stringContaining("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง")
+      );
+      expect(confirmSpy).not.toHaveBeenCalledWith(expect.stringContaining("แท็บอื่น"));
       expect(mockSignOut).not.toHaveBeenCalled();
       expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(false);
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "LOGOUT_RESERVATION_RELEASE")).toBe(true);
+      });
 
       // User confirms -> clears drafts locally and broadcasts LOGOUT_CLEAR_DRAFTS to peer tab
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
@@ -489,6 +507,227 @@ describe("AuthContext", () => {
         expect(mockSignOut).toHaveBeenCalledTimes(1);
         expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(true);
       });
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("identifies only known dirty state plus unknown peer warning on mixed prompts", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string }> = [];
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string };
+      peerMessages.push(msg);
+      if (msg.type === "HELLO") {
+        // Silent peer misses 120ms timeout -> hasUnknownPeer = true
+        peerChannel.postMessage({ type: "HELLO_ACK", tabId: "silent-peer-mixed" });
+      }
+    };
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const originalOnLine = navigator.onLine;
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "HELLO")).toBe(true);
+      });
+
+      // Case 1: Only pending writes known + unresponsive peer (must NOT claim local drafts are present)
+      mockHasPendingOptimisticWrites.mockReturnValue(true);
+      mockHasRetainedSubmitDrafts.mockReturnValue(false);
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+      });
+      const pendingMixedPrompt = confirmSpy.mock.calls[0][0] as string;
+      expect(pendingMixedPrompt).toContain("รอการซิงค์");
+      expect(pendingMixedPrompt).toContain("แท็บอื่น");
+      expect(pendingMixedPrompt).not.toContain("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง");
+
+      // Case 2: Only failed drafts known + unresponsive peer (must NOT claim pending writes are present)
+      mockHasPendingOptimisticWrites.mockReturnValue(false);
+      mockHasRetainedSubmitDrafts.mockReturnValue(true);
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(2);
+      });
+      const draftMixedPrompt = confirmSpy.mock.calls[1][0] as string;
+      expect(draftMixedPrompt).toContain("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง");
+      expect(draftMixedPrompt).toContain("แท็บอื่น");
+      expect(draftMixedPrompt).not.toContain("รอการซิงค์");
+    } finally {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: originalOnLine });
+      peerChannel.close();
+    }
+  });
+
+  it("leaves local and peer drafts intact and surfaces error when signOut rejects", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      peerMessages.push(msg);
+      if (msg.type === "HELLO") {
+        peerChannel.postMessage({ type: "HELLO_ACK", tabId: "peer-signout-fail" });
+      } else if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "peer-signout-fail",
+          hasPending: false,
+          hasDrafts: false,
+        });
+      }
+    };
+
+    const signOutErr = new Error("auth/network-request-failed");
+    mockSignOut.mockRejectedValueOnce(signOutErr);
+    const logoutResults: unknown[] = [];
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe onLogoutResult={(err) => logoutResults.push(err)} />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "HELLO")).toBe(true);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(logoutResults).toHaveLength(1);
+      });
+      expect(logoutResults[0]).toBe(signOutErr);
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(false);
+      expect(peerMessages.some((m) => m.type === "LOGOUT_RESERVATION_RELEASE")).toBe(true);
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("blocks new submissions on a responding tab during logout reservation and releases on cancellation or timeout", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const responses: Array<{ type: string; requestId?: string; tabId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      responses.push(event.data as { type: string; requestId?: string; tabId?: string });
+    };
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      expect(isSubmissionBlockedByLogout()).toBe(false);
+
+      peerChannel.postMessage({
+        type: "LOGOUT_CHECK_REQUEST",
+        requestId: "reserve-req-1",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(responses.some((m) => m.type === "LOGOUT_CHECK_RESPONSE" && m.requestId === "reserve-req-1")).toBe(true);
+      });
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+
+      // Releasing reservation on logout cancel unblocks submissions immediately
+      peerChannel.postMessage({
+        type: "LOGOUT_RESERVATION_RELEASE",
+        requestId: "reserve-req-1",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(isSubmissionBlockedByLogout()).toBe(false);
+      });
+
+      // Also auto-expires after the 5000ms TTL if the initiator disappears without releasing
+      const nowSpy = vi.spyOn(Date, "now");
+      nowSpy.mockReturnValue(1_000_000);
+      peerChannel.postMessage({
+        type: "LOGOUT_CHECK_REQUEST",
+        requestId: "reserve-req-ttl",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(responses.some((m) => m.type === "LOGOUT_CHECK_RESPONSE" && m.requestId === "reserve-req-ttl")).toBe(true);
+      });
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+
+      nowSpy.mockReturnValue(1_005_001);
+      expect(isSubmissionBlockedByLogout()).toBe(false);
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("re-announces HELLO on persisted pageshow (bfcache restore) and cleans up listener on unmount", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string });
+    };
+
+    try {
+      const { unmount } = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(peerMessages.filter((m) => m.type === "HELLO")).toHaveLength(1);
+      });
+
+      // Non-persisted pageshow must NOT re-announce HELLO
+      window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: false }));
+      await Promise.resolve();
+      expect(peerMessages.filter((m) => m.type === "HELLO")).toHaveLength(1);
+
+      // Persisted pageshow (bfcache restore) MUST re-announce HELLO
+      window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+      await waitFor(() => {
+        expect(peerMessages.filter((m) => m.type === "HELLO")).toHaveLength(2);
+      });
+
+      // Unmount removes listener so subsequent persisted pageshow does not fire
+      unmount();
+      window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+      await Promise.resolve();
+      expect(peerMessages.filter((m) => m.type === "HELLO")).toHaveLength(2);
     } finally {
       peerChannel.close();
     }

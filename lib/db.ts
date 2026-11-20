@@ -4,6 +4,7 @@ import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
 import { ConsultSchema, type Consult, type ConsultDepartment, type ConsultTransfer } from "./schema";
+import { isSubmissionBlockedByLogout } from "./logoutReservation";
 import { z, ZodError } from "zod";
 
 export type { Consult, ConsultDepartment, ConsultTransfer };
@@ -843,6 +844,9 @@ export async function addConsult(
     data: Omit<Consult, "id" | "createdAt">,
     options: AddConsultOptions = {}
 ): Promise<Consult> {
+    if (isSubmissionBlockedByLogout()) {
+        throw new Error("กำลังออกจากระบบ กรุณารอสักครู่หรือรีเฟรชหน้าก่อนส่งเคสใหม่");
+    }
     const { awaitRemote = true, replacesDraftId, onBackgroundError, onBackgroundSuccess } = options;
     const database = requireDb();
     // Generate an ID for the new document using Firestore native doc()

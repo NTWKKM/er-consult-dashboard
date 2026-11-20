@@ -7,10 +7,12 @@ import NavbarControls from "./NavbarControls";
 import ConnectionStatus from "./ConnectionStatus";
 import ConfirmModal from "./ConfirmModal";
 import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
 
 export default function Navbar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const { addToast } = useToast();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const isHome = pathname === "/";
@@ -160,8 +162,21 @@ export default function Navbar() {
         cancelText="ยกเลิก"
         variant="warning"
         onConfirm={() => {
-          setShowLogoutConfirm(false);
-          void logout();
+          void (async () => {
+            try {
+              await logout();
+              setShowLogoutConfirm(false);
+            } catch (error) {
+              addToast({
+                type: "error",
+                message:
+                  error instanceof Error
+                    ? `ออกจากระบบไม่สำเร็จ: ${error.message}`
+                    : "ออกจากระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+                duration: 5000,
+              });
+            }
+          })();
         }}
         onCancel={() => setShowLogoutConfirm(false)}
       />

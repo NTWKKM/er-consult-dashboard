@@ -9,6 +9,10 @@ import {
   hasPendingOptimisticWrites,
   hasRetainedSubmitDrafts,
 } from "../../lib/db";
+import {
+  releaseLogoutReservation,
+  reserveSubmissionsForLogout,
+} from "../../lib/logoutReservation";
 
 interface AuthContextType {
   user: User | null;
@@ -45,6 +49,7 @@ async function checkIsAuthorizedStaff(currentUser: User): Promise<boolean> {
 const PENDING_WRITE_SYNC_TIMEOUT_MS = 1200;
 const AUTH_SYNC_CHANNEL = "er_consult_auth_sync_v1";
 const PEER_LOGOUT_CHECK_TIMEOUT_MS = 120;
+const LOGOUT_RESERVATION_TTL_MS = 5000;
 
 interface PeerTabDirtyState {
   hasPending: boolean;
@@ -64,6 +69,7 @@ type AuthSyncMessage =
       hasPending: boolean;
       hasDrafts: boolean;
     }
+  | { type: "LOGOUT_RESERVATION_RELEASE"; requestId: string; senderTabId: string }
   | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string };
 
 async function confirmPendingWritesBeforeLogout(
@@ -81,8 +87,14 @@ async function confirmPendingWritesBeforeLogout(
     "มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง หากออกจากระบบข้อมูลร่างจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
   const unknownPeerMessage =
     "ยังมีแท็บอื่นที่เปิดค้างอยู่และไม่ตอบสนองต่อการตรวจสอบสถานะข้อมูล (อาจถูกพักการทำงานชั่วคราว) หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์หรือข้อมูลร่างในแท็บนั้นจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
+  const pendingWithUnknownPeerMessage =
+    "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ และยังมีแท็บอื่นที่เปิดค้างอยู่และไม่ตอบสนองต่อการตรวจสอบสถานะ (ซึ่งอาจมีข้อมูลเพิ่มเติม) หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์และข้อมูลในแท็บอื่นจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
+  const draftWithUnknownPeerMessage =
+    "มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง และยังมีแท็บอื่นที่เปิดค้างอยู่และไม่ตอบสนองต่อการตรวจสอบสถานะ (ซึ่งอาจมีข้อมูลเพิ่มเติม) หากออกจากระบบตอนนี้ข้อมูลร่างและข้อมูลในแท็บอื่นจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
   const combinedMessage =
     "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ และมีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์และข้อมูลร่างจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
+  const combinedWithUnknownPeerMessage =
+    "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ และมีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง รวมถึงยังมีแท็บอื่นที่เปิดค้างอยู่และไม่ตอบสนองต่อการตรวจสอบสถานะ (ซึ่งอาจมีข้อมูลเพิ่มเติม) หากออกจากระบบตอนนี้ข้อมูลทั้งหมดจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
 
   let writesSettled = true;
 
@@ -125,7 +137,20 @@ async function confirmPendingWritesBeforeLogout(
   const hasPending = !writesSettled || peerState.hasPending;
   const hasDrafts = hasRetainedSubmitDrafts() || peerState.hasDrafts;
 
-  if ((hasPending && hasDrafts) || ((hasPending || hasDrafts) && peerState.hasUnknownPeer)) {
+  if (peerState.hasUnknownPeer) {
+    if (hasPending && hasDrafts) {
+      return { canProceed: confirmDiscard(combinedWithUnknownPeerMessage), confirmedDiscard: true };
+    }
+    if (hasPending) {
+      return { canProceed: confirmDiscard(pendingWithUnknownPeerMessage), confirmedDiscard: true };
+    }
+    if (hasDrafts) {
+      return { canProceed: confirmDiscard(draftWithUnknownPeerMessage), confirmedDiscard: true };
+    }
+    return { canProceed: confirmDiscard(unknownPeerMessage), confirmedDiscard: true };
+  }
+
+  if (hasPending && hasDrafts) {
     return { canProceed: confirmDiscard(combinedMessage), confirmedDiscard: true };
   }
   if (hasPending) {
@@ -133,9 +158,6 @@ async function confirmPendingWritesBeforeLogout(
   }
   if (hasDrafts) {
     return { canProceed: confirmDiscard(retainedDraftMessage), confirmedDiscard: true };
-  }
-  if (peerState.hasUnknownPeer) {
-    return { canProceed: confirmDiscard(unknownPeerMessage), confirmedDiscard: true };
   }
 
   return { canProceed: true, confirmedDiscard: false };
@@ -146,9 +168,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthorizedStaff, setIsAuthorizedStaff] = useState(false);
   const [loading, setLoading] = useState(Boolean(auth));
   const logoutInProgressRef = useRef(false);
+  const logoutSequenceRef = useRef(0);
   const tabIdRef = useRef<string>("");
   const channelRef = useRef<BroadcastChannel | null>(null);
   const peerTabsRef = useRef<Set<string>>(new Set());
+  const peerReservationIdsRef = useRef<Set<string>>(new Set());
   const pendingPeerChecksRef = useRef<
     Map<string, (response: { tabId: string; hasPending: boolean; hasDrafts: boolean }) => void>
   >(new Map());
@@ -189,6 +213,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           break;
         case "LOGOUT_CHECK_REQUEST":
           if (msg.senderTabId !== myTabId) {
+            // Reserve peer submissions before reading dirty state so no new submit starts mid-logout check
+            reserveSubmissionsForLogout(msg.requestId, LOGOUT_RESERVATION_TTL_MS);
+            peerReservationIdsRef.current.add(msg.requestId);
             channel.postMessage({
               type: "LOGOUT_CHECK_RESPONSE",
               requestId: msg.requestId,
@@ -205,6 +232,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           break;
         }
+        case "LOGOUT_RESERVATION_RELEASE":
+          if (msg.senderTabId !== myTabId) {
+            releaseLogoutReservation(msg.requestId);
+            peerReservationIdsRef.current.delete(msg.requestId);
+          }
+          break;
         case "LOGOUT_CLEAR_DRAFTS":
           if (msg.senderTabId !== myTabId) {
             clearRetainedSubmitDraft();
@@ -213,8 +246,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    channel.postMessage({ type: "HELLO", tabId: myTabId } satisfies AuthSyncMessage);
+    const announceHello = () => {
+      try {
+        channel.postMessage({ type: "HELLO", tabId: myTabId } satisfies AuthSyncMessage);
+      } catch {
+        // Ignore if channel is already closed
+      }
+    };
+    announceHello();
 
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        announceHello();
+      }
+    };
     const notifyBye = () => {
       try {
         channel.postMessage({ type: "BYE", tabId: myTabId } satisfies AuthSyncMessage);
@@ -222,21 +267,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Ignore if channel is already closed
       }
     };
+    window.addEventListener("pageshow", handlePageShow);
     window.addEventListener("pagehide", notifyBye);
 
     const peerTabs = peerTabsRef.current;
+    const peerReservations = peerReservationIdsRef.current;
     const pendingPeerChecks = pendingPeerChecksRef.current;
     return () => {
+      window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("pagehide", notifyBye);
       notifyBye();
       channelRef.current = null;
       peerTabs.clear();
+      for (const reservationId of peerReservations) {
+        releaseLogoutReservation(reservationId);
+      }
+      peerReservations.clear();
       pendingPeerChecks.clear();
       channel.close();
     };
   }, []);
 
-  const queryPeerTabsBeforeLogout = useCallback(async (): Promise<PeerTabDirtyState> => {
+  const queryPeerTabsBeforeLogout = useCallback(async (issuedRequestIds?: string[]): Promise<PeerTabDirtyState> => {
     const channel = channelRef.current;
     const peers = peerTabsRef.current;
     if (!channel || peers.size === 0) {
@@ -249,6 +301,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let peerDrafts = false;
     let hasUnknownPeer = false;
     const requestId = `${tabIdRef.current}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    issuedRequestIds?.push(requestId);
 
     await new Promise<void>((resolve) => {
       let settled = false;
@@ -329,11 +382,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     if (logoutInProgressRef.current) return;
     logoutInProgressRef.current = true;
+    const selfReservationId = `self-logout-${++logoutSequenceRef.current}`;
+    reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
+    const issuedRequestIds: string[] = [];
+    let logoutCommitted = false;
 
     try {
       let confirmedDiscard = false;
       if (typeof window !== "undefined") {
-        const initialCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsBeforeLogout);
+        const initialCheck = await confirmPendingWritesBeforeLogout(db, () =>
+          queryPeerTabsBeforeLogout(issuedRequestIds)
+        );
         if (!initialCheck.canProceed) {
           return;
         }
@@ -341,7 +400,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Re-check immediately before signOut/cleanup in case a late write or peer draft appeared during wait
         if (!confirmedDiscard) {
-          const latePeerState = await queryPeerTabsBeforeLogout();
+          const latePeerState = await queryPeerTabsBeforeLogout(issuedRequestIds);
           if (
             hasPendingOptimisticWrites() ||
             hasRetainedSubmitDrafts() ||
@@ -349,13 +408,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             latePeerState.hasDrafts ||
             latePeerState.hasUnknownPeer
           ) {
-            const lateCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsBeforeLogout);
+            const lateCheck = await confirmPendingWritesBeforeLogout(db, () =>
+              queryPeerTabsBeforeLogout(issuedRequestIds)
+            );
             if (!lateCheck.canProceed) {
               return;
             }
           }
         }
       }
+
+      if (auth) {
+        await signOut(auth);
+      }
+      logoutCommitted = true;
 
       clearRetainedSubmitDraft();
       try {
@@ -367,9 +433,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Ignore broadcast errors during logout
       }
 
-      if (auth) {
-        await signOut(auth);
-      }
       // Clear local IndexedDB cache on shared ER workstations so patient PHI does not persist across shifts
       if (db && typeof window !== "undefined") {
         try {
@@ -382,6 +445,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.location.reload();
       }
     } finally {
+      if (!logoutCommitted) {
+        releaseLogoutReservation(selfReservationId);
+        for (const requestId of issuedRequestIds) {
+          try {
+            channelRef.current?.postMessage({
+              type: "LOGOUT_RESERVATION_RELEASE",
+              requestId,
+              senderTabId: tabIdRef.current,
+            } satisfies AuthSyncMessage);
+          } catch {
+            // Ignore broadcast errors during cleanup
+          }
+        }
+      }
       logoutInProgressRef.current = false;
     }
   }, [queryPeerTabsBeforeLogout]);

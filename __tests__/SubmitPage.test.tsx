@@ -842,4 +842,100 @@ describe("SubmitPage mount and redirect safety", () => {
     expect(screen.getByText("222333")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /ส่ง Consult/i })).not.toBeDisabled();
   });
+
+  it("prevents restoring draft A while a submission B is active (A/B/C/D order) so draft A cannot be lost or deleted prematurely", async () => {
+    let resolveReconcile!: (draft: Consult | null) => void;
+    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
+      new Promise<Consult | null>((resolve) => {
+        resolveReconcile = resolve;
+      })
+    );
+
+    const draftA = makeConsult({
+      id: "draft-a-abcd",
+      hn: "101010",
+      firstName: "เคสเอ",
+      lastName: "รอส่งซ้ำ",
+      room: "Resus Team 1",
+      problem: "Draft A should stay safe",
+      departments: { "Gen Sx": { status: "pending", completedAt: null } },
+    });
+
+    let resolveSubmitB!: (consult: Consult) => void;
+    mockAddConsult
+      .mockImplementationOnce(
+        () =>
+          new Promise<Consult>((resolve) => {
+            resolveSubmitB = resolve;
+          })
+      )
+      .mockResolvedValueOnce(makeConsult({ id: "unrelated-case-c", hn: "303030" }))
+      .mockResolvedValueOnce(makeConsult({ id: "resubmitted-a", hn: "101010" }));
+
+    render(<SubmitPage />);
+
+    // Step A: User is filling submission B and reconciliation surfaces failed draft A in banner
+    fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "202020" } });
+    fireEvent.change(screen.getByPlaceholderText("ชื่อผู้ป่วย"), { target: { value: "เคสบี" } });
+    fireEvent.change(screen.getByPlaceholderText("นามสกุลผู้ป่วย"), { target: { value: "กำลังส่ง" } });
+    fireEvent.change(screen.getByLabelText(/ห้องตรวจ/i), { target: { value: "Urgent" } });
+    fireEvent.change(screen.getByLabelText(/รายละเอียดปัญหา/i), { target: { value: "Submission B" } });
+    fireEvent.click(screen.getByLabelText("Ortho"));
+
+    await act(async () => {
+      resolveReconcile(draftA);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("101010")).toBeInTheDocument();
+
+    // Step B: Submission B starts and stays in-flight
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+
+    // Step C: Attempting to restore draft A while B is active is blocked
+    const restoreBtn = screen.getByRole("button", { name: /กู้คืนข้อมูลร่าง/ });
+    expect(restoreBtn).toBeDisabled();
+    fireEvent.click(restoreBtn);
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("202020");
+
+    // Step D: Submission B succeeds -> form resets, draft A stays intact in banner, no redirect
+    await act(async () => {
+      resolveSubmitB(makeConsult({ id: "case-b-done", hn: "202020" }));
+      await Promise.resolve();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalledWith(draftA.id);
+    expect(screen.getByText("101010")).toBeInTheDocument();
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("");
+
+    // Subsequent unrelated submission C still must NOT delete draft A before A is restored & resubmitted
+    fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "303030" } });
+    fireEvent.change(screen.getByPlaceholderText("ชื่อผู้ป่วย"), { target: { value: "เคสซี" } });
+    fireEvent.change(screen.getByPlaceholderText("นามสกุลผู้ป่วย"), { target: { value: "ใหม่" } });
+    fireEvent.change(screen.getByLabelText(/ห้องตรวจ/i), { target: { value: "NT" } });
+    fireEvent.change(screen.getByLabelText(/รายละเอียดปัญหา/i), { target: { value: "Submission C" } });
+    fireEvent.click(screen.getByLabelText("Ortho"));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+    expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalledWith(draftA.id);
+
+    // Only after restoring draft A while idle and resubmitting does draft A get cleared
+    fireEvent.click(screen.getByRole("button", { name: /กู้คืนข้อมูลร่าง/ }));
+    expect(screen.getByLabelText(/HN/i)).toHaveValue("101010");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ส่ง Consult/i }));
+      await Promise.resolve();
+    });
+    expect(mockClearRetainedSubmitDraft).toHaveBeenCalledWith(draftA.id);
+  });
 });
