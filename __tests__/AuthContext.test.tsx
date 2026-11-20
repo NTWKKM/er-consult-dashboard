@@ -435,4 +435,62 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   });
+
+  it("treats an unresponsive peer tab that misses the timeout as unknown and requires discard confirmation", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string }> = [];
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string };
+      peerMessages.push(msg);
+      if (msg.type === "HELLO") {
+        // Register suspended peer tab, then intentionally drop LOGOUT_CHECK_REQUEST
+        peerChannel.postMessage({ type: "HELLO_ACK", tabId: "suspended-peer-tab" });
+      }
+    };
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "HELLO")).toBe(true);
+      });
+
+      // Peer never answers LOGOUT_CHECK_REQUEST within 120ms -> treated as unknown, requires confirmation
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+        await new Promise((r) => setTimeout(r, 150));
+      });
+
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("แท็บอื่น"));
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      expect(mockSignOut).not.toHaveBeenCalled();
+
+      // Still remembered on retry -> confirming proceeds with logout and broadcasts clear
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+        await new Promise((r) => setTimeout(r, 150));
+      });
+
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(2);
+        expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+        expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(true);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
 });

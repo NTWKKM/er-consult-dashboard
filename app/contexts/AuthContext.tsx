@@ -49,6 +49,7 @@ const PEER_LOGOUT_CHECK_TIMEOUT_MS = 120;
 interface PeerTabDirtyState {
   hasPending: boolean;
   hasDrafts: boolean;
+  hasUnknownPeer: boolean;
 }
 
 type AuthSyncMessage =
@@ -78,6 +79,8 @@ async function confirmPendingWritesBeforeLogout(
     "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์อาจสูญหาย ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
   const retainedDraftMessage =
     "มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง หากออกจากระบบข้อมูลร่างจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
+  const unknownPeerMessage =
+    "ยังมีแท็บอื่นที่เปิดค้างอยู่และไม่ตอบสนองต่อการตรวจสอบสถานะข้อมูล (อาจถูกพักการทำงานชั่วคราว) หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์หรือข้อมูลร่างในแท็บนั้นจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
   const combinedMessage =
     "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ และมีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์และข้อมูลร่างจะถูกลบ ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
 
@@ -116,11 +119,13 @@ async function confirmPendingWritesBeforeLogout(
     writesSettled = false;
   }
 
-  const peerState = queryPeerTabs ? await queryPeerTabs() : { hasPending: false, hasDrafts: false };
+  const peerState = queryPeerTabs
+    ? await queryPeerTabs()
+    : { hasPending: false, hasDrafts: false, hasUnknownPeer: false };
   const hasPending = !writesSettled || peerState.hasPending;
   const hasDrafts = hasRetainedSubmitDrafts() || peerState.hasDrafts;
 
-  if (hasPending && hasDrafts) {
+  if ((hasPending && hasDrafts) || ((hasPending || hasDrafts) && peerState.hasUnknownPeer)) {
     return { canProceed: confirmDiscard(combinedMessage), confirmedDiscard: true };
   }
   if (hasPending) {
@@ -128,6 +133,9 @@ async function confirmPendingWritesBeforeLogout(
   }
   if (hasDrafts) {
     return { canProceed: confirmDiscard(retainedDraftMessage), confirmedDiscard: true };
+  }
+  if (peerState.hasUnknownPeer) {
+    return { canProceed: confirmDiscard(unknownPeerMessage), confirmedDiscard: true };
   }
 
   return { canProceed: true, confirmedDiscard: false };
@@ -232,13 +240,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const channel = channelRef.current;
     const peers = peerTabsRef.current;
     if (!channel || peers.size === 0) {
-      return { hasPending: false, hasDrafts: false };
+      return { hasPending: false, hasDrafts: false, hasUnknownPeer: false };
     }
 
     const expectedPeers = new Set(peers);
     const responded = new Set<string>();
     let peerPending = false;
     let peerDrafts = false;
+    let hasUnknownPeer = false;
     const requestId = `${tabIdRef.current}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     await new Promise<void>((resolve) => {
@@ -248,9 +257,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         settled = true;
         clearTimeout(timeoutId);
         pendingPeerChecksRef.current.delete(requestId);
+        // Treat any registered peer tab that did not respond before timeout as unknown rather than clean
         for (const peerId of expectedPeers) {
           if (!responded.has(peerId)) {
-            peerTabsRef.current.delete(peerId);
+            hasUnknownPeer = true;
+            break;
           }
         }
         resolve();
@@ -259,7 +270,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const timeoutId = setTimeout(finish, PEER_LOGOUT_CHECK_TIMEOUT_MS);
 
       pendingPeerChecksRef.current.set(requestId, ({ tabId, hasPending, hasDrafts }) => {
-        responded.add(tabId);
+        if (expectedPeers.has(tabId)) {
+          responded.add(tabId);
+        }
         if (hasPending) peerPending = true;
         if (hasDrafts) peerDrafts = true;
         if ((peerPending && peerDrafts) || responded.size >= expectedPeers.size) {
@@ -274,7 +287,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } satisfies AuthSyncMessage);
     });
 
-    return { hasPending: peerPending, hasDrafts: peerDrafts };
+    return { hasPending: peerPending, hasDrafts: peerDrafts, hasUnknownPeer };
   }, []);
 
   useEffect(() => {
@@ -333,7 +346,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             hasPendingOptimisticWrites() ||
             hasRetainedSubmitDrafts() ||
             latePeerState.hasPending ||
-            latePeerState.hasDrafts
+            latePeerState.hasDrafts ||
+            latePeerState.hasUnknownPeer
           ) {
             const lateCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsBeforeLogout);
             if (!lateCheck.canProceed) {
