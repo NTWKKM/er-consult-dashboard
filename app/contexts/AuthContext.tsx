@@ -64,6 +64,7 @@ type AuthSyncMessage =
       type: "HELLO_ACK";
       tabId: string;
       activeLogoutReservationId?: string;
+      awaitConsentBeforeClear?: boolean;
       hasPending?: boolean;
       hasDrafts?: boolean;
     }
@@ -78,6 +79,7 @@ type AuthSyncMessage =
     }
   | { type: "LOGOUT_RESERVATION_RENEW"; requestIds: string[]; senderTabId: string }
   | { type: "LOGOUT_RESERVATION_RELEASE"; requestId: string; senderTabId: string }
+  | { type: "LOGOUT_DECLINED_PRESERVE_DRAFTS"; senderTabId: string }
   | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string };
 
 async function confirmPendingWritesBeforeLogout(
@@ -178,6 +180,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutInProgressRef = useRef(false);
   const logoutSequenceRef = useRef(0);
   const activeLogoutReservationIdRef = useRef<string | null>(null);
+  const logoutConsentedRef = useRef(false);
+  const holdClearOnConsentTabRef = useRef<string | null>(null);
+  const preserveDraftOnSignOutDeclineRef = useRef(false);
   const joinedDirtyDuringLogoutRef = useRef<{ hasPending: boolean; hasDrafts: boolean }>({
     hasPending: false,
     hasDrafts: false,
@@ -223,7 +228,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               hasPending: hasPendingOptimisticWrites(),
               hasDrafts: hasRetainedSubmitDrafts(),
               ...(activeLogoutReservationIdRef.current
-                ? { activeLogoutReservationId: activeLogoutReservationIdRef.current }
+                ? {
+                    activeLogoutReservationId: activeLogoutReservationIdRef.current,
+                    awaitConsentBeforeClear: !logoutConsentedRef.current,
+                  }
                 : {}),
             } satisfies AuthSyncMessage);
           }
@@ -235,6 +243,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               if (msg.hasPending) joinedDirtyDuringLogoutRef.current.hasPending = true;
               if (msg.hasDrafts) joinedDirtyDuringLogoutRef.current.hasDrafts = true;
             }
+            if (msg.awaitConsentBeforeClear) {
+              holdClearOnConsentTabRef.current = msg.tabId;
+            }
             if (msg.activeLogoutReservationId) {
               // Newly opened or bfcache-restored tabs must respect an in-flight logout reservation
               reserveSubmissionsForLogout(msg.activeLogoutReservationId, LOGOUT_RESERVATION_TTL_MS);
@@ -244,6 +255,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           break;
         case "BYE":
           peerTabsRef.current.delete(msg.tabId);
+          if (holdClearOnConsentTabRef.current === msg.tabId) {
+            holdClearOnConsentTabRef.current = null;
+          }
           for (const [requestId, ownerTabId] of peerReservationsRef.current.entries()) {
             if (ownerTabId === msg.tabId) {
               releaseLogoutReservation(requestId);
@@ -287,8 +301,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             peerReservationsRef.current.delete(msg.requestId);
           }
           break;
+        case "LOGOUT_DECLINED_PRESERVE_DRAFTS":
+          if (msg.senderTabId !== myTabId) {
+            preserveDraftOnSignOutDeclineRef.current = true;
+            if (holdClearOnConsentTabRef.current === msg.senderTabId) {
+              holdClearOnConsentTabRef.current = null;
+            }
+          }
+          break;
         case "LOGOUT_CLEAR_DRAFTS":
           if (msg.senderTabId !== myTabId) {
+            preserveDraftOnSignOutDeclineRef.current = false;
+            holdClearOnConsentTabRef.current = null;
             clearRetainedSubmitDraft();
           }
           break;
@@ -407,8 +431,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       const generation = ++authGeneration;
       if (!currentUser) {
-        // Invalidate retained PHI drafts in every tab as soon as Firebase reports signed-out state
-        clearRetainedSubmitDraft();
+        // Defer draft invalidation while a logout consent flow is unresolved or was explicitly declined
+        if (
+          !logoutInProgressRef.current &&
+          !holdClearOnConsentTabRef.current &&
+          !preserveDraftOnSignOutDeclineRef.current
+        ) {
+          clearRetainedSubmitDraft();
+        }
         if (!cancelled && generation === authGeneration) {
           setUser(null);
           setIsAuthorizedStaff(false);
@@ -416,6 +446,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
+
+      preserveDraftOnSignOutDeclineRef.current = false;
+      holdClearOnConsentTabRef.current = null;
 
       void checkIsAuthorizedStaff(currentUser).then((authorized) => {
         if (!cancelled && generation === authGeneration) {
@@ -438,6 +471,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logoutInProgressRef.current = true;
     const selfReservationId = `self-logout-${++logoutSequenceRef.current}`;
     activeLogoutReservationIdRef.current = selfReservationId;
+    logoutConsentedRef.current = false;
+    preserveDraftOnSignOutDeclineRef.current = false;
     joinedDirtyDuringLogoutRef.current = { hasPending: false, hasDrafts: false };
     reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
     const issuedRequestIds: string[] = [];
@@ -476,6 +511,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         confirmedDiscard = initialCheck.confirmedDiscard;
+        logoutConsentedRef.current = confirmedDiscard;
 
         // Re-check immediately before signOut/cleanup in case a late write or peer draft appeared during wait
         if (!confirmedDiscard) {
@@ -492,6 +528,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               return;
             }
             confirmedDiscard = lateCheck.confirmedDiscard;
+            logoutConsentedRef.current = confirmedDiscard;
           }
         }
       }
@@ -512,11 +549,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           queryPeerTabsWithJoinedDirty
         );
         if (!postSignOutCheck.canProceed) {
+          preserveDraftOnSignOutDeclineRef.current = true;
+          try {
+            channelRef.current?.postMessage({
+              type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
+              senderTabId: tabIdRef.current,
+            } satisfies AuthSyncMessage);
+          } catch {
+            // Ignore broadcast errors during decline
+          }
           return;
         }
+        logoutConsentedRef.current = postSignOutCheck.confirmedDiscard;
       }
       logoutCommitted = true;
 
+      preserveDraftOnSignOutDeclineRef.current = false;
       clearRetainedSubmitDraft();
       try {
         channelRef.current?.postMessage({
@@ -543,6 +591,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearInterval(renewIntervalId);
       }
       activeLogoutReservationIdRef.current = null;
+      logoutConsentedRef.current = false;
+      joinedDirtyDuringLogoutRef.current = { hasPending: false, hasDrafts: false };
       if (!logoutCommitted) {
         releaseLogoutReservation(selfReservationId);
         for (const requestId of [selfReservationId, ...issuedRequestIds]) {

@@ -1175,4 +1175,160 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   });
+
+  it("preserves drafts when a dirty tab joins while signOut is pending, receives null-user notification, and user declines consent", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{
+      type: string;
+      requestId?: string;
+      awaitConsentBeforeClear?: boolean;
+      activeLogoutReservationId?: string;
+    }> = [];
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as {
+        type: string;
+        requestId?: string;
+        awaitConsentBeforeClear?: boolean;
+        activeLogoutReservationId?: string;
+      };
+      peerMessages.push(msg);
+      if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "restored-dirty-tab",
+          hasPending: false,
+          hasDrafts: true,
+        });
+      }
+    };
+
+    let resolveSignOut!: () => void;
+    mockSignOut.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSignOut = resolve;
+        })
+    );
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    try {
+      const firstRender = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+      });
+
+      // Dirty restored tab joins WHILE signOut is pending -> must receive awaitConsentBeforeClear
+      peerChannel.postMessage({
+        type: "HELLO",
+        tabId: "restored-dirty-tab",
+        hasPending: false,
+        hasDrafts: true,
+      });
+
+      await waitFor(() => {
+        expect(
+          peerMessages.some(
+            (m) =>
+              m.type === "HELLO_ACK" &&
+              m.awaitConsentBeforeClear === true &&
+              typeof m.activeLogoutReservationId === "string"
+          )
+        ).toBe(true);
+      });
+
+      // Null-user auth notification arrives while signOut/consent is pending -> must NOT clear draft yet
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // signOut finishes -> post-signOut consent prompt fires -> user declines
+      await act(async () => {
+        resolveSignOut();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+        expect(peerMessages.some((m) => m.type === "LOGOUT_DECLINED_PRESERVE_DRAFTS")).toBe(true);
+      });
+      expect(confirmSpy).toHaveBeenCalledWith(
+        expect.stringContaining("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง")
+      );
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(false);
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Even a delayed null-user notification after declined logout still preserves drafts
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // Also verify the restored peer tab side preserves drafts across null-user & declined consent
+      firstRender.unmount();
+      peerMessages.length = 0;
+      peerChannel.onmessage = (event) => {
+        const msg = event.data as { type: string };
+        peerMessages.push(msg);
+        if (msg.type === "HELLO") {
+          peerChannel.postMessage({
+            type: "HELLO_ACK",
+            tabId: "initiator-tab-1",
+            activeLogoutReservationId: "init-res-1",
+            awaitConsentBeforeClear: true,
+          });
+        }
+      };
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "HELLO")).toBe(true);
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 10);
+      });
+
+      // Null-user arrives on restored peer tab before initiator resolves consent -> draft preserved
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // Initiator declines discard -> broadcasts LOGOUT_DECLINED_PRESERVE_DRAFTS -> draft stays preserved
+      peerChannel.postMessage({
+        type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
+        senderTabId: "initiator-tab-1",
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 10);
+      });
+      act(() => {
+        authCallback!(null);
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+    } finally {
+      peerChannel.close();
+    }
+  });
 });
