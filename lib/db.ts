@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, getDocFromCache, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type DocumentReference, type Firestore, type QueryConstraint, type UpdateData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, getDocFromCache, getDocFromServer, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type DocumentReference, type Firestore, type QueryConstraint, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
@@ -330,6 +330,21 @@ const draftTokens = new Map<string, number>();
 let submitDraftGeneration = 0;
 let nextDraftToken = 0;
 const failedDraftListeners = new Set<(draft: Consult, error?: unknown) => void>();
+const LEGACY_SUBMIT_DRAFTS_STORAGE_KEY = "er_consult_submit_drafts_v1";
+
+/**
+ * Removes any legacy persisted submit drafts left in sessionStorage from older app builds.
+ */
+export function clearLegacySubmitDraftStorage(): void {
+    if (typeof window === "undefined") return;
+    try {
+        window.sessionStorage.removeItem(LEGACY_SUBMIT_DRAFTS_STORAGE_KEY);
+    } catch {
+        // Ignore restricted Web Storage environments
+    }
+}
+
+clearLegacySubmitDraftStorage();
 
 export function hasRetainedSubmitDrafts(): boolean {
     return retainedSubmitDrafts.size > 0;
@@ -385,6 +400,7 @@ export function getRetainedSubmitDraft(id: string): RetainedSubmitDraft | undefi
 }
 
 export function clearRetainedSubmitDraft(id?: string): void {
+    clearLegacySubmitDraftStorage();
     if (id === undefined) {
         submitDraftGeneration += 1;
         retainedSubmitDrafts.clear();
@@ -730,6 +746,25 @@ async function readConsultSnapshotCacheFirst(docRef: DocumentReference<DocumentD
     return { snap: await getDoc(docRef), fromCache: false };
 }
 
+/**
+ * Forces a server-authoritative read when online so Firestore does not silently serve
+ * local cache during backend unavailability.
+ */
+async function readConsultSnapshotServerOnly(docRef: DocumentReference<DocumentData>) {
+    let serverGetter: typeof getDocFromServer | undefined;
+    try {
+        if (typeof getDocFromServer === "function") {
+            serverGetter = getDocFromServer;
+        }
+    } catch {
+        // Partial test mock without getDocFromServer export — fall back to mocked getDoc
+    }
+    if (serverGetter) {
+        return serverGetter(docRef);
+    }
+    return getDoc(docRef);
+}
+
 export async function updateConsult(
     id: string,
     updater: ConsultUpdater | ConsultUpdate,
@@ -746,7 +781,7 @@ export async function updateConsult(
             const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
             const docSnap = isOffline
                 ? (await readConsultSnapshotCacheFirst(docRef)).snap
-                : await getDoc(docRef);
+                : await readConsultSnapshotServerOnly(docRef);
             if (!docSnap.exists()) {
                 throw new Error(`Consult not found: ${id}`);
             }
@@ -963,6 +998,31 @@ export async function transactionalUpdateConsult(
     };
 }
 
+const latestTransferEpochByCaseId = new Map<string, number>();
+let transferEpochSeq = 0;
+
+function isRetryableTransferError(err: unknown): boolean {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+    const code =
+        typeof err === "object" && err !== null && "code" in err
+            ? String((err as { code?: unknown }).code).toLowerCase()
+            : "";
+    if (
+        code.includes("unavailable") ||
+        code.includes("aborted") ||
+        code.includes("deadline-exceeded")
+    ) {
+        return true;
+    }
+    const msg = err instanceof Error ? err.message.toLowerCase() : "";
+    return (
+        msg.includes("offline") ||
+        msg.includes("network") ||
+        msg.includes("unavailable") ||
+        msg.includes("timeout")
+    );
+}
+
 function waitForOnlineReconnect(): Promise<void> {
     if (
         typeof window === "undefined" ||
@@ -994,6 +1054,8 @@ export async function transferConsultRoom(
     isOfflineQueued: boolean;
 }> {
     const now = new Date().toISOString();
+    const requestEpoch = ++transferEpochSeq;
+    latestTransferEpochByCaseId.set(id, requestEpoch);
     const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
     const buildTransferPayload = (current: Consult): ConsultUpdate | null => {
         if (current.room === newRoom) return null;
@@ -1018,9 +1080,9 @@ export async function transferConsultRoom(
     };
 
     if (isOffline) {
-        // Pre-validate locally from cache, then queue a reconnect transfer intent
-        // so server-side department completion is re-checked transactionally once online
-        // rather than blindly overwriting a completed case via queued updateDoc.
+        // Pre-validate locally from cache, then queue a session-scoped reconnect intent
+        // ordered by requestEpoch so newer transfers supersede older ones and server-side
+        // pending-department preconditions are re-evaluated transactionally upon reconnect.
         const database = requireDb();
         const docRef = doc(database, COLLECTION_NAME, id);
         const { snap } = await readConsultSnapshotCacheFirst(docRef);
@@ -1039,21 +1101,37 @@ export async function transferConsultRoom(
             };
         }
 
-        const reconnectPromise = trackOptimisticWrite(
-            waitForOnlineReconnect()
-                .then(() =>
-                    transactionalUpdateConsult(id, buildTransferPayload, { awaitRemote: true })
-                )
-                .then((txResult) => {
-                    if (!txResult.applied) {
+        const runDeferredTransfer = async (): Promise<void> => {
+            const maxRetryAttempts = 3;
+            let retryCount = 0;
+            while (latestTransferEpochByCaseId.get(id) === requestEpoch) {
+                await waitForOnlineReconnect();
+                if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
+                try {
+                    const txResult = await transactionalUpdateConsult(id, buildTransferPayload, {
+                        awaitRemote: true,
+                    });
+                    if (!txResult.applied && latestTransferEpochByCaseId.get(id) === requestEpoch) {
                         onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
                     }
-                })
-                .catch((err) => {
+                    return;
+                } catch (err) {
+                    if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
+                    if (isRetryableTransferError(err) && retryCount < maxRetryAttempts) {
+                        retryCount += 1;
+                        if (typeof navigator !== "undefined" && navigator.onLine !== false) {
+                            await new Promise((r) => setTimeout(r, Math.min(250 * retryCount, 1000)));
+                        }
+                        continue;
+                    }
                     console.error("Deferred offline transfer failed:", err);
                     onBackgroundError?.(err);
-                })
-        );
+                    return;
+                }
+            }
+        };
+
+        const reconnectPromise = trackOptimisticWrite(runDeferredTransfer());
         void reconnectPromise;
 
         return {

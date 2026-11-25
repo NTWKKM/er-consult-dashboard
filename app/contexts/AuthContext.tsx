@@ -437,7 +437,8 @@ export function AuthProvider({
               }
             };
             if (db) {
-              void terminate(db)
+              const activeDb = db;
+              void terminate(activeDb)
                 .catch(() => {})
                 .finally(() => {
                   sendAck();
@@ -446,14 +447,32 @@ export function AuthProvider({
                     if (peerCacheClearedRef.current) {
                       triggerPeerReloadIfReady();
                     } else if (peerReloadFallbackTimerRef.current === null) {
-                      // Safety fallback in case initiating tab closes before clearing persistence
-                      peerReloadFallbackTimerRef.current = setTimeout(() => {
-                        peerReloadFallbackTimerRef.current = null;
-                        if (channelRef.current === channel) {
-                          peerCacheClearedRef.current = true;
-                          triggerPeerReloadIfReady();
-                        }
-                      }, PEER_CACHE_CLEAR_FALLBACK_MS);
+                      // Safety fallback if initiating tab closed/crashed: clear persistence locally
+                      // before reloading; if initiating tab is still clearing, retry after another wait.
+                      const scheduleFallbackCheck = (attempt = 0) => {
+                        peerReloadFallbackTimerRef.current = setTimeout(() => {
+                          peerReloadFallbackTimerRef.current = null;
+                          if (channelRef.current !== channel) return;
+                          if (peerCacheClearedRef.current) {
+                            triggerPeerReloadIfReady();
+                            return;
+                          }
+                          void clearIndexedDbPersistence(activeDb).then(
+                            () => {
+                              if (channelRef.current === channel) {
+                                peerCacheClearedRef.current = true;
+                                triggerPeerReloadIfReady();
+                              }
+                            },
+                            () => {
+                              if (channelRef.current === channel && attempt < 5) {
+                                scheduleFallbackCheck(attempt + 1);
+                              }
+                            }
+                          );
+                        }, PEER_CACHE_CLEAR_FALLBACK_MS);
+                      };
+                      scheduleFallbackCheck(0);
                     }
                   }
                 });
@@ -833,9 +852,7 @@ export function AuthProvider({
           await terminatePeerFirestoreTabs();
           await terminate(db);
           await clearIndexedDbPersistence(db);
-        } catch {
-          // Ignore if another tab holds an active Firestore connection
-        } finally {
+          // Notify peers ONLY after IndexedDB persistence deletion actually succeeded
           try {
             channelRef.current?.postMessage({
               type: "LOGOUT_CACHE_CLEARED",
@@ -844,6 +861,8 @@ export function AuthProvider({
           } catch {
             // Ignore broadcast errors during logout
           }
+        } catch {
+          // Ignore if another tab holds an active Firestore connection
         }
         // Full page reload after terminate(db) initializes a clean Firestore instance and redirects via ProtectedRoute
         window.location.reload();

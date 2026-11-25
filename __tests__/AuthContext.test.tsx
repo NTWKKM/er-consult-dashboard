@@ -2032,10 +2032,99 @@ describe("AuthContext", () => {
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1500);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      peerChannel.close();
+    }
+  });
+
+  it("keeps peer closed past 1,500ms when slow initiator holds persistence lock until LOGOUT_CACHE_CLEARED arrives", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+
+    try {
+      // Simulate initiating tab still clearing persistence so peer's fallback clear fails precondition
+      mockClearIndexedDbPersistence.mockRejectedValue(new Error("failed-precondition"));
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-slow-init-1",
+        senderTabId: "slow-initiator",
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      // Slow initiator has not finished clearing yet -> peer must stay closed (not reload)
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Once slow initiator actually finishes clearIndexedDbPersistence and broadcasts LOGOUT_CACHE_CLEARED
+      peerChannel.postMessage({
+        type: "LOGOUT_CACHE_CLEARED",
+        senderTabId: "slow-initiator",
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
       });
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
+      peerChannel.close();
+    }
+  });
+
+  it("does not broadcast LOGOUT_CACHE_CLEARED if clearIndexedDbPersistence rejects on initiator", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string });
+    };
+
+    try {
+      mockClearIndexedDbPersistence.mockRejectedValueOnce(new Error("failed-precondition"));
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(false);
+    } finally {
       peerChannel.close();
     }
   });

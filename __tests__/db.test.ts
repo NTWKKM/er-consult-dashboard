@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vite
 const {
   mockGetDoc,
   mockGetDocFromCache,
+  mockGetDocFromServer,
   mockUpdateDoc,
   mockDeleteDoc,
   mockGetDocs,
@@ -25,6 +26,7 @@ const {
 } = vi.hoisted(() => ({
   mockGetDoc: vi.fn(),
   mockGetDocFromCache: vi.fn(),
+  mockGetDocFromServer: vi.fn(),
   mockUpdateDoc: vi.fn(),
   mockDeleteDoc: vi.fn(),
   mockGetDocs: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock("firebase/firestore", () => ({
   setDoc: mockSetDoc,
   getDoc: mockGetDoc,
   getDocFromCache: mockGetDocFromCache,
+  getDocFromServer: mockGetDocFromServer,
   updateDoc: mockUpdateDoc,
   deleteDoc: mockDeleteDoc,
   getDocs: mockGetDocs,
@@ -117,6 +120,8 @@ beforeEach(() => {
   mockGetDoc.mockReset();
   mockGetDocFromCache.mockReset();
   mockGetDocFromCache.mockRejectedValue(new Error("cache miss"));
+  mockGetDocFromServer.mockReset();
+  mockGetDocFromServer.mockImplementation((...args: unknown[]) => mockGetDoc(...args));
 });
 
 // ===========================================================================
@@ -1926,5 +1931,107 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     expect((onBackgroundError.mock.calls[0][0] as Error).message).toBe(
       "TRANSACTION_CONDITION_NOT_MET"
     );
+  });
+
+  it("updateConsult({ awaitRemote: false }) rejects without queuing when server is unreachable despite online flag", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockResolvedValue(makeDocSnapshot("c-srv-fail", baseConsult()));
+    mockGetDocFromServer.mockRejectedValueOnce(new Error("Failed to get document because the client is offline"));
+
+    await expect(
+      updateConsult(
+        "c-srv-fail",
+        () => ({ "departments.Gen Sx.admittedAt": "2024-01-10T10:00:00.000Z" }),
+        { awaitRemote: false }
+      )
+    ).rejects.toThrow(/offline/);
+
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it("transferConsultRoom supersedes an earlier offline transfer when a newer transfer is queued for the same case", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-supersede",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    mockRunTransaction.mockImplementation(async (_db, fn) =>
+      fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-supersede",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      })
+    );
+
+    const first = await transferConsultRoom("c-supersede", "SSW");
+    const second = await transferConsultRoom("c-supersede", "Urgent");
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await Promise.all([first.backgroundPromise, second.backgroundPromise]);
+
+    expect(committedRooms).toEqual(["Urgent"]);
+  });
+
+  it("transferConsultRoom retains and retries offline transfer after a retryable connection failure", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValueOnce(
+      makeDocSnapshot(
+        "c-retry",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const updateSpy = vi.fn();
+    let attempt = 0;
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const err = new Error("Connection lost");
+        (err as { code?: string }).code = "unavailable";
+        throw err;
+      }
+      return fn({
+        get: vi.fn().mockResolvedValue(makeDocSnapshot("c-retry", baseConsult({ room: "NT" }))),
+        update: updateSpy,
+      });
+    });
+
+    const onBackgroundError = vi.fn();
+    const res = await transferConsultRoom("c-retry", "SSW", onBackgroundError);
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await res.backgroundPromise;
+
+    expect(attempt).toBe(2);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(onBackgroundError).not.toHaveBeenCalled();
+  });
+
+  it("clearRetainedSubmitDraft cleans up legacy er_consult_submit_drafts_v1 sessionStorage key", () => {
+    window.sessionStorage.setItem("er_consult_submit_drafts_v1", '{"hn":"999999"}');
+    clearRetainedSubmitDraft();
+    expect(window.sessionStorage.getItem("er_consult_submit_drafts_v1")).toBeNull();
   });
 });

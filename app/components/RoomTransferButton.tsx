@@ -99,7 +99,10 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       if (transferred) {
         addToast(
           isOfflineQueued
-            ? { message: `บันทึกคำขอย้ายเคสไปยัง ${newRoom} แล้ว (รอซิงค์เมื่อออนไลน์)`, type: "info" }
+            ? {
+                message: `คิวคำขอย้ายเคสไปยัง ${newRoom} ในเซสชันนี้แล้ว (อย่าปิดหน้านี้ก่อนออนไลน์เพื่อซิงค์)`,
+                type: "info",
+              }
             : { message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" }
         );
         onTransferEnd?.(true); // success callback
