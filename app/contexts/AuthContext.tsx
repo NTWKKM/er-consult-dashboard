@@ -99,7 +99,7 @@ type AuthSyncMessage =
   | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string }
   | { type: "LOGOUT_TERMINATE_DB_REQUEST"; requestId: string; senderTabId: string }
   | { type: "LOGOUT_TERMINATE_DB_ACK"; requestId: string; tabId: string }
-  | { type: "LOGOUT_CACHE_CLEARED"; requestId?: string; senderTabId: string };
+  | { type: "LOGOUT_CACHE_CLEARED"; requestId: string; senderTabId: string };
 
 async function confirmPendingWritesBeforeLogout(
   firestoreDb: Firestore | null,
@@ -525,7 +525,7 @@ export function AuthProvider({
         case "LOGOUT_CACHE_CLEARED":
           if (msg.senderTabId !== myTabId) {
             if (
-              msg.requestId !== undefined &&
+              !activeTerminateRequestIdRef.current ||
               msg.requestId !== activeTerminateRequestIdRef.current
             ) {
               break;
@@ -898,14 +898,16 @@ export function AuthProvider({
       // Clear local IndexedDB cache on shared ER workstations so patient PHI does not persist across shifts
       if (db && typeof window !== "undefined") {
         try {
-          const terminateRequestId = await terminatePeerFirestoreTabs();
+          const terminateRequestId =
+            (await terminatePeerFirestoreTabs()) ??
+            `term-${ownerTabId}-${Date.now()}-${logoutSequenceRef.current}`;
           await terminate(db);
           await clearIndexedDbPersistence(db);
           // Notify peers ONLY after IndexedDB persistence deletion actually succeeded
           try {
             channelRef.current?.postMessage({
               type: "LOGOUT_CACHE_CLEARED",
-              ...(terminateRequestId ? { requestId: terminateRequestId } : {}),
+              requestId: terminateRequestId,
               senderTabId: tabIdRef.current,
             } satisfies AuthSyncMessage);
           } catch {

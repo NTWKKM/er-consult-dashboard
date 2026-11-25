@@ -1986,6 +1986,7 @@ describe("AuthContext", () => {
 
       peerChannel.postMessage({
         type: "LOGOUT_CACHE_CLEARED",
+        requestId: "term-after-null-1",
         senderTabId: "initiating-tab",
       });
 
@@ -2134,6 +2135,7 @@ describe("AuthContext", () => {
       // Once slow initiator actually finishes clearIndexedDbPersistence and broadcasts LOGOUT_CACHE_CLEARED
       peerChannel.postMessage({
         type: "LOGOUT_CACHE_CLEARED",
+        requestId: "term-slow-init-1",
         senderTabId: "slow-initiator",
       });
 
@@ -2334,6 +2336,16 @@ describe("AuthContext", () => {
 
       await waitFor(() => {
         expect(mockTerminate).toHaveBeenCalledTimes(1);
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Untagged signal (missing requestId) arriving after a termination request must be ignored
+      peerChannel.postMessage({
+        type: "LOGOUT_CACHE_CLEARED",
+        senderTabId: "untagged-initiator",
+      });
+      await act(async () => {
+        await Promise.resolve();
       });
       expect(reloadSpy).not.toHaveBeenCalled();
 
