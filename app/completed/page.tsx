@@ -480,6 +480,7 @@ export default function CompletedPage() {
   };
 
   const openReConsultModal = (caseData: Consult) => {
+    if (reconsultInFlightRef.current || isUpdating) return;
     reconsultAttemptRef.current += 1;
     reconsultPrevFocusedRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1126,7 +1127,8 @@ export default function CompletedPage() {
                         <button
                           type="button"
                           onClick={() => openReConsultModal(caseData)}
-                          className="px-3 py-1.5 rounded-[6px] text-xs font-medium transition-opacity duration-200 flex items-center gap-1 mx-auto mt-1 bg-accent text-accent-ink hover:opacity-90 whitespace-nowrap tap-feedback"
+                          disabled={isUpdating}
+                          className="px-3 py-1.5 rounded-[6px] text-xs font-medium transition-opacity duration-200 flex items-center gap-1 mx-auto mt-1 bg-accent text-accent-ink hover:opacity-90 whitespace-nowrap tap-feedback disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path
@@ -1211,7 +1213,8 @@ export default function CompletedPage() {
                   <button
                     type="button"
                     onClick={() => openReConsultModal(caseData)}
-                    className="mt-2 w-full px-3 py-1.5 rounded-[6px] text-xs font-medium transition-opacity flex items-center justify-center gap-1 bg-accent text-accent-ink hover:opacity-90 whitespace-nowrap tap-feedback"
+                    disabled={isUpdating}
+                    className="mt-2 w-full px-3 py-1.5 rounded-[6px] text-xs font-medium transition-opacity flex items-center justify-center gap-1 bg-accent text-accent-ink hover:opacity-90 whitespace-nowrap tap-feedback disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path

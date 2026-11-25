@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { User, onAuthStateChanged, signOut } from "firebase/auth";
 import { clearIndexedDbPersistence, terminate, waitForPendingWrites, type Firestore } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
@@ -65,6 +65,7 @@ const AUTH_SYNC_CHANNEL = "er_consult_auth_sync_v1";
 const PEER_LOGOUT_CHECK_TIMEOUT_MS = 120;
 const PEER_TERMINATE_TIMEOUT_MS = 500;
 const PEER_CACHE_CLEAR_FALLBACK_MS = 1500;
+const PEER_CACHE_CLEAR_PENDING_WAIT_MS = 3000;
 const LOGOUT_RESERVATION_TTL_MS = 5000;
 const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 
@@ -218,10 +219,30 @@ export function AuthProvider({
   const pendingFirestoreCleanupRef = useRef(false);
   const activeTerminateRequestIdRef = useRef<string | null>(null);
   const terminatedDbRef = useRef<Firestore | null>(null);
+  const activeClearPromiseRef = useRef<Promise<void> | null>(null);
+  const cleanupRoleRef = useRef<"peer" | "initiator" | null>(null);
+  const initiatorTerminateSucceededRef = useRef(false);
+  const initiatorTerminateRequestIdRef = useRef<string | null>(null);
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peerClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cleanupBackdropRef = useRef<HTMLDivElement>(null);
+  const cleanupDialogRef = useRef<HTMLDivElement>(null);
+  const cleanupRetryButtonRef = useRef<HTMLButtonElement>(null);
   const [cleanupPhase, setCleanupPhase] = useState<"idle" | "pending" | "manual_retry">("idle");
+  const [cleanupBlockedByPending, setCleanupBlockedByPending] = useState(false);
   const [manualRetryInFlight, setManualRetryInFlight] = useState(false);
   const [manualRetryError, setManualRetryError] = useState(false);
+  const getOrStartClearPersistence = useCallback((targetDb: Firestore): Promise<void> => {
+    if (!activeClearPromiseRef.current) {
+      const clearPromise = clearIndexedDbPersistence(targetDb).finally(() => {
+        if (activeClearPromiseRef.current === clearPromise) {
+          activeClearPromiseRef.current = null;
+        }
+      });
+      activeClearPromiseRef.current = clearPromise;
+    }
+    return activeClearPromiseRef.current;
+  }, []);
   const triggerPeerReloadIfReady = useCallback(() => {
     if (
       (signedOutAppliedRef.current || pendingFirestoreCleanupRef.current) &&
@@ -233,12 +254,24 @@ export function AuthProvider({
         clearTimeout(peerReloadFallbackTimerRef.current);
         peerReloadFallbackTimerRef.current = null;
       }
+      if (peerClearPendingTimerRef.current !== null) {
+        clearTimeout(peerClearPendingTimerRef.current);
+        peerClearPendingTimerRef.current = null;
+      }
+      if (peerClearPendingTimerRef.current !== null) {
+        clearTimeout(peerClearPendingTimerRef.current);
+        peerClearPendingTimerRef.current = null;
+      }
       pendingFirestoreCleanupRef.current = false;
       peerDbTerminatedRef.current = false;
       peerCacheClearedRef.current = false;
       activeTerminateRequestIdRef.current = null;
       terminatedDbRef.current = null;
+      cleanupRoleRef.current = null;
+      initiatorTerminateSucceededRef.current = false;
+      initiatorTerminateRequestIdRef.current = null;
       setCleanupPhase("idle");
+      setCleanupBlockedByPending(false);
       setManualRetryInFlight(false);
       setManualRetryError(false);
       window.location.reload();
@@ -439,19 +472,28 @@ export function AuthProvider({
           break;
         case "LOGOUT_TERMINATE_DB_REQUEST":
           if (msg.senderTabId !== myTabId) {
+            const requestId = msg.requestId;
             // Reset peer reload-barrier state for each termination request so earlier signals cannot carry over
-            activeTerminateRequestIdRef.current = msg.requestId;
+            activeTerminateRequestIdRef.current = requestId;
+            cleanupRoleRef.current = "peer";
             peerDbTerminatedRef.current = false;
             peerCacheClearedRef.current = false;
+            setCleanupBlockedByPending(false);
             if (peerReloadFallbackTimerRef.current !== null) {
               clearTimeout(peerReloadFallbackTimerRef.current);
               peerReloadFallbackTimerRef.current = null;
             }
+            if (peerClearPendingTimerRef.current !== null) {
+              clearTimeout(peerClearPendingTimerRef.current);
+              peerClearPendingTimerRef.current = null;
+            }
+            const isCurrentRequest = () =>
+              channelRef.current === channel && activeTerminateRequestIdRef.current === requestId;
             const sendAck = () => {
               try {
                 channel.postMessage({
                   type: "LOGOUT_TERMINATE_DB_ACK",
-                  requestId: msg.requestId,
+                  requestId,
                   tabId: myTabId,
                 } satisfies AuthSyncMessage);
               } catch {
@@ -470,44 +512,68 @@ export function AuthProvider({
                 .catch(() => {})
                 .finally(() => {
                   sendAck();
-                  if (channelRef.current === channel) {
-                    peerDbTerminatedRef.current = true;
-                    if (peerCacheClearedRef.current) {
-                      triggerPeerReloadIfReady();
-                    } else if (peerReloadFallbackTimerRef.current === null) {
-                      // Safety fallback if initiating tab closed/crashed: clear persistence locally
-                      // before reloading; if initiating tab is still clearing, retry up to 6 times,
-                      // then keep the tab in a manual retry cleanup state without reloading stale PHI.
-                      const scheduleFallbackCheck = (attempt = 0) => {
-                        peerReloadFallbackTimerRef.current = setTimeout(() => {
-                          peerReloadFallbackTimerRef.current = null;
-                          if (channelRef.current !== channel) return;
-                          if (peerCacheClearedRef.current) {
-                            triggerPeerReloadIfReady();
-                            return;
-                          }
-                          void clearIndexedDbPersistence(activeDb).then(
-                            () => {
-                              if (channelRef.current === channel) {
-                                peerCacheClearedRef.current = true;
-                                triggerPeerReloadIfReady();
-                              }
-                            },
-                            () => {
-                              if (channelRef.current !== channel) return;
-                              if (attempt < 5) {
-                                scheduleFallbackCheck(attempt + 1);
-                              } else {
-                                pendingFirestoreCleanupRef.current = true;
-                                terminatedDbRef.current = activeDb;
-                                setCleanupPhase("manual_retry");
-                              }
+                  if (!isCurrentRequest()) return;
+                  peerDbTerminatedRef.current = true;
+                  if (peerCacheClearedRef.current) {
+                    triggerPeerReloadIfReady();
+                  } else if (peerReloadFallbackTimerRef.current === null) {
+                    // Safety fallback if initiating tab closed/crashed: clear persistence locally
+                    // before reloading; if initiating tab is still clearing, retry up to 6 times,
+                    // or surface instructions if a deletion remains pending beyond a bounded wait.
+                    const scheduleFallbackCheck = (attempt = 0) => {
+                      peerReloadFallbackTimerRef.current = setTimeout(() => {
+                        peerReloadFallbackTimerRef.current = null;
+                        if (!isCurrentRequest()) return;
+                        if (peerCacheClearedRef.current) {
+                          triggerPeerReloadIfReady();
+                          return;
+                        }
+                        let settled = false;
+                        const clearPromise = getOrStartClearPersistence(activeDb);
+                        if (peerClearPendingTimerRef.current !== null) {
+                          clearTimeout(peerClearPendingTimerRef.current);
+                        }
+                        peerClearPendingTimerRef.current = setTimeout(() => {
+                          peerClearPendingTimerRef.current = null;
+                          if (settled || !isCurrentRequest()) return;
+                          pendingFirestoreCleanupRef.current = true;
+                          terminatedDbRef.current = activeDb;
+                          setCleanupBlockedByPending(true);
+                          setCleanupPhase("manual_retry");
+                        }, PEER_CACHE_CLEAR_PENDING_WAIT_MS);
+
+                        void clearPromise.then(
+                          () => {
+                            settled = true;
+                            if (peerClearPendingTimerRef.current !== null) {
+                              clearTimeout(peerClearPendingTimerRef.current);
+                              peerClearPendingTimerRef.current = null;
                             }
-                          );
-                        }, PEER_CACHE_CLEAR_FALLBACK_MS);
-                      };
-                      scheduleFallbackCheck(0);
-                    }
+                            if (!isCurrentRequest()) return;
+                            setCleanupBlockedByPending(false);
+                            peerCacheClearedRef.current = true;
+                            triggerPeerReloadIfReady();
+                          },
+                          () => {
+                            settled = true;
+                            if (peerClearPendingTimerRef.current !== null) {
+                              clearTimeout(peerClearPendingTimerRef.current);
+                              peerClearPendingTimerRef.current = null;
+                            }
+                            if (!isCurrentRequest()) return;
+                            setCleanupBlockedByPending(false);
+                            if (attempt < 5) {
+                              scheduleFallbackCheck(attempt + 1);
+                            } else {
+                              pendingFirestoreCleanupRef.current = true;
+                              terminatedDbRef.current = activeDb;
+                              setCleanupPhase("manual_retry");
+                            }
+                          }
+                        );
+                      }, PEER_CACHE_CLEAR_FALLBACK_MS);
+                    };
+                    scheduleFallbackCheck(0);
                   }
                 });
             } else {
@@ -594,6 +660,10 @@ export function AuthProvider({
         clearTimeout(peerReloadFallbackTimerRef.current);
         peerReloadFallbackTimerRef.current = null;
       }
+      if (peerClearPendingTimerRef.current !== null) {
+        clearTimeout(peerClearPendingTimerRef.current);
+        peerClearPendingTimerRef.current = null;
+      }
       helloHandshakeStateRef.current = "settled";
       notifyBye();
       channelRef.current = null;
@@ -610,7 +680,7 @@ export function AuthProvider({
       pendingTerminateAcks.clear();
       channel.close();
     };
-  }, [activeReservationStore, triggerPeerReloadIfReady]);
+  }, [activeReservationStore, getOrStartClearPersistence, triggerPeerReloadIfReady]);
 
   const queryPeerTabsBeforeLogout = useCallback(async (issuedRequestIds?: string[]): Promise<PeerTabDirtyState> => {
     const channel = channelRef.current;
@@ -785,6 +855,7 @@ export function AuthProvider({
     activeReservationStore.reserveSubmissionsForLogout(selfReservationId, LOGOUT_RESERVATION_TTL_MS);
     const issuedRequestIds: string[] = [];
     let logoutCommitted = false;
+    let terminationStarted = false;
     // Periodically renew the short-lived lease while confirmation or signOut is in flight
     const renewIntervalId =
       typeof window !== "undefined"
@@ -853,6 +924,7 @@ export function AuthProvider({
       }
 
       if (auth) {
+        pendingFirestoreCleanupRef.current = true;
         await signOut(auth);
       }
 
@@ -897,12 +969,24 @@ export function AuthProvider({
 
       // Clear local IndexedDB cache on shared ER workstations so patient PHI does not persist across shifts
       if (db && typeof window !== "undefined") {
+        const terminateRequestId =
+          (await terminatePeerFirestoreTabs()) ??
+          `term-${ownerTabId}-${Date.now()}-${logoutSequenceRef.current}`;
+        terminationStarted = true;
+        pendingFirestoreCleanupRef.current = true;
+        cleanupRoleRef.current = "initiator";
+        terminatedDbRef.current = db;
+        initiatorTerminateSucceededRef.current = false;
+        initiatorTerminateRequestIdRef.current = terminateRequestId;
+        setCleanupBlockedByPending(false);
+        setManualRetryError(false);
+        setCleanupPhase("pending");
+        setUser(null);
+        setIsAuthorizedStaff(false);
         try {
-          const terminateRequestId =
-            (await terminatePeerFirestoreTabs()) ??
-            `term-${ownerTabId}-${Date.now()}-${logoutSequenceRef.current}`;
           await terminate(db);
-          await clearIndexedDbPersistence(db);
+          initiatorTerminateSucceededRef.current = true;
+          await getOrStartClearPersistence(db);
           // Notify peers ONLY after IndexedDB persistence deletion actually succeeded
           try {
             channelRef.current?.postMessage({
@@ -913,13 +997,24 @@ export function AuthProvider({
           } catch {
             // Ignore broadcast errors during logout
           }
+          pendingFirestoreCleanupRef.current = false;
+          cleanupRoleRef.current = null;
+          terminatedDbRef.current = null;
+          initiatorTerminateRequestIdRef.current = null;
+          setCleanupPhase("idle");
+          // Full page reload after terminate(db) initializes a clean Firestore instance and redirects via ProtectedRoute
+          window.location.reload();
         } catch {
-          // Ignore if another tab holds an active Firestore connection
+          // Keep access blocked and offer retry; do NOT reload with stale PHI in IndexedDB
+          pendingFirestoreCleanupRef.current = true;
+          setManualRetryError(true);
+          setCleanupPhase("manual_retry");
         }
-        // Full page reload after terminate(db) initializes a clean Firestore instance and redirects via ProtectedRoute
-        window.location.reload();
       }
     } finally {
+      if (!terminationStarted) {
+        pendingFirestoreCleanupRef.current = false;
+      }
       if (renewIntervalId !== null) {
         clearInterval(renewIntervalId);
       }
@@ -942,7 +1037,7 @@ export function AuthProvider({
       }
       logoutInProgressRef.current = false;
     }
-  }, [queryPeerTabsBeforeLogout, terminatePeerFirestoreTabs, requestDiscardConfirmation, activeReservationStore]);
+  }, [queryPeerTabsBeforeLogout, terminatePeerFirestoreTabs, requestDiscardConfirmation, activeReservationStore, getOrStartClearPersistence]);
 
   const handleManualRetryCleanup = useCallback(async () => {
     if (manualRetryInFlight) return;
@@ -952,18 +1047,140 @@ export function AuthProvider({
     setManualRetryInFlight(true);
     setManualRetryError(false);
     try {
-      await clearIndexedDbPersistence(targetDb);
-      peerCacheClearedRef.current = true;
-      peerDbTerminatedRef.current = true;
-      triggerPeerReloadIfReady();
+      if (cleanupRoleRef.current === "initiator" && !initiatorTerminateSucceededRef.current) {
+        await terminate(targetDb);
+        initiatorTerminateSucceededRef.current = true;
+      }
+      await getOrStartClearPersistence(targetDb);
+      if (cleanupRoleRef.current === "initiator") {
+        const reqId = initiatorTerminateRequestIdRef.current;
+        if (reqId) {
+          try {
+            channelRef.current?.postMessage({
+              type: "LOGOUT_CACHE_CLEARED",
+              requestId: reqId,
+              senderTabId: tabIdRef.current,
+            } satisfies AuthSyncMessage);
+          } catch {
+            // Ignore broadcast errors during retry
+          }
+        }
+        pendingFirestoreCleanupRef.current = false;
+        cleanupRoleRef.current = null;
+        terminatedDbRef.current = null;
+        initiatorTerminateRequestIdRef.current = null;
+        setCleanupBlockedByPending(false);
+        setCleanupPhase("idle");
+        window.location.reload();
+      } else {
+        setCleanupBlockedByPending(false);
+        peerCacheClearedRef.current = true;
+        peerDbTerminatedRef.current = true;
+        triggerPeerReloadIfReady();
+      }
     } catch {
       pendingFirestoreCleanupRef.current = true;
+      setCleanupBlockedByPending(false);
       setCleanupPhase("manual_retry");
       setManualRetryError(true);
     } finally {
       setManualRetryInFlight(false);
     }
-  }, [manualRetryInFlight, triggerPeerReloadIfReady]);
+  }, [getOrStartClearPersistence, manualRetryInFlight, triggerPeerReloadIfReady]);
+
+  useLayoutEffect(() => {
+    if (cleanupPhase !== "manual_retry") return;
+
+    // Move keyboard focus into the cleanup gate dialog immediately when it appears
+    if (cleanupRetryButtonRef.current && !cleanupRetryButtonRef.current.disabled) {
+      cleanupRetryButtonRef.current.focus();
+    } else {
+      cleanupDialogRef.current?.focus();
+    }
+
+    const inertApplied: HTMLElement[] = [];
+    const appShell = document.getElementById("app-shell-root");
+    if (appShell) {
+      if (!appShell.hasAttribute("inert")) {
+        appShell.setAttribute("inert", "");
+        inertApplied.push(appShell);
+      }
+    } else if (cleanupBackdropRef.current?.parentElement) {
+      Array.from(cleanupBackdropRef.current.parentElement.children).forEach((sibling) => {
+        if (
+          sibling instanceof HTMLElement &&
+          sibling !== cleanupBackdropRef.current &&
+          !sibling.hasAttribute("inert")
+        ) {
+          sibling.setAttribute("inert", "");
+          inertApplied.push(sibling);
+        }
+      });
+    }
+
+    return () => {
+      inertApplied.forEach((el) => el.removeAttribute("inert"));
+    };
+  }, [cleanupPhase]);
+
+  useEffect(() => {
+    if (cleanupPhase !== "manual_retry") return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Dismissal must not bypass the Firestore cleanup gate
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === "Tab" && cleanupDialogRef.current) {
+        const focusable = Array.from(
+          cleanupDialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]):not([aria-hidden="true"]), [href]:not([disabled]):not([aria-hidden="true"]), input:not([disabled]):not([aria-hidden="true"]), select:not([disabled]):not([aria-hidden="true"]), textarea:not([disabled]):not([aria-hidden="true"]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([aria-hidden="true"])'
+          )
+        );
+        if (focusable.length === 0) {
+          e.preventDefault();
+          cleanupDialogRef.current.focus();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (!active || !cleanupDialogRef.current.contains(active)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        } else if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    const handleFocusIn = (e: FocusEvent) => {
+      if (
+        cleanupDialogRef.current &&
+        e.target instanceof Node &&
+        !cleanupDialogRef.current.contains(e.target)
+      ) {
+        if (cleanupRetryButtonRef.current && !cleanupRetryButtonRef.current.disabled) {
+          cleanupRetryButtonRef.current.focus();
+        } else {
+          cleanupDialogRef.current.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("focusin", handleFocusIn, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("focusin", handleFocusIn, true);
+    };
+  }, [cleanupPhase]);
 
   const isPendingCleanup = cleanupPhase !== "idle";
 
@@ -972,18 +1189,25 @@ export function AuthProvider({
       {children}
       {cleanupPhase === "manual_retry" && (
         <div
+          ref={cleanupBackdropRef}
           className="fixed inset-0 z-[130] bg-paper-3/90 flex items-center justify-center p-4"
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="cleanup-retry-title"
           aria-describedby="cleanup-retry-desc"
         >
-          <div className="w-full max-w-md rounded-[10px] border border-rule bg-paper-2 p-6">
+          <div
+            ref={cleanupDialogRef}
+            tabIndex={-1}
+            className="w-full max-w-md rounded-[10px] border border-rule bg-paper-2 p-6 focus:outline-none"
+          >
             <h2 id="cleanup-retry-title" className="text-lg font-medium text-ink mb-2">
               จำเป็นต้องล้างข้อมูลแคชก่อนใช้งานต่อ
             </h2>
             <p id="cleanup-retry-desc" className="text-sm text-ink-2 mb-4">
-              ระบบยังไม่สามารถล้างข้อมูลผู้ป่วยในเบราว์เซอร์ได้อัตโนมัติ (อาจมีแท็บอื่นเปิดค้างอยู่) กรุณาปิดแท็บอื่นของระบบแล้วกดลองล้างแคชอีกครั้งเพื่อความปลอดภัย
+              {cleanupBlockedByPending
+                ? "การล้างข้อมูลแคชในเบราว์เซอร์ยังรอดำเนินการอยู่ กรุณาปิดแท็บอื่นของระบบที่เปิดค้างไว้ แล้วระบบจะล้างแคชและโหลดหน้าใหม่อัตโนมัติ"
+                : "ระบบยังไม่สามารถล้างข้อมูลผู้ป่วยในเบราว์เซอร์ได้อัตโนมัติ (อาจมีแท็บอื่นเปิดค้างอยู่) กรุณาปิดแท็บอื่นของระบบแล้วกดลองล้างแคชอีกครั้งเพื่อความปลอดภัย"}
             </p>
             {manualRetryError && (
               <p role="alert" className="text-xs font-medium text-bad bg-bad-soft border border-bad/35 rounded-[6px] px-3 py-2 mb-4">
@@ -991,6 +1215,7 @@ export function AuthProvider({
               </p>
             )}
             <button
+              ref={cleanupRetryButtonRef}
               type="button"
               onClick={() => void handleManualRetryCleanup()}
               disabled={manualRetryInFlight}

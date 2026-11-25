@@ -714,6 +714,7 @@ export type ConsultUpdater = (current: Consult) => ConsultUpdate | null;
 export interface UpdateConsultOptions {
     awaitRemote?: boolean;
     onBackgroundError?: (error: unknown) => void;
+    scheduleTransaction?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
 
 export interface UpdateResults {
@@ -966,7 +967,10 @@ export async function transactionalUpdateConsult(
 
     if (!awaitRemote) {
         // Fire transaction in background, return optimistic result immediately
-        const backgroundPromise = trackOptimisticWrite(transactionWork().then(result => {
+        const runScheduledTransaction = options.scheduleTransaction
+            ? () => options.scheduleTransaction!(transactionWork)
+            : transactionWork;
+        const backgroundPromise = trackOptimisticWrite(runScheduledTransaction().then(result => {
             if (!result.applied) {
                 // Transaction succeeded but condition was not met — another user got there first
                 const abortError = new Error("TRANSACTION_CONDITION_NOT_MET");
@@ -1003,7 +1007,24 @@ export async function transactionalUpdateConsult(
 }
 
 const latestTransferEpochByCaseId = new Map<string, number>();
+const pendingTransferTailByCaseId = new Map<string, Promise<void>>();
 let transferEpochSeq = 0;
+
+function enqueueCaseTransfer<T>(caseId: string, task: () => Promise<T>): Promise<T> {
+    const prev = pendingTransferTailByCaseId.get(caseId) ?? Promise.resolve();
+    const run = prev.catch(() => {}).then(task);
+    const tail = run.then(
+        () => {},
+        () => {}
+    );
+    pendingTransferTailByCaseId.set(caseId, tail);
+    void tail.then(() => {
+        if (pendingTransferTailByCaseId.get(caseId) === tail) {
+            pendingTransferTailByCaseId.delete(caseId);
+        }
+    });
+    return run;
+}
 
 function isRetryableTransferError(err: unknown): boolean {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
@@ -1124,8 +1145,18 @@ export async function transferConsultRoom(
                 await waitForOnlineReconnect();
                 if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
                 try {
-                    const txResult = await transactionalUpdateConsult(id, buildTransferPayload, {
-                        awaitRemote: true,
+                    const txResult = await enqueueCaseTransfer(id, async () => {
+                        if (latestTransferEpochByCaseId.get(id) !== requestEpoch) {
+                            return {
+                                consult: null,
+                                isQueued: false,
+                                backgroundPromise: null,
+                                applied: false,
+                            };
+                        }
+                        return transactionalUpdateConsult(id, buildTransferPayload, {
+                            awaitRemote: true,
+                        });
                     });
                     if (!txResult.applied && latestTransferEpochByCaseId.get(id) === requestEpoch) {
                         onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
@@ -1160,6 +1191,13 @@ export async function transferConsultRoom(
     const result = await transactionalUpdateConsult(id, buildTransferPayload, {
         awaitRemote: false,
         onBackgroundError,
+        scheduleTransaction: (fn) =>
+            enqueueCaseTransfer(id, async () => {
+                if (latestTransferEpochByCaseId.get(id) !== requestEpoch) {
+                    return { applied: false, consult: null } as Awaited<ReturnType<typeof fn>>;
+                }
+                return fn();
+            }),
     });
 
     return {

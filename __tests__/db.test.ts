@@ -2111,14 +2111,78 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
 
     // Newer valid transfer takes ownership while first transaction is mid-flight
     const second = await transferConsultRoom("c-midflight", "Urgent");
-    await second.backgroundPromise;
 
-    // Unblock first transaction -> buildTransferPayload sees superseded epoch and returns null (no overwrite)
+    // Unblock first transaction -> buildTransferPayload sees superseded epoch and returns null (no overwrite),
+    // and serialized per-case execution ensures second runs only after first settles
     releaseFirstTxGet();
-    await first.backgroundPromise;
+    await Promise.all([first.backgroundPromise, second.backgroundPromise]);
 
     expect(committedRooms).toEqual(["Urgent"]);
     expect(onFirstErr).not.toHaveBeenCalled();
+  });
+
+  it("transferConsultRoom serializes per-case commits so a transfer superseded after updater runs cannot overwrite the newer owner", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-serial",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    let firstUpdaterDone!: () => void;
+    const firstUpdaterDonePromise = new Promise<void>((resolve) => {
+      firstUpdaterDone = resolve;
+    });
+    let releaseFirstCommit!: () => void;
+    const releaseFirstCommitPromise = new Promise<void>((resolve) => {
+      releaseFirstCommit = resolve;
+    });
+
+    let txCount = 0;
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      const idx = ++txCount;
+      const result = await fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-serial",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (idx === 1) {
+            firstUpdaterDone();
+          }
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      });
+      if (idx === 1) {
+        await releaseFirstCommitPromise;
+      }
+      return result;
+    });
+
+    const first = await transferConsultRoom("c-serial", "SSW");
+    await firstUpdaterDonePromise;
+
+    // Supersede after first's updater already ran and while first's network commit is still pending
+    const second = await transferConsultRoom("c-serial", "Urgent");
+    // Second must wait for first's serialized transaction slot before running its own transaction
+    expect(txCount).toBe(1);
+
+    releaseFirstCommit();
+    await Promise.all([first.backgroundPromise, second.backgroundPromise]);
+
+    expect(committedRooms).toEqual(["SSW", "Urgent"]);
   });
 
   it("transferConsultRoom retains and retries offline transfer after a retryable connection failure", async () => {
