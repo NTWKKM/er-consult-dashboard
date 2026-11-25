@@ -418,7 +418,19 @@ export function AuthProvider({
             };
             if (db) {
               peerDbTerminatedRef.current = true;
-              void terminate(db).catch(() => {}).finally(sendAck);
+              void terminate(db)
+                .catch(() => {})
+                .finally(() => {
+                  sendAck();
+                  if (
+                    signedOutAppliedRef.current &&
+                    channelRef.current === channel &&
+                    typeof window !== "undefined"
+                  ) {
+                    peerDbTerminatedRef.current = false;
+                    window.location.reload();
+                  }
+                });
             } else {
               sendAck();
             }

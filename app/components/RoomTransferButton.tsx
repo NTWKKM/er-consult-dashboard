@@ -81,7 +81,7 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       setIsOpen(false);
       setFocusedIndex(-1);
       
-      const { transferred, backgroundPromise } = await transferConsultRoom(
+      const { transferred, backgroundPromise, isOfflineQueued } = await transferConsultRoom(
         consultId, 
         newRoom,
         (err) => {
@@ -92,7 +92,9 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       if (transferred) {
         addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
         onTransferEnd?.(true); // success callback
-        if (backgroundPromise) {
+        // Hold the UI/case lock only while an online transaction is settling.
+        // Offline-queued writes settle only upon reconnect, so release immediately after queueing.
+        if (backgroundPromise && !isOfflineQueued) {
           holdLockForBackground = true;
           const release = () => {
             transferInFlightRef.current = false;

@@ -714,20 +714,20 @@ function buildOptimisticConsult(current: Consult, updates: ConsultUpdate): Consu
 
 /**
  * Reads local persistent cache first when available to avoid redundant server reads
- * and network stalls on optimistic paths, falling back to getDoc on cache miss.
+ * and network stalls on offline/optimistic paths, falling back to getDoc on cache miss.
  */
 async function readConsultSnapshotCacheFirst(docRef: DocumentReference<DocumentData>) {
     try {
         if (typeof getDocFromCache === "function") {
             const cachedSnap = await getDocFromCache(docRef);
             if (cachedSnap.exists()) {
-                return cachedSnap;
+                return { snap: cachedSnap, fromCache: true };
             }
         }
     } catch {
         // Cache miss, unavailable, or partial test mock — fall back to standard getDoc
     }
-    return getDoc(docRef);
+    return { snap: await getDoc(docRef), fromCache: false };
 }
 
 export async function updateConsult(
@@ -741,8 +741,12 @@ export async function updateConsult(
 
     if (typeof updater === "function") {
         if (!awaitRemote) {
-            // Optimistic Path: Read local cache first for immediate UI response, then sync safely in background.
-            const docSnap = await readConsultSnapshotCacheFirst(docRef);
+            // Read local cache only when offline; when online, read from server so
+            // authoritative remote state (e.g. department completed elsewhere) is respected.
+            const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+            const docSnap = isOffline
+                ? (await readConsultSnapshotCacheFirst(docRef)).snap
+                : await getDoc(docRef);
             if (!docSnap.exists()) {
                 throw new Error(`Consult not found: ${id}`);
             }
@@ -860,20 +864,30 @@ export async function transactionalUpdateConsult(
 
     if (!awaitRemote) {
         // Pre-read from local cache first so transactional writes avoid double server reads
-        const preSnap = await readConsultSnapshotCacheFirst(docRef);
-        if (preSnap.exists()) {
-            const preData = mapRawToConsult(preSnap.id, preSnap.data());
-            if (preData) {
-                const preUpdates = updater(preData);
-                if (preUpdates !== null) {
-                    preApplied = true;
-                    optimisticConsult = buildOptimisticConsult(preData, preUpdates);
-                }
+        const initialRead = await readConsultSnapshotCacheFirst(docRef);
+        const evaluatePreSnap = (snap: typeof initialRead.snap) => {
+            if (!snap.exists()) return;
+            const preData = mapRawToConsult(snap.id, snap.data());
+            if (!preData) return;
+            const preUpdates = updater(preData);
+            if (preUpdates !== null) {
+                preApplied = true;
+                optimisticConsult = buildOptimisticConsult(preData, preUpdates);
             }
+        };
+
+        evaluatePreSnap(initialRead.snap);
+
+        // If cache failed the precondition while online, check authoritative server state once
+        // before short-circuiting (e.g. stale cache missing a re-consult or room change).
+        const isOnline = typeof navigator === "undefined" || navigator.onLine !== false;
+        if (!preApplied && initialRead.fromCache && isOnline) {
+            const serverSnap = await getDoc(docRef);
+            evaluatePreSnap(serverSnap);
         }
 
         if (!preApplied) {
-            // Local precondition failed — do not fire a doomed background write
+            // Precondition failed — do not fire a doomed background write
             return {
                 consult: null,
                 isQueued: false,
@@ -953,7 +967,11 @@ export async function transferConsultRoom(
     id: string,
     newRoom: RoomName,
     onBackgroundError?: (error: unknown) => void
-): Promise<{ transferred: boolean; backgroundPromise: Promise<void> | null }> {
+): Promise<{
+    transferred: boolean;
+    backgroundPromise: Promise<void> | null;
+    isOfflineQueued: boolean;
+}> {
     const now = new Date().toISOString();
     const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
     const buildTransferPayload = (current: Consult): ConsultUpdate | null => {
@@ -988,8 +1006,56 @@ export async function transferConsultRoom(
               onBackgroundError,
           });
 
+    // When queued offline, re-consulted pending departments added remotely before reconnect
+    // may lack this transfer milestone; backfill them transactionally once the offline write syncs.
+    const backgroundPromise =
+        isOffline && result.backgroundPromise
+            ? trackOptimisticWrite(
+                  result.backgroundPromise.then(
+                      async () => {
+                          try {
+                              await transactionalUpdateConsult(
+                                  id,
+                                  (latest) => {
+                                      if (latest.room !== newRoom) return null;
+                                      const missingPendingDepts = Object.keys(
+                                          latest.departments
+                                      ).filter((deptKey) => {
+                                          const dept = latest.departments[deptKey];
+                                          if (dept.status !== "pending") return false;
+                                          const existingTransfers = dept.transfers ?? [];
+                                          return !existingTransfers.some(
+                                              (t) => t.to === newRoom && t.at === now
+                                          );
+                                      });
+                                      if (missingPendingDepts.length === 0) return null;
+                                      const backfillPayload: Record<string, unknown> = {};
+                                      missingPendingDepts.forEach((deptKey) => {
+                                          backfillPayload[`departments.${deptKey}.transfers`] =
+                                              arrayUnion({
+                                                  to: newRoom,
+                                                  at: now,
+                                              });
+                                      });
+                                      return backfillPayload as ConsultUpdate;
+                                  },
+                                  { awaitRemote: true }
+                              );
+                          } catch (err) {
+                              console.error("Offline transfer reconciliation failed:", err);
+                              onBackgroundError?.(err);
+                          }
+                      },
+                      () => {
+                          // Primary offline write rejection was already reported by updateConsult
+                      }
+                  )
+              )
+            : result.backgroundPromise;
+
     return {
         transferred: result.applied,
-        backgroundPromise: result.backgroundPromise,
+        backgroundPromise,
+        isOfflineQueued: isOffline && result.applied,
     };
 }

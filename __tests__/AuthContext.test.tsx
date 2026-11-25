@@ -1943,4 +1943,45 @@ describe("AuthContext", () => {
     expect(screen.getByTestId("loading")).toHaveTextContent("false");
     expect(screen.getByTestId("uid")).toHaveTextContent("staff-pending");
   });
+
+  it("reloads peer tab when LOGOUT_TERMINATE_DB_REQUEST arrives after onAuthStateChanged(null) already ran", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; requestId?: string });
+    };
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      // Simulate Firebase already propagating sign-out before LOGOUT_TERMINATE_DB_REQUEST arrives
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-after-null-1",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(
+          peerMessages.some(
+            (m) => m.type === "LOGOUT_TERMINATE_DB_ACK" && m.requestId === "term-after-null-1"
+          )
+        ).toBe(true);
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
 });

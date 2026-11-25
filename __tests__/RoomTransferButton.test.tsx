@@ -22,7 +22,7 @@ vi.mock("@/app/contexts/ToastContext", () => ({
 }));
 
 import { RoomTransferButton } from "@/app/components/RoomTransferButton";
-import { clearAllCaseLocksForTests } from "@/lib/caseLock";
+import { clearAllCaseLocksForTests, isCaseLocked } from "@/lib/caseLock";
 import { ROOMS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
@@ -283,6 +283,54 @@ describe("RoomTransferButton", () => {
         expect(mockTransferConsultRoom).toHaveBeenCalled();
       });
       expect(onTransferEnd).not.toHaveBeenCalled();
+    });
+
+    it("holds case lock while online transaction backgroundPromise settles, but releases immediately for offline-queued transfers", async () => {
+      let resolveOnline!: () => void;
+      mockTransferConsultRoom.mockResolvedValueOnce({
+        transferred: true,
+        isOfflineQueued: false,
+        backgroundPromise: new Promise<void>((resolve) => {
+          resolveOnline = resolve;
+        }),
+      });
+
+      const { unmount } = renderButton({ consultId: "case-online-lock", currentRoom: "NT" });
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSW$/ }));
+
+      await waitFor(() => {
+        expect(isCaseLocked("case-online-lock")).toBe(true);
+      });
+      expect(screen.getByTitle("เปลี่ยนห้อง")).toBeDisabled();
+
+      await act(async () => {
+        resolveOnline();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(isCaseLocked("case-online-lock")).toBe(false);
+        expect(screen.getByTitle("เปลี่ยนห้อง")).not.toBeDisabled();
+      });
+      unmount();
+
+      // Offline-queued: backgroundPromise stays pending until reconnect, yet lock must release immediately
+      mockTransferConsultRoom.mockResolvedValueOnce({
+        transferred: true,
+        isOfflineQueued: true,
+        backgroundPromise: new Promise<void>(() => {}),
+      });
+
+      renderButton({ consultId: "case-offline-lock", currentRoom: "NT" });
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSW$/ }));
+
+      await waitFor(() => {
+        expect(mockTransferConsultRoom).toHaveBeenCalledTimes(2);
+        expect(isCaseLocked("case-offline-lock")).toBe(false);
+        expect(screen.getByTitle("เปลี่ยนห้อง")).not.toBeDisabled();
+      });
     });
   });
 

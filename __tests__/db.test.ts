@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock firebase modules BEFORE importing lib/db
@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 // ---------------------------------------------------------------------------
 const {
   mockGetDoc,
+  mockGetDocFromCache,
   mockUpdateDoc,
   mockDeleteDoc,
   mockGetDocs,
@@ -20,8 +21,10 @@ const {
   mockOrderBy,
   mockLimit,
   mockStartAfter,
+  mockArrayUnion,
 } = vi.hoisted(() => ({
   mockGetDoc: vi.fn(),
+  mockGetDocFromCache: vi.fn(),
   mockUpdateDoc: vi.fn(),
   mockDeleteDoc: vi.fn(),
   mockGetDocs: vi.fn(),
@@ -35,6 +38,7 @@ const {
   mockOrderBy: vi.fn(() => ({ type: "orderBy" })),
   mockLimit: vi.fn((n?: number) => ({ type: "limit", n })),
   mockStartAfter: vi.fn(() => ({ type: "startAfter" })),
+  mockArrayUnion: vi.fn((...elements: unknown[]) => ({ type: "arrayUnion", elements })),
 }));
 
 vi.mock("@/lib/firebase", () => ({ db: {} }));
@@ -44,6 +48,7 @@ vi.mock("firebase/firestore", () => ({
   doc: mockDoc,
   setDoc: mockSetDoc,
   getDoc: mockGetDoc,
+  getDocFromCache: mockGetDocFromCache,
   updateDoc: mockUpdateDoc,
   deleteDoc: mockDeleteDoc,
   getDocs: mockGetDocs,
@@ -54,6 +59,7 @@ vi.mock("firebase/firestore", () => ({
   orderBy: mockOrderBy,
   limit: mockLimit,
   startAfter: mockStartAfter,
+  arrayUnion: mockArrayUnion,
 }));
 
 // ---------------------------------------------------------------------------
@@ -69,6 +75,7 @@ import {
   MAX_HN_SEARCH_RESULTS,
   updateConsult,
   transactionalUpdateConsult,
+  transferConsultRoom,
   fetchCompletedConsultsPage,
   searchCompletedConsults,
   fetchAllCompletedConsultsForExport,
@@ -107,6 +114,9 @@ function makeQuerySnapshot(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetDoc.mockReset();
+  mockGetDocFromCache.mockReset();
+  mockGetDocFromCache.mockRejectedValue(new Error("cache miss"));
 });
 
 // ===========================================================================
@@ -1692,5 +1702,184 @@ describe("fetchCompletedConsultsPage", () => {
     expect(res.hasMore).toBe(false);
 
     consoleErrorSpy.mockRestore();
+  });
+});
+
+// ===========================================================================
+// Offline/cache vs authoritative server checks (CodeRabbit PR #15 fixes)
+// ===========================================================================
+describe("online authoritative revalidation & offline transfer reconciliation", () => {
+  const originalOnLineDescriptor = Object.getOwnPropertyDescriptor(Navigator.prototype, "onLine");
+
+  const setNavigatorOnLine = (value: boolean) => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      get: () => value,
+    });
+  };
+
+  afterEach(() => {
+    delete (window.navigator as { onLine?: boolean }).onLine;
+    if (originalOnLineDescriptor) {
+      Object.defineProperty(Navigator.prototype, "onLine", originalOnLineDescriptor);
+    }
+  });
+
+  const baseConsult = (overrides: Record<string, unknown> = {}) => ({
+    hn: "123456",
+    firstName: "Somchai",
+    lastName: "Jaidee",
+    room: "NT",
+    problem: "Abdominal pain",
+    createdAt: "2024-01-10T08:00:00.000Z",
+    status: "pending",
+    isUrgent: false,
+    departments: {
+      "Gen Sx": { status: "pending", completedAt: null },
+    },
+    ...overrides,
+  });
+
+  it("updateConsult({ awaitRemote: false }) reads authoritative getDoc when online and skips stale cache", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot("c-online", baseConsult())
+    );
+    mockGetDoc.mockResolvedValueOnce(
+      makeDocSnapshot(
+        "c-online",
+        baseConsult({
+          status: "completed",
+          departments: {
+            "Gen Sx": { status: "completed", completedAt: "2024-01-10T09:00:00.000Z" },
+          },
+        })
+      )
+    );
+
+    const res = await updateConsult(
+      "c-online",
+      (current) => {
+        if (current.departments["Gen Sx"]?.status !== "pending") return null;
+        return { "departments.Gen Sx.admittedAt": "2024-01-10T10:00:00.000Z" };
+      },
+      { awaitRemote: false }
+    );
+
+    expect(mockGetDoc).toHaveBeenCalledTimes(1);
+    expect(mockGetDocFromCache).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(res.applied).toBe(false);
+  });
+
+  it("updateConsult({ awaitRemote: false }) reads local cache when offline", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValueOnce(makeDocSnapshot("c-offline", baseConsult()));
+    mockUpdateDoc.mockResolvedValueOnce(undefined);
+
+    const res = await updateConsult(
+      "c-offline",
+      (current) => ({
+        "departments.Gen Sx.admittedAt":
+          current.departments["Gen Sx"]?.status === "pending" ? "2024-01-10T10:00:00.000Z" : null,
+      }),
+      { awaitRemote: false }
+    );
+
+    expect(mockGetDocFromCache).toHaveBeenCalledTimes(1);
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    expect(res.applied).toBe(true);
+    expect(res.isQueued).toBe(true);
+  });
+
+  it("transactionalUpdateConsult({ awaitRemote: false }) falls back to server getDoc when cache fails precondition online", async () => {
+    setNavigatorOnLine(true);
+    // Stale cache shows case already moved to SSW; server actually shows it still in NT
+    mockGetDocFromCache.mockResolvedValueOnce(
+      makeDocSnapshot("c-stale", baseConsult({ room: "SSW" }))
+    );
+    mockGetDoc.mockResolvedValueOnce(
+      makeDocSnapshot("c-stale", baseConsult({ room: "NT" }))
+    );
+    mockRunTransaction.mockImplementation(async (_db, fn) =>
+      fn({
+        get: vi.fn().mockResolvedValue(makeDocSnapshot("c-stale", baseConsult({ room: "NT" }))),
+        update: vi.fn(),
+      })
+    );
+
+    const res = await transactionalUpdateConsult(
+      "c-stale",
+      (current) => (current.room === "SSW" ? null : { room: "SSW" }),
+      { awaitRemote: false }
+    );
+
+    expect(mockGetDocFromCache).toHaveBeenCalledTimes(1);
+    expect(mockGetDoc).toHaveBeenCalledTimes(1);
+    expect(res.applied).toBe(true);
+    await res.backgroundPromise;
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("transferConsultRoom flags isOfflineQueued=true offline and backfills newly pending departments on reconnect", async () => {
+    setNavigatorOnLine(false);
+    // While offline, only Gen Sx is cached as pending; Ortho was completed locally
+    mockGetDocFromCache.mockResolvedValueOnce(
+      makeDocSnapshot(
+        "c-xfer",
+        baseConsult({
+          room: "NT",
+          departments: {
+            "Gen Sx": { status: "pending", completedAt: null },
+            Ortho: { status: "completed", completedAt: "2024-01-10T08:30:00.000Z" },
+          },
+        })
+      )
+    );
+
+    let resolveOfflineWrite!: () => void;
+    mockUpdateDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveOfflineWrite = resolve;
+      })
+    );
+
+    const transactionUpdateSpy = vi.fn();
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      // On reconnect, Ortho had been re-consulted remotely while Gen Sx already got the offline transfer
+      const latestServerDoc = makeDocSnapshot(
+        "c-xfer",
+        baseConsult({
+          room: "SSW",
+          departments: {
+            "Gen Sx": {
+              status: "pending",
+              completedAt: null,
+              transfers: [{ to: "SSW", at: mockArrayUnion.mock.calls[0]?.[0] ? (mockArrayUnion.mock.calls[0][0] as { at: string }).at : "" }],
+            },
+            Ortho: { status: "pending", completedAt: null },
+          },
+        })
+      );
+      return fn({
+        get: vi.fn().mockResolvedValue(latestServerDoc),
+        update: transactionUpdateSpy,
+      });
+    });
+
+    const res = await transferConsultRoom("c-xfer", "SSW");
+    expect(res.transferred).toBe(true);
+    expect(res.isOfflineQueued).toBe(true);
+    expect(res.backgroundPromise).not.toBeNull();
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+
+    // Simulate reconnect sync completion
+    resolveOfflineWrite();
+    await res.backgroundPromise;
+
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+    expect(transactionUpdateSpy).toHaveBeenCalledTimes(1);
+    const backfillArgs = transactionUpdateSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(backfillArgs)).toEqual(["departments.Ortho.transfers"]);
   });
 });

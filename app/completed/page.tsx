@@ -606,7 +606,11 @@ export default function CompletedPage() {
       if (!isActiveSession()) return;
       await exportCompletedRowsToExcel(
         exportData,
-        `completed-cases-${submittedStartDate}-to-${submittedEndDate}.xlsx`
+        `completed-cases-${submittedStartDate}-to-${submittedEndDate}.xlsx`,
+        {
+          signal: abortController.signal,
+          shouldAbort: () => !isActiveSession(),
+        }
       );
       if (!isActiveSession()) return;
 

@@ -87,14 +87,25 @@ export function buildCompletedExportRows(consults: Consult[]): CompletedExportRo
   });
 }
 
+export interface ExportExcelOptions {
+  signal?: AbortSignal;
+  shouldAbort?: () => boolean;
+}
+
 /**
  * Generates an .xlsx buffer using ExcelJS and triggers a browser file download.
  */
 export async function exportCompletedRowsToExcel(
   rows: CompletedExportRow[],
-  filename: string
+  filename: string,
+  options?: ExportExcelOptions
 ): Promise<void> {
+  const isAborted = () => Boolean(options?.signal?.aborted || options?.shouldAbort?.());
+  if (isAborted()) return;
+
   const ExcelJSModule = await import("exceljs");
+  if (isAborted()) return;
+
   const ExcelJS = ExcelJSModule.default ?? ExcelJSModule;
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Completed Cases");
@@ -112,6 +123,8 @@ export async function exportCompletedRowsToExcel(
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
+  if (isAborted()) return;
+
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
