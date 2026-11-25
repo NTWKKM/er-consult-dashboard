@@ -118,6 +118,7 @@ describe("AuthContext", () => {
   afterEach(() => {
     clearAllLogoutReservationsForTests();
     window.sessionStorage.removeItem("er_consult_pending_cache_cleanup_v1");
+    window.name = "";
     vi.restoreAllMocks();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -2354,11 +2355,12 @@ describe("AuthContext", () => {
     });
   });
 
-  it("keeps cleanup gated without reloading when sessionStorage rejects marker write or read", async () => {
+  it("keeps cleanup gated across early reload when sessionStorage.setItem fails but getItem works, and blocks reload if both storage and window.name fail", async () => {
     const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("storage-write-blocked");
     });
 
+    // Case 1: sessionStorage.setItem fails at logout(), getItem works (returns null), and user reloads early
     mockTerminate.mockRejectedValueOnce(new Error("terminate-failed"));
     const firstMount = render(
       <AuthProvider>
@@ -2377,22 +2379,100 @@ describe("AuthContext", () => {
       expect(mockTerminate).toHaveBeenCalledTimes(1);
       expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     });
+    expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeNull();
+    expect(window.name).toContain("__er_consult_pending_cleanup__:");
+    firstMount.unmount();
 
-    // Clicking Retry when sessionStorage.setItem throws must NOT reload without a persisted gate
-    const retryBtn = within(screen.getByRole("alertdialog")).getByRole("button", {
-      name: /ลองล้างแคช/,
+    // Reloaded mount still sees readable sessionStorage returning null, yet stays gated via window.name fallback
+    let resolveFallbackReloadClear!: () => void;
+    mockClearIndexedDbPersistence.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFallbackReloadClear = resolve;
+        })
+    );
+
+    const secondMount = render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockTerminate).toHaveBeenCalledTimes(2);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
     });
-    fireEvent.click(retryBtn);
+    expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
     await act(async () => {
+      authCallback!(makeMockStaffUser());
       await Promise.resolve();
     });
-    expect(reloadSpy).not.toHaveBeenCalled();
-    expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    firstMount.unmount();
-    setItemSpy.mockRestore();
+    expect(screen.getByTestId("uid")).toHaveTextContent("null");
+    expect(screen.getByTestId("staff")).toHaveTextContent("false");
 
-    // When sessionStorage.getItem throws on mount, fail closed: keep sign-in blocked and confirm cache deletion
+    await act(async () => {
+      resolveFallbackReloadClear();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(window.name).toBe("");
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    });
+    secondMount.unmount();
+    reloadSpy.mockClear();
+
+    // Case 2: Both sessionStorage.setItem AND window.name write fail -> Retry must NOT reload without a persisted gate
+    const originalWindowNameDesc = Object.getOwnPropertyDescriptor(window, "name");
+    Object.defineProperty(window, "name", {
+      configurable: true,
+      get: () => "",
+      set: () => {
+        throw new Error("window-name-blocked");
+      },
+    });
+
+    try {
+      mockTerminate.mockRejectedValueOnce(new Error("terminate-failed"));
+      const thirdMount = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(3);
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+
+      const retryBtn = within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: /ลองล้างแคช/,
+      });
+      fireEvent.click(retryBtn);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      thirdMount.unmount();
+    } finally {
+      if (originalWindowNameDesc) {
+        Object.defineProperty(window, "name", originalWindowNameDesc);
+      }
+      setItemSpy.mockRestore();
+    }
+
+    // Case 3: When sessionStorage.getItem throws on mount, fail closed: keep sign-in blocked and confirm cache deletion
     const getItemSpy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("storage-read-blocked");
     });
@@ -2411,8 +2491,8 @@ describe("AuthContext", () => {
     );
 
     await waitFor(() => {
-      expect(mockTerminate).toHaveBeenCalledTimes(2);
-      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(mockTerminate).toHaveBeenCalledTimes(4);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(2);
     });
     expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
 
@@ -2439,7 +2519,7 @@ describe("AuthContext", () => {
       within(screen.getByRole("alertdialog")).getByRole("button", { name: /ลองล้างแคช/ })
     );
     await waitFor(() => {
-      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(2);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(3);
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     });
   });

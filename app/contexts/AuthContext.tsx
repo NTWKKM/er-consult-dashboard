@@ -69,24 +69,62 @@ const PEER_CACHE_CLEAR_PENDING_WAIT_MS = 3000;
 const LOGOUT_RESERVATION_TTL_MS = 5000;
 const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 const PENDING_CLEANUP_STORAGE_KEY = "er_consult_pending_cache_cleanup_v1";
+const WINDOW_NAME_CLEANUP_PREFIX = "__er_consult_pending_cleanup__:";
+
+function readWindowNameCleanupMarker(): { requestId: string | null } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const name = window.name;
+    if (typeof name !== "string" || !name.startsWith(WINDOW_NAME_CLEANUP_PREFIX)) {
+      return null;
+    }
+    const raw = name.slice(WINDOW_NAME_CLEANUP_PREFIX.length);
+    return !raw || raw === "1" ? { requestId: null } : { requestId: raw };
+  } catch {
+    return { requestId: null };
+  }
+}
+
+function writeWindowNameCleanupMarker(requestId: string | null): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    window.name = `${WINDOW_NAME_CLEANUP_PREFIX}${requestId || "1"}`;
+    return typeof window.name === "string" && window.name.startsWith(WINDOW_NAME_CLEANUP_PREFIX);
+  } catch {
+    return false;
+  }
+}
+
+function clearWindowNameCleanupMarker() {
+  if (typeof window === "undefined") return;
+  try {
+    if (typeof window.name === "string" && window.name.startsWith(WINDOW_NAME_CLEANUP_PREFIX)) {
+      window.name = "";
+    }
+  } catch {
+    // Ignore restricted window.name errors
+  }
+}
 
 function readPendingCleanupMarker(): { requestId: string | null; storageError?: boolean } | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
-    if (!raw) return null;
-    return raw === "1" ? { requestId: null } : { requestId: raw };
+    if (raw) {
+      return raw === "1" ? { requestId: null } : { requestId: raw };
+    }
   } catch {
     // Fail closed if sessionStorage cannot be read so sign-in cannot bypass an unverified cleanup
     return { requestId: null, storageError: true };
   }
+  return readWindowNameCleanupMarker();
 }
 
 function canReadPendingCleanupStorage(): boolean {
   if (typeof window === "undefined") return false;
   try {
     window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
-    return true;
+    return readWindowNameCleanupMarker() === null;
   } catch {
     return false;
   }
@@ -94,11 +132,14 @@ function canReadPendingCleanupStorage(): boolean {
 
 function writePendingCleanupMarker(requestId: string | null): boolean {
   if (typeof window === "undefined") return false;
+  const value = requestId || "1";
   try {
-    window.sessionStorage.setItem(PENDING_CLEANUP_STORAGE_KEY, requestId || "1");
+    window.sessionStorage.setItem(PENDING_CLEANUP_STORAGE_KEY, value);
+    clearWindowNameCleanupMarker();
     return true;
   } catch {
-    return false;
+    // Fall back to tab-scoped window.name when sessionStorage.setItem fails (e.g. quota or write lock)
+    return writeWindowNameCleanupMarker(requestId);
   }
 }
 
@@ -109,6 +150,7 @@ function clearPendingCleanupMarker() {
   } catch {
     // Ignore restricted storage errors
   }
+  clearWindowNameCleanupMarker();
 }
 
 interface PeerTabDirtyState {
@@ -557,11 +599,11 @@ export function AuthProvider({
             };
             if (db) {
               const activeDb = db;
-              writePendingCleanupMarker(requestId);
+              const markerPersisted = writePendingCleanupMarker(requestId);
               pendingFirestoreCleanupRef.current = true;
               terminatedDbRef.current = activeDb;
               setCleanupPhase("pending");
-              setManualRetryError(false);
+              setManualRetryError(!markerPersisted);
               setUser(null);
               setIsAuthorizedStaff(false);
               void terminate(activeDb)
@@ -1132,7 +1174,7 @@ export function AuthProvider({
           (await terminatePeerFirestoreTabs()) ??
           `term-${ownerTabId}-${Date.now()}-${logoutSequenceRef.current}`;
         terminationStarted = true;
-        writePendingCleanupMarker(terminateRequestId);
+        const markerPersisted = writePendingCleanupMarker(terminateRequestId);
         pendingFirestoreCleanupRef.current = true;
         cleanupRoleRef.current = "initiator";
         terminatedDbRef.current = db;
@@ -1141,7 +1183,7 @@ export function AuthProvider({
         initiatorFinalizingRef.current = false;
         setCleanupBlockedByPending(false);
         setCleanupNeedsConnectionReset(false);
-        setManualRetryError(false);
+        setManualRetryError(!markerPersisted);
         setCleanupPhase("pending");
         setUser(null);
         setIsAuthorizedStaff(false);
