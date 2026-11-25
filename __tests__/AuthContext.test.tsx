@@ -2290,6 +2290,160 @@ describe("AuthContext", () => {
     }
   });
 
+  it("keeps cleanup gated if user manually reloads before clicking Retry", async () => {
+    mockTerminate.mockRejectedValueOnce(new Error("terminate-failed"));
+    const firstMount = render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await act(async () => {
+      authCallback!(makeMockStaffUser());
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+    await waitFor(() => {
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    });
+
+    // User triggers an early browser reload WITHOUT clicking Retry
+    expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeTruthy();
+    firstMount.unmount();
+
+    let resolveFreshClear!: () => void;
+    mockClearIndexedDbPersistence.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFreshClear = resolve;
+        })
+    );
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockTerminate).toHaveBeenCalledTimes(2);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+    // Sign-in remains blocked on the reloaded tab until cache deletion is confirmed
+    await act(async () => {
+      authCallback!(makeMockStaffUser());
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("uid")).toHaveTextContent("null");
+    expect(screen.getByTestId("staff")).toHaveTextContent("false");
+
+    await act(async () => {
+      resolveFreshClear();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeNull();
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("keeps cleanup gated without reloading when sessionStorage rejects marker write or read", async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage-write-blocked");
+    });
+
+    mockTerminate.mockRejectedValueOnce(new Error("terminate-failed"));
+    const firstMount = render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await act(async () => {
+      authCallback!(makeMockStaffUser());
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+    await waitFor(() => {
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    });
+
+    // Clicking Retry when sessionStorage.setItem throws must NOT reload without a persisted gate
+    const retryBtn = within(screen.getByRole("alertdialog")).getByRole("button", {
+      name: /ลองล้างแคช/,
+    });
+    fireEvent.click(retryBtn);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(reloadSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    firstMount.unmount();
+    setItemSpy.mockRestore();
+
+    // When sessionStorage.getItem throws on mount, fail closed: keep sign-in blocked and confirm cache deletion
+    const getItemSpy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage-read-blocked");
+    });
+    let resolveClearOnStorageErr!: () => void;
+    mockClearIndexedDbPersistence.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveClearOnStorageErr = resolve;
+        })
+    );
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockTerminate).toHaveBeenCalledTimes(2);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+    await act(async () => {
+      authCallback!(makeMockStaffUser());
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("uid")).toHaveTextContent("null");
+    expect(screen.getByTestId("staff")).toHaveTextContent("false");
+
+    // Once cache deletion succeeds while storage read still fails, do not reload into an unverified loop or admit sign-in
+    await act(async () => {
+      resolveClearOnStorageErr();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(reloadSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    // Once storage read recovers and retry succeeds, clean reload proceeds
+    getItemSpy.mockRestore();
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: /ลองล้างแคช/ })
+    );
+    await waitFor(() => {
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(2);
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("shows close-other-tabs instructions when initiator clearIndexedDbPersistence stays pending past bounded wait, and reloads once it resolves", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");

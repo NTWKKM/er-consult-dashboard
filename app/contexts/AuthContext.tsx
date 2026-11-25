@@ -70,23 +70,35 @@ const LOGOUT_RESERVATION_TTL_MS = 5000;
 const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 const PENDING_CLEANUP_STORAGE_KEY = "er_consult_pending_cache_cleanup_v1";
 
-function readPendingCleanupMarker(): { requestId: string | null } | null {
+function readPendingCleanupMarker(): { requestId: string | null; storageError?: boolean } | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
     if (!raw) return null;
     return raw === "1" ? { requestId: null } : { requestId: raw };
   } catch {
-    return null;
+    // Fail closed if sessionStorage cannot be read so sign-in cannot bypass an unverified cleanup
+    return { requestId: null, storageError: true };
   }
 }
 
-function writePendingCleanupMarker(requestId: string | null) {
-  if (typeof window === "undefined") return;
+function canReadPendingCleanupStorage(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writePendingCleanupMarker(requestId: string | null): boolean {
+  if (typeof window === "undefined") return false;
   try {
     window.sessionStorage.setItem(PENDING_CLEANUP_STORAGE_KEY, requestId || "1");
+    return true;
   } catch {
-    // Ignore restricted storage errors
+    return false;
   }
 }
 
@@ -303,6 +315,7 @@ export function AuthProvider({
         clearTimeout(initiatorClearPendingTimerRef.current);
         initiatorClearPendingTimerRef.current = null;
       }
+      clearPendingCleanupMarker();
       pendingFirestoreCleanupRef.current = false;
       peerDbTerminatedRef.current = false;
       peerCacheClearedRef.current = false;
@@ -544,6 +557,7 @@ export function AuthProvider({
             };
             if (db) {
               const activeDb = db;
+              writePendingCleanupMarker(requestId);
               pendingFirestoreCleanupRef.current = true;
               terminatedDbRef.current = activeDb;
               setCleanupPhase("pending");
@@ -931,6 +945,17 @@ export function AuthProvider({
           // Ignore broadcast errors during logout
         }
       }
+      if (!canReadPendingCleanupStorage()) {
+        // Storage remains unreadable: keep cleanup gate active rather than reloading into an unverified state
+        initiatorFinalizingRef.current = false;
+        pendingFirestoreCleanupRef.current = true;
+        terminatedDbRef.current = targetDb;
+        setCleanupBlockedByPending(false);
+        setCleanupNeedsConnectionReset(false);
+        setManualRetryError(true);
+        setCleanupPhase("manual_retry");
+        return;
+      }
       pendingFirestoreCleanupRef.current = false;
       cleanupRoleRef.current = null;
       terminatedDbRef.current = null;
@@ -1107,6 +1132,7 @@ export function AuthProvider({
           (await terminatePeerFirestoreTabs()) ??
           `term-${ownerTabId}-${Date.now()}-${logoutSequenceRef.current}`;
         terminationStarted = true;
+        writePendingCleanupMarker(terminateRequestId);
         pendingFirestoreCleanupRef.current = true;
         cleanupRoleRef.current = "initiator";
         terminatedDbRef.current = db;
@@ -1166,9 +1192,17 @@ export function AuthProvider({
     if (!targetDb) return;
 
     // Never retry a rejected terminate(targetDb) on the same Firestore instance;
-    // reload with a persisted non-PHI cleanup marker to release the old connection first.
+    // persist the non-PHI cleanup marker first and reload only if the gate survived into storage.
     if (cleanupRoleRef.current === "initiator" && !initiatorTerminateSucceededRef.current) {
-      writePendingCleanupMarker(initiatorTerminateRequestIdRef.current);
+      const markerPersisted = writePendingCleanupMarker(initiatorTerminateRequestIdRef.current);
+      if (!markerPersisted) {
+        pendingFirestoreCleanupRef.current = true;
+        setCleanupBlockedByPending(false);
+        setCleanupNeedsConnectionReset(true);
+        setManualRetryError(true);
+        setCleanupPhase("manual_retry");
+        return;
+      }
       if (typeof window !== "undefined") {
         window.location.reload();
       }
