@@ -714,7 +714,6 @@ export type ConsultUpdater = (current: Consult) => ConsultUpdate | null;
 export interface UpdateConsultOptions {
     awaitRemote?: boolean;
     onBackgroundError?: (error: unknown) => void;
-    scheduleTransaction?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
 
 export interface UpdateResults {
@@ -967,10 +966,7 @@ export async function transactionalUpdateConsult(
 
     if (!awaitRemote) {
         // Fire transaction in background, return optimistic result immediately
-        const runScheduledTransaction = options.scheduleTransaction
-            ? () => options.scheduleTransaction!(transactionWork)
-            : transactionWork;
-        const backgroundPromise = trackOptimisticWrite(runScheduledTransaction().then(result => {
+        const backgroundPromise = trackOptimisticWrite(transactionWork().then(result => {
             if (!result.applied) {
                 // Transaction succeeded but condition was not met — another user got there first
                 const abortError = new Error("TRANSACTION_CONDITION_NOT_MET");
@@ -1117,92 +1113,121 @@ export async function transferConsultRoom(
     };
 
     if (isOffline) {
-        // Pre-validate locally from cache, then queue a session-scoped reconnect intent
-        // ordered by requestEpoch so newer transfers supersede older ones and server-side
-        // pending-department preconditions are re-evaluated transactionally upon reconnect.
-        const database = requireDb();
-        const docRef = doc(database, COLLECTION_NAME, id);
-        const { snap } = await readConsultSnapshotCacheFirst(docRef);
-        if (!snap.exists()) {
-            throw new Error(`Consult not found: ${id}`);
-        }
-        const currentData = mapRawToConsult(snap.id, snap.data());
-        if (!currentData) {
-            throw new Error(`Consult not found: ${id}`);
-        }
-        if (buildTransferPayload(currentData) === null) {
-            return {
-                transferred: false,
-                backgroundPromise: null,
-                isOfflineQueued: false,
-            };
-        }
-
-        const runDeferredTransfer = async (): Promise<void> => {
-            const maxRetryAttempts = 3;
-            let retryCount = 0;
-            while (latestTransferEpochByCaseId.get(id) === requestEpoch) {
-                await waitForOnlineReconnect();
-                if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
-                try {
-                    const txResult = await enqueueCaseTransfer(id, async () => {
-                        if (latestTransferEpochByCaseId.get(id) !== requestEpoch) {
-                            return {
-                                consult: null,
-                                isQueued: false,
-                                backgroundPromise: null,
-                                applied: false,
-                            };
-                        }
-                        return transactionalUpdateConsult(id, buildTransferPayload, {
-                            awaitRemote: true,
-                        });
-                    });
-                    if (!txResult.applied && latestTransferEpochByCaseId.get(id) === requestEpoch) {
-                        onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
-                    }
-                    return;
-                } catch (err) {
-                    if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
-                    if (isRetryableTransferError(err) && retryCount < maxRetryAttempts) {
-                        retryCount += 1;
-                        if (typeof navigator !== "undefined" && navigator.onLine !== false) {
-                            await new Promise((r) => setTimeout(r, Math.min(250 * retryCount, 1000)));
-                        }
-                        continue;
-                    }
-                    console.error("Deferred offline transfer failed:", err);
-                    onBackgroundError?.(err);
-                    return;
-                }
+        // Pre-validate locally from cache inside the per-case serialized slot so an offline
+        // replacement never steals ownership while an earlier transaction is mid-commit.
+        return enqueueCaseTransfer(id, async () => {
+            const database = requireDb();
+            const docRef = doc(database, COLLECTION_NAME, id);
+            const { snap } = await readConsultSnapshotCacheFirst(docRef);
+            if (!snap.exists()) {
+                throw new Error(`Consult not found: ${id}`);
             }
-        };
+            const currentData = mapRawToConsult(snap.id, snap.data());
+            if (!currentData) {
+                throw new Error(`Consult not found: ${id}`);
+            }
+            if (buildTransferPayload(currentData) === null) {
+                return {
+                    transferred: false,
+                    backgroundPromise: null,
+                    isOfflineQueued: false,
+                };
+            }
 
-        const reconnectPromise = trackOptimisticWrite(runDeferredTransfer());
-        void reconnectPromise;
+            const runDeferredTransfer = async (): Promise<void> => {
+                const maxRetryAttempts = 3;
+                let retryCount = 0;
+                while (latestTransferEpochByCaseId.get(id) === requestEpoch) {
+                    await waitForOnlineReconnect();
+                    if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
+                    try {
+                        const txResult = await enqueueCaseTransfer(id, async () => {
+                            if (latestTransferEpochByCaseId.get(id) !== requestEpoch) {
+                                return {
+                                    consult: null,
+                                    isQueued: false,
+                                    backgroundPromise: null,
+                                    applied: false,
+                                };
+                            }
+                            return transactionalUpdateConsult(id, buildTransferPayload, {
+                                awaitRemote: true,
+                            });
+                        });
+                        if (!txResult.applied && latestTransferEpochByCaseId.get(id) === requestEpoch) {
+                            onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
+                        }
+                        return;
+                    } catch (err) {
+                        if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
+                        if (isRetryableTransferError(err) && retryCount < maxRetryAttempts) {
+                            retryCount += 1;
+                            if (typeof navigator !== "undefined" && navigator.onLine !== false) {
+                                await new Promise((r) => setTimeout(r, Math.min(250 * retryCount, 1000)));
+                            }
+                            continue;
+                        }
+                        console.error("Deferred offline transfer failed:", err);
+                        onBackgroundError?.(err);
+                        return;
+                    }
+                }
+            };
 
-        return {
-            transferred: true,
-            backgroundPromise: reconnectPromise,
-            isOfflineQueued: true,
-        };
+            const reconnectPromise = trackOptimisticWrite(runDeferredTransfer());
+            void reconnectPromise;
+
+            return {
+                transferred: true,
+                backgroundPromise: reconnectPromise,
+                isOfflineQueued: true,
+            };
+        });
     }
 
-    const result = await transactionalUpdateConsult(id, buildTransferPayload, {
-        awaitRemote: false,
-        onBackgroundError,
-        scheduleTransaction: (fn) =>
-            enqueueCaseTransfer(id, async () => {
-                if (latestTransferEpochByCaseId.get(id) !== requestEpoch) {
-                    return { applied: false, consult: null } as Awaited<ReturnType<typeof fn>>;
-                }
-                return fn();
-            }),
-    });
+    // Online path: serialize preflight + ownership claim together with transaction execution
+    // per case so no in-flight commit can be superseded before finishing.
+    return new Promise((resolveImmediate, rejectImmediate) => {
+        let settledImmediate = false;
+        let resolveBackground!: () => void;
+        const backgroundPromise = trackOptimisticWrite(
+            new Promise<void>((res) => {
+                resolveBackground = res;
+            })
+        );
+        void backgroundPromise;
 
-    return {
-        transferred: result.applied,
-        backgroundPromise: result.backgroundPromise,
-        isOfflineQueued: false,
-    };
+        void enqueueCaseTransfer(id, async () => {
+            try {
+                const result = await transactionalUpdateConsult(id, buildTransferPayload, {
+                    awaitRemote: false,
+                    onBackgroundError,
+                });
+                settledImmediate = true;
+                if (!result.applied) {
+                    resolveBackground();
+                    resolveImmediate({
+                        transferred: false,
+                        backgroundPromise: null,
+                        isOfflineQueued: false,
+                    });
+                    return;
+                }
+                resolveImmediate({
+                    transferred: true,
+                    backgroundPromise,
+                    isOfflineQueued: false,
+                });
+                if (result.backgroundPromise) {
+                    await result.backgroundPromise;
+                }
+                resolveBackground();
+            } catch (err) {
+                resolveBackground();
+                if (!settledImmediate) {
+                    rejectImmediate(err);
+                }
+            }
+        });
+    });
 }

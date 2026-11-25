@@ -2109,19 +2109,19 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     window.dispatchEvent(new Event("online"));
     await firstTxStartedPromise;
 
-    // Newer valid transfer takes ownership while first transaction is mid-flight
-    const second = await transferConsultRoom("c-midflight", "Urgent");
+    // Second transfer starts while first transaction is mid-flight -> waits until first settles before claiming ownership
+    const secondPromise = transferConsultRoom("c-midflight", "Urgent");
 
-    // Unblock first transaction -> buildTransferPayload sees superseded epoch and returns null (no overwrite),
-    // and serialized per-case execution ensures second runs only after first settles
+    // Unblock first transaction -> completes as owner, then second takes ownership and commits Urgent last
     releaseFirstTxGet();
+    const second = await secondPromise;
     await Promise.all([first.backgroundPromise, second.backgroundPromise]);
 
-    expect(committedRooms).toEqual(["Urgent"]);
+    expect(committedRooms).toEqual(["SSW", "Urgent"]);
     expect(onFirstErr).not.toHaveBeenCalled();
   });
 
-  it("transferConsultRoom serializes per-case commits so a transfer superseded after updater runs cannot overwrite the newer owner", async () => {
+  it("transferConsultRoom serializes ownership claim with delayed commits, preserving milestones and handling newer transfer failure", async () => {
     setNavigatorOnLine(true);
     mockGetDocFromCache.mockResolvedValue(
       makeDocSnapshot(
@@ -2133,10 +2133,10 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
       )
     );
 
-    const committedRooms: string[] = [];
-    let firstUpdaterDone!: () => void;
-    const firstUpdaterDonePromise = new Promise<void>((resolve) => {
-      firstUpdaterDone = resolve;
+    const committedWrites: Array<Record<string, unknown>> = [];
+    let firstStaged!: () => void;
+    const firstStagedPromise = new Promise<void>((resolve) => {
+      firstStaged = resolve;
     });
     let releaseFirstCommit!: () => void;
     const releaseFirstCommitPromise = new Promise<void>((resolve) => {
@@ -2146,43 +2146,130 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     let txCount = 0;
     mockRunTransaction.mockImplementation(async (_db, fn) => {
       const idx = ++txCount;
+      let stagedPayload: Record<string, unknown> | null = null;
       const result = await fn({
         get: vi.fn().mockResolvedValue(
           makeDocSnapshot(
             "c-serial",
             baseConsult({
-              room: committedRooms.at(-1) ?? "NT",
+              room: (committedWrites.at(-1)?.room as string) ?? "NT",
               departments: { "Gen Sx": { status: "pending", completedAt: null } },
             })
           )
         ),
         update: (_ref: unknown, payload: Record<string, unknown>) => {
+          stagedPayload = payload;
           if (idx === 1) {
-            firstUpdaterDone();
-          }
-          if (typeof payload.room === "string") {
-            committedRooms.push(payload.room);
+            firstStaged();
           }
         },
       });
       if (idx === 1) {
         await releaseFirstCommitPromise;
       }
+      if (stagedPayload) {
+        committedWrites.push(stagedPayload);
+      }
       return result;
     });
 
     const first = await transferConsultRoom("c-serial", "SSW");
-    await firstUpdaterDonePromise;
+    await firstStagedPromise;
 
-    // Supersede after first's updater already ran and while first's network commit is still pending
-    const second = await transferConsultRoom("c-serial", "Urgent");
-    // Second must wait for first's serialized transaction slot before running its own transaction
+    // Invoke newer transfer while first's commit is still in flight -> must wait before claiming ownership or staging
+    const secondPromise = transferConsultRoom("c-serial", "Urgent");
+    await Promise.resolve();
     expect(txCount).toBe(1);
+    expect(committedWrites).toHaveLength(0);
 
+    // Release first commit -> commits SSW + SSW milestone as active owner, then second claims ownership & commits Urgent
     releaseFirstCommit();
+    const second = await secondPromise;
     await Promise.all([first.backgroundPromise, second.backgroundPromise]);
 
-    expect(committedRooms).toEqual(["SSW", "Urgent"]);
+    expect(committedWrites).toHaveLength(2);
+    expect(committedWrites[0].room).toBe("SSW");
+    expect(committedWrites[0]["departments.Gen Sx.transfers"]).toEqual(
+      expect.objectContaining({ elements: [expect.objectContaining({ to: "SSW" })] })
+    );
+    expect(committedWrites[1].room).toBe("Urgent");
+    expect(committedWrites[1]["departments.Gen Sx.transfers"]).toEqual(
+      expect.objectContaining({ elements: [expect.objectContaining({ to: "Urgent" })] })
+    );
+
+    // Case 2: If newer transfer fails after waiting for first's delayed commit, first committed validly as owner
+    // and the failed newer transfer writes neither room nor milestone.
+    const committedFailWrites: Array<Record<string, unknown>> = [];
+    let failFirstStaged!: () => void;
+    const failFirstStagedPromise = new Promise<void>((resolve) => {
+      failFirstStaged = resolve;
+    });
+    let releaseFailFirstCommit!: () => void;
+    const releaseFailFirstCommitPromise = new Promise<void>((resolve) => {
+      releaseFailFirstCommit = resolve;
+    });
+    let failTxCount = 0;
+
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-serial-fail",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      const idx = ++failTxCount;
+      let stagedPayload: Record<string, unknown> | null = null;
+      const result = await fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-serial-fail",
+            baseConsult({
+              room: (committedFailWrites.at(-1)?.room as string) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          stagedPayload = payload;
+          if (idx === 1) {
+            failFirstStaged();
+          }
+        },
+      });
+      if (idx === 1) {
+        await releaseFailFirstCommitPromise;
+      } else {
+        throw new Error("newer transfer commit failed");
+      }
+      if (stagedPayload) {
+        committedFailWrites.push(stagedPayload);
+      }
+      return result;
+    });
+
+    const onFirstFailErr = vi.fn();
+    const onSecondFailErr = vi.fn();
+    const firstFailCase = await transferConsultRoom("c-serial-fail", "SSW", onFirstFailErr);
+    await failFirstStagedPromise;
+
+    const secondFailPromise = transferConsultRoom("c-serial-fail", "Urgent", onSecondFailErr);
+    await Promise.resolve();
+    expect(failTxCount).toBe(1);
+
+    releaseFailFirstCommit();
+    const secondFailCase = await secondFailPromise;
+    await Promise.all([firstFailCase.backgroundPromise, secondFailCase.backgroundPromise]);
+
+    expect(committedFailWrites).toHaveLength(1);
+    expect(committedFailWrites[0].room).toBe("SSW");
+    expect(committedFailWrites[0]["departments.Gen Sx.transfers"]).toEqual(
+      expect.objectContaining({ elements: [expect.objectContaining({ to: "SSW" })] })
+    );
+    expect(onFirstFailErr).not.toHaveBeenCalled();
+    expect(onSecondFailErr).toHaveBeenCalledTimes(1);
   });
 
   it("transferConsultRoom retains and retries offline transfer after a retryable connection failure", async () => {
