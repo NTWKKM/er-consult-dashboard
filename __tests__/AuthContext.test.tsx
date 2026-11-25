@@ -117,6 +117,7 @@ describe("AuthContext", () => {
 
   afterEach(() => {
     clearAllLogoutReservationsForTests();
+    window.sessionStorage.removeItem("er_consult_pending_cache_cleanup_v1");
     vi.restoreAllMocks();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -2200,16 +2201,16 @@ describe("AuthContext", () => {
     }
   });
 
-  it("retries terminate(db) first on initiator retry only when terminate failed, then clears cache and reloads", async () => {
+  it("does not retry rejected terminate(db) on the same instance; reloads with persisted marker to release connection and confirm cache deletion before sign-in resumes", async () => {
     const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
-    const peerMessages: Array<{ type: string }> = [];
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
     peerChannel.onmessage = (event) => {
-      peerMessages.push(event.data as { type: string });
+      peerMessages.push(event.data as { type: string; requestId?: string });
     };
 
     try {
       mockTerminate.mockRejectedValueOnce(new Error("terminate-failed"));
-      render(
+      const firstMount = render(
         <AuthProvider>
           <AuthProbe />
         </AuthProvider>
@@ -2229,18 +2230,139 @@ describe("AuthContext", () => {
       expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
       expect(reloadSpy).not.toHaveBeenCalled();
 
+      // Clicking retry does NOT retry terminate(db) on the same Firestore instance;
+      // instead it records pending cleanup and reloads to release the old connection.
       const retryBtn = within(screen.getByRole("alertdialog")).getByRole("button", {
         name: /ลองล้างแคช/,
       });
       fireEvent.click(retryBtn);
 
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeTruthy();
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+      firstMount.unmount();
+
+      // Simulate the reloaded tab mounting with the persisted cleanup marker and a fresh Firestore instance:
+      // sign-in must remain blocked until terminate + clearIndexedDbPersistence succeed on the new load.
+      let resolveFreshClear!: () => void;
+      mockClearIndexedDbPersistence.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFreshClear = resolve;
+          })
+      );
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
       await waitFor(() => {
         expect(mockTerminate).toHaveBeenCalledTimes(2);
         expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // Attempted sign-in while fresh cleanup is still pending must stay blocked
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("staff")).toHaveTextContent("false");
+
+      // Confirm deletion succeeds -> clears marker, broadcasts LOGOUT_CACHE_CLEARED, and reloads cleanly
+      await act(async () => {
+        resolveFreshClear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeNull();
         expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(true);
-        expect(reloadSpy).toHaveBeenCalledTimes(1);
+        expect(reloadSpy).toHaveBeenCalledTimes(2);
       });
     } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("shows close-other-tabs instructions when initiator clearIndexedDbPersistence stays pending past bounded wait, and reloads once it resolves", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; requestId?: string });
+    };
+
+    let resolveInitiatorClear!: () => void;
+    mockClearIndexedDbPersistence.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInitiatorClear = resolve;
+        })
+    );
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Advance bounded wait (3,000ms) while initiator deletion stays pending -> shows close-other-tabs instructions
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+        await Promise.resolve();
+      });
+
+      const dialog = screen.getByRole("alertdialog");
+      expect(dialog).toHaveTextContent(/ปิดแท็บอื่นของระบบที่เปิดค้างไว้/);
+      expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(false);
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Clicking retry while the same deletion promise is pending must NOT start a second delete
+      const retryBtn = within(dialog).getByRole("button", { name: /ลองล้างแคช/ });
+      fireEvent.click(retryBtn);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Resolving the original pending promise broadcasts completion and reloads once
+      await act(async () => {
+        resolveInitiatorClear();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(true);
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
       peerChannel.close();
     }
   });
@@ -2541,11 +2663,40 @@ describe("AuthContext", () => {
       const retryBtn = within(dialog).getByRole("button", { name: /ลองล้างแคช/ });
       expect(document.activeElement).toBe(retryBtn);
 
-      // Escape cannot dismiss and Tab stays contained inside the dialog
-      fireEvent.keyDown(document, { key: "Escape" });
+      // Escape cannot dismiss and Tab / Shift+Tab stay trapped inside the dialog
+      const escapeEvent = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        retryBtn.dispatchEvent(escapeEvent);
+      });
+      expect(escapeEvent.defaultPrevented).toBe(true);
       expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-      fireEvent.keyDown(document, { key: "Tab" });
-      expect(dialog.contains(document.activeElement)).toBe(true);
+
+      const tabEvent = new KeyboardEvent("keydown", {
+        key: "Tab",
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        retryBtn.dispatchEvent(tabEvent);
+      });
+      expect(tabEvent.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(retryBtn);
+
+      const shiftTabEvent = new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        retryBtn.dispatchEvent(shiftTabEvent);
+      });
+      expect(shiftTabEvent.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(retryBtn);
 
       // Must NOT start another delete while observing the existing promise
       expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);

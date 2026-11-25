@@ -2272,6 +2272,77 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     expect(onSecondFailErr).toHaveBeenCalledTimes(1);
   });
 
+  it("transferConsultRoom rechecks connectivity when obtaining its queue slot and routes offline drops via reconnect queue", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-drop-midqueue",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    let firstInFlight!: () => void;
+    const firstInFlightPromise = new Promise<void>((resolve) => {
+      firstInFlight = resolve;
+    });
+    let releaseFirst!: () => void;
+    const releaseFirstPromise = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const committedRooms: string[] = [];
+    let txCount = 0;
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      const idx = ++txCount;
+      if (idx === 1) {
+        firstInFlight();
+        await releaseFirstPromise;
+      }
+      return fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-drop-midqueue",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      });
+    });
+
+    const first = await transferConsultRoom("c-drop-midqueue", "SSW");
+    await firstInFlightPromise;
+
+    // Second transfer starts while online, then connectivity drops before it obtains its queue slot
+    const secondPromise = transferConsultRoom("c-drop-midqueue", "Urgent");
+    setNavigatorOnLine(false);
+    releaseFirst();
+
+    const second = await secondPromise;
+    await first.backgroundPromise;
+
+    // Second must detect offline at slot acquisition and queue for reconnect instead of failing online
+    expect(second.transferred).toBe(true);
+    expect(second.isOfflineQueued).toBe(true);
+    expect(committedRooms).toEqual(["SSW"]);
+
+    // On reconnect, second commits Urgent cleanly
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await second.backgroundPromise;
+
+    expect(committedRooms).toEqual(["SSW", "Urgent"]);
+  });
+
   it("transferConsultRoom retains and retries offline transfer after a retryable connection failure", async () => {
     setNavigatorOnLine(false);
     mockGetDocFromCache.mockResolvedValueOnce(

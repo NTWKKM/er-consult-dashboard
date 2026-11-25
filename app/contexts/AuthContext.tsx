@@ -68,6 +68,36 @@ const PEER_CACHE_CLEAR_FALLBACK_MS = 1500;
 const PEER_CACHE_CLEAR_PENDING_WAIT_MS = 3000;
 const LOGOUT_RESERVATION_TTL_MS = 5000;
 const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
+const PENDING_CLEANUP_STORAGE_KEY = "er_consult_pending_cache_cleanup_v1";
+
+function readPendingCleanupMarker(): { requestId: string | null } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
+    if (!raw) return null;
+    return raw === "1" ? { requestId: null } : { requestId: raw };
+  } catch {
+    return null;
+  }
+}
+
+function writePendingCleanupMarker(requestId: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(PENDING_CLEANUP_STORAGE_KEY, requestId || "1");
+  } catch {
+    // Ignore restricted storage errors
+  }
+}
+
+function clearPendingCleanupMarker() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(PENDING_CLEANUP_STORAGE_KEY);
+  } catch {
+    // Ignore restricted storage errors
+  }
+}
 
 interface PeerTabDirtyState {
   hasPending: boolean;
@@ -214,22 +244,33 @@ export function AuthProvider({
   const preserveDraftOnSignOutDeclineRef = useRef(false);
   const helloHandshakeStateRef = useRef<"settled" | "pending" | "unknown">("settled");
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [initialPersistedCleanup] = useState(() => readPendingCleanupMarker());
   const peerDbTerminatedRef = useRef(false);
   const peerCacheClearedRef = useRef(false);
-  const pendingFirestoreCleanupRef = useRef(false);
+  const pendingFirestoreCleanupRef = useRef(Boolean(initialPersistedCleanup));
   const activeTerminateRequestIdRef = useRef<string | null>(null);
-  const terminatedDbRef = useRef<Firestore | null>(null);
+  const terminatedDbRef = useRef<Firestore | null>(initialPersistedCleanup ? db : null);
   const activeClearPromiseRef = useRef<Promise<void> | null>(null);
-  const cleanupRoleRef = useRef<"peer" | "initiator" | null>(null);
+  const cleanupRoleRef = useRef<"peer" | "initiator" | null>(
+    initialPersistedCleanup ? "initiator" : null
+  );
   const initiatorTerminateSucceededRef = useRef(false);
-  const initiatorTerminateRequestIdRef = useRef<string | null>(null);
+  const initiatorTerminateRequestIdRef = useRef<string | null>(
+    initialPersistedCleanup?.requestId ?? null
+  );
+  const initiatorFinalizingRef = useRef(false);
+  const persistedCleanupRanRef = useRef(false);
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initiatorClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cleanupBackdropRef = useRef<HTMLDivElement>(null);
   const cleanupDialogRef = useRef<HTMLDivElement>(null);
   const cleanupRetryButtonRef = useRef<HTMLButtonElement>(null);
-  const [cleanupPhase, setCleanupPhase] = useState<"idle" | "pending" | "manual_retry">("idle");
+  const [cleanupPhase, setCleanupPhase] = useState<"idle" | "pending" | "manual_retry">(
+    initialPersistedCleanup ? "pending" : "idle"
+  );
   const [cleanupBlockedByPending, setCleanupBlockedByPending] = useState(false);
+  const [cleanupNeedsConnectionReset, setCleanupNeedsConnectionReset] = useState(false);
   const [manualRetryInFlight, setManualRetryInFlight] = useState(false);
   const [manualRetryError, setManualRetryError] = useState(false);
   const getOrStartClearPersistence = useCallback((targetDb: Firestore): Promise<void> => {
@@ -258,9 +299,9 @@ export function AuthProvider({
         clearTimeout(peerClearPendingTimerRef.current);
         peerClearPendingTimerRef.current = null;
       }
-      if (peerClearPendingTimerRef.current !== null) {
-        clearTimeout(peerClearPendingTimerRef.current);
-        peerClearPendingTimerRef.current = null;
+      if (initiatorClearPendingTimerRef.current !== null) {
+        clearTimeout(initiatorClearPendingTimerRef.current);
+        initiatorClearPendingTimerRef.current = null;
       }
       pendingFirestoreCleanupRef.current = false;
       peerDbTerminatedRef.current = false;
@@ -272,6 +313,7 @@ export function AuthProvider({
       initiatorTerminateRequestIdRef.current = null;
       setCleanupPhase("idle");
       setCleanupBlockedByPending(false);
+      setCleanupNeedsConnectionReset(false);
       setManualRetryInFlight(false);
       setManualRetryError(false);
       window.location.reload();
@@ -664,6 +706,10 @@ export function AuthProvider({
         clearTimeout(peerClearPendingTimerRef.current);
         peerClearPendingTimerRef.current = null;
       }
+      if (initiatorClearPendingTimerRef.current !== null) {
+        clearTimeout(initiatorClearPendingTimerRef.current);
+        initiatorClearPendingTimerRef.current = null;
+      }
       helloHandshakeStateRef.current = "settled";
       notifyBye();
       channelRef.current = null;
@@ -843,6 +889,94 @@ export function AuthProvider({
     };
   }, [triggerPeerReloadIfReady]);
 
+  const runInitiatorClearWithWatchdog = useCallback(
+    async (targetDb: Firestore) => {
+      if (initiatorClearPendingTimerRef.current !== null) {
+        clearTimeout(initiatorClearPendingTimerRef.current);
+      }
+      let settled = false;
+      const clearPromise = getOrStartClearPersistence(targetDb);
+      initiatorClearPendingTimerRef.current = setTimeout(() => {
+        initiatorClearPendingTimerRef.current = null;
+        if (settled) return;
+        pendingFirestoreCleanupRef.current = true;
+        terminatedDbRef.current = targetDb;
+        setCleanupBlockedByPending(true);
+        setCleanupPhase("manual_retry");
+      }, PEER_CACHE_CLEAR_PENDING_WAIT_MS);
+
+      try {
+        await clearPromise;
+      } finally {
+        settled = true;
+        if (initiatorClearPendingTimerRef.current !== null) {
+          clearTimeout(initiatorClearPendingTimerRef.current);
+          initiatorClearPendingTimerRef.current = null;
+        }
+      }
+
+      if (initiatorFinalizingRef.current) return;
+      initiatorFinalizingRef.current = true;
+      clearPendingCleanupMarker();
+      const reqId = initiatorTerminateRequestIdRef.current;
+      initiatorTerminateRequestIdRef.current = null;
+      if (reqId) {
+        try {
+          channelRef.current?.postMessage({
+            type: "LOGOUT_CACHE_CLEARED",
+            requestId: reqId,
+            senderTabId: tabIdRef.current,
+          } satisfies AuthSyncMessage);
+        } catch {
+          // Ignore broadcast errors during logout
+        }
+      }
+      pendingFirestoreCleanupRef.current = false;
+      cleanupRoleRef.current = null;
+      terminatedDbRef.current = null;
+      setCleanupBlockedByPending(false);
+      setCleanupNeedsConnectionReset(false);
+      setCleanupPhase("idle");
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
+    },
+    [getOrStartClearPersistence]
+  );
+
+  useEffect(() => {
+    if (!initialPersistedCleanup || persistedCleanupRanRef.current) return;
+    persistedCleanupRanRef.current = true;
+
+    if (!db || typeof window === "undefined") {
+      clearPendingCleanupMarker();
+      pendingFirestoreCleanupRef.current = false;
+      cleanupRoleRef.current = null;
+      terminatedDbRef.current = null;
+      initiatorTerminateRequestIdRef.current = null;
+      void Promise.resolve().then(() => {
+        setCleanupPhase("idle");
+      });
+      return;
+    }
+
+    const freshDb = db;
+    void (async () => {
+      try {
+        await terminate(freshDb);
+        initiatorTerminateSucceededRef.current = true;
+        await runInitiatorClearWithWatchdog(freshDb);
+      } catch {
+        pendingFirestoreCleanupRef.current = true;
+        terminatedDbRef.current = freshDb;
+        setCleanupBlockedByPending(false);
+        setCleanupNeedsConnectionReset(!initiatorTerminateSucceededRef.current);
+        setManualRetryError(true);
+        setCleanupPhase("manual_retry");
+      }
+    })();
+  }, [initialPersistedCleanup, runInitiatorClearWithWatchdog]);
+
   const logout = useCallback(async () => {
     if (logoutInProgressRef.current) return;
     logoutInProgressRef.current = true;
@@ -978,7 +1112,9 @@ export function AuthProvider({
         terminatedDbRef.current = db;
         initiatorTerminateSucceededRef.current = false;
         initiatorTerminateRequestIdRef.current = terminateRequestId;
+        initiatorFinalizingRef.current = false;
         setCleanupBlockedByPending(false);
+        setCleanupNeedsConnectionReset(false);
         setManualRetryError(false);
         setCleanupPhase("pending");
         setUser(null);
@@ -986,27 +1122,12 @@ export function AuthProvider({
         try {
           await terminate(db);
           initiatorTerminateSucceededRef.current = true;
-          await getOrStartClearPersistence(db);
-          // Notify peers ONLY after IndexedDB persistence deletion actually succeeded
-          try {
-            channelRef.current?.postMessage({
-              type: "LOGOUT_CACHE_CLEARED",
-              requestId: terminateRequestId,
-              senderTabId: tabIdRef.current,
-            } satisfies AuthSyncMessage);
-          } catch {
-            // Ignore broadcast errors during logout
-          }
-          pendingFirestoreCleanupRef.current = false;
-          cleanupRoleRef.current = null;
-          terminatedDbRef.current = null;
-          initiatorTerminateRequestIdRef.current = null;
-          setCleanupPhase("idle");
-          // Full page reload after terminate(db) initializes a clean Firestore instance and redirects via ProtectedRoute
-          window.location.reload();
+          await runInitiatorClearWithWatchdog(db);
         } catch {
           // Keep access blocked and offer retry; do NOT reload with stale PHI in IndexedDB
           pendingFirestoreCleanupRef.current = true;
+          setCleanupBlockedByPending(false);
+          setCleanupNeedsConnectionReset(!initiatorTerminateSucceededRef.current);
           setManualRetryError(true);
           setCleanupPhase("manual_retry");
         }
@@ -1037,42 +1158,30 @@ export function AuthProvider({
       }
       logoutInProgressRef.current = false;
     }
-  }, [queryPeerTabsBeforeLogout, terminatePeerFirestoreTabs, requestDiscardConfirmation, activeReservationStore, getOrStartClearPersistence]);
+  }, [queryPeerTabsBeforeLogout, terminatePeerFirestoreTabs, requestDiscardConfirmation, activeReservationStore, runInitiatorClearWithWatchdog]);
 
   const handleManualRetryCleanup = useCallback(async () => {
     if (manualRetryInFlight) return;
     const targetDb = terminatedDbRef.current ?? db;
     if (!targetDb) return;
 
+    // Never retry a rejected terminate(targetDb) on the same Firestore instance;
+    // reload with a persisted non-PHI cleanup marker to release the old connection first.
+    if (cleanupRoleRef.current === "initiator" && !initiatorTerminateSucceededRef.current) {
+      writePendingCleanupMarker(initiatorTerminateRequestIdRef.current);
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
+      return;
+    }
+
     setManualRetryInFlight(true);
     setManualRetryError(false);
     try {
-      if (cleanupRoleRef.current === "initiator" && !initiatorTerminateSucceededRef.current) {
-        await terminate(targetDb);
-        initiatorTerminateSucceededRef.current = true;
-      }
-      await getOrStartClearPersistence(targetDb);
       if (cleanupRoleRef.current === "initiator") {
-        const reqId = initiatorTerminateRequestIdRef.current;
-        if (reqId) {
-          try {
-            channelRef.current?.postMessage({
-              type: "LOGOUT_CACHE_CLEARED",
-              requestId: reqId,
-              senderTabId: tabIdRef.current,
-            } satisfies AuthSyncMessage);
-          } catch {
-            // Ignore broadcast errors during retry
-          }
-        }
-        pendingFirestoreCleanupRef.current = false;
-        cleanupRoleRef.current = null;
-        terminatedDbRef.current = null;
-        initiatorTerminateRequestIdRef.current = null;
-        setCleanupBlockedByPending(false);
-        setCleanupPhase("idle");
-        window.location.reload();
+        await runInitiatorClearWithWatchdog(targetDb);
       } else {
+        await getOrStartClearPersistence(targetDb);
         setCleanupBlockedByPending(false);
         peerCacheClearedRef.current = true;
         peerDbTerminatedRef.current = true;
@@ -1086,7 +1195,7 @@ export function AuthProvider({
     } finally {
       setManualRetryInFlight(false);
     }
-  }, [getOrStartClearPersistence, manualRetryInFlight, triggerPeerReloadIfReady]);
+  }, [getOrStartClearPersistence, manualRetryInFlight, runInitiatorClearWithWatchdog, triggerPeerReloadIfReady]);
 
   useLayoutEffect(() => {
     if (cleanupPhase !== "manual_retry") return;
@@ -1207,7 +1316,9 @@ export function AuthProvider({
             <p id="cleanup-retry-desc" className="text-sm text-ink-2 mb-4">
               {cleanupBlockedByPending
                 ? "การล้างข้อมูลแคชในเบราว์เซอร์ยังรอดำเนินการอยู่ กรุณาปิดแท็บอื่นของระบบที่เปิดค้างไว้ แล้วระบบจะล้างแคชและโหลดหน้าใหม่อัตโนมัติ"
-                : "ระบบยังไม่สามารถล้างข้อมูลผู้ป่วยในเบราว์เซอร์ได้อัตโนมัติ (อาจมีแท็บอื่นเปิดค้างอยู่) กรุณาปิดแท็บอื่นของระบบแล้วกดลองล้างแคชอีกครั้งเพื่อความปลอดภัย"}
+                : cleanupNeedsConnectionReset
+                  ? "ไม่สามารถปิดการเชื่อมต่อฐานข้อมูลเดิมได้อัตโนมัติ กรุณากดปุ่มด้านล่างเพื่อรีโหลดหน้า ปลดการเชื่อมต่อเดิม และยืนยันการล้างแคชให้สมบูรณ์ก่อนเข้าสู่ระบบ"
+                  : "ระบบยังไม่สามารถล้างข้อมูลผู้ป่วยในเบราว์เซอร์ได้อัตโนมัติ (อาจมีแท็บอื่นเปิดค้างอยู่) กรุณาปิดแท็บอื่นของระบบแล้วกดลองล้างแคชอีกครั้งเพื่อความปลอดภัย"}
             </p>
             {manualRetryError && (
               <p role="alert" className="text-xs font-medium text-bad bg-bad-soft border border-bad/35 rounded-[6px] px-3 py-2 mb-4">
