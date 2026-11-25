@@ -211,6 +211,20 @@ describe("ElapsedTime", () => {
       });
       expect(screen.getByText(/รอ 1 นาที/)).toBeInTheDocument();
     });
+
+    it("rechecks the wall clock at least every 60s and recovers after a forward clock jump with far-future createdAt", () => {
+      const farFutureCreatedAt = new Date(BASE_TIME + 5 * 60_000).toISOString();
+      render(<ElapsedTime createdAt={farFutureCreatedAt} />);
+      expect(screen.getByText(/รอ 0 นาที/)).toBeInTheDocument();
+
+      // Simulate NTP wall-clock jump forward past createdAt + 2 minutes before the 60s recheck fires
+      setNow(BASE_TIME + 7 * 60_000);
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+
+      expect(screen.getByText(/รอ 3 นาที/)).toBeInTheDocument();
+    });
   });
 
   // -------------------------------------------------------------------------

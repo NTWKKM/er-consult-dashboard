@@ -52,12 +52,13 @@ import {
 } from "@/lib/logoutReservation";
 
 function AuthProbe({ onLogoutResult }: { onLogoutResult?: (err: unknown) => void }) {
-  const { user, loading, isAuthorizedStaff, logout } = useAuth();
+  const { user, loading, isAuthorizedStaff, isPendingCleanup, logout } = useAuth();
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="uid">{user?.uid ?? "null"}</span>
       <span data-testid="staff">{String(isAuthorizedStaff)}</span>
+      <span data-testid="cleanup">{String(isPendingCleanup)}</span>
       <button
         type="button"
         onClick={() => {
@@ -1944,7 +1945,7 @@ describe("AuthContext", () => {
     expect(screen.getByTestId("uid")).toHaveTextContent("staff-pending");
   });
 
-  it("waits for LOGOUT_CACHE_CLEARED before reloading peer when onAuthStateChanged(null) already ran, and broadcasts LOGOUT_CACHE_CLEARED from initiator", async () => {
+  it("waits for LOGOUT_CACHE_CLEARED before reloading peer when onAuthStateChanged(null) already ran", async () => {
     const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
     const peerMessages: Array<{ type: string; requestId?: string }> = [];
     peerChannel.onmessage = (event) => {
@@ -1989,6 +1990,56 @@ describe("AuthContext", () => {
       });
 
       await waitFor(() => {
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("broadcasts LOGOUT_CACHE_CLEARED from initiator only after clearIndexedDbPersistence resolves", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; requestId?: string });
+    };
+
+    let resolveClear!: () => void;
+    mockClearIndexedDbPersistence.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveClear = resolve;
+        })
+    );
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      });
+      expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(false);
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveClear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(true);
         expect(reloadSpy).toHaveBeenCalledTimes(1);
       });
     } finally {
@@ -2124,6 +2175,188 @@ describe("AuthContext", () => {
         expect(reloadSpy).toHaveBeenCalledTimes(1);
       });
       expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(false);
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("offers manual retry cleanup state after 6 fallback failures and reloads only when manual retry succeeds", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+
+    try {
+      mockClearIndexedDbPersistence.mockRejectedValue(new Error("failed-precondition"));
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-exhaust-1",
+        senderTabId: "crashed-tab",
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+
+      // Exhaust all 6 automatic fallback attempts (6 x 1,500ms)
+      for (let i = 0; i < 6; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1500);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+      }
+
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(6);
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      const retryDialog = screen.getByRole("alertdialog");
+      const retryBtn = within(retryDialog).getByRole("button", { name: /ลองล้างแคช/ });
+
+      // Manual retry fails -> stays in cleanup state and does not reload or call terminate again
+      fireEvent.click(retryBtn);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(7);
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+      // Manual retry succeeds -> reloads without re-terminating Firestore
+      mockClearIndexedDbPersistence.mockResolvedValueOnce(undefined);
+      fireEvent.click(retryBtn);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(8);
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      peerChannel.close();
+    }
+  });
+
+  it("blocks sign-in while Firestore cleanup is pending and still reloads when LOGOUT_CACHE_CLEARED arrives", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-signin-block-1",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      });
+
+      // Another staff member attempts to sign in before cache cleanup finishes
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("staff")).toHaveTextContent("false");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Subsequent LOGOUT_CACHE_CLEARED still triggers reload
+      peerChannel.postMessage({
+        type: "LOGOUT_CACHE_CLEARED",
+        requestId: "term-signin-block-1",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("resets peerCacheClearedRef on each termination request and ignores mismatched LOGOUT_CACHE_CLEARED requestIds", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      // Stale signal before a termination request must not carry over
+      peerChannel.postMessage({
+        type: "LOGOUT_CACHE_CLEARED",
+        senderTabId: "old-initiator",
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-cycle-2",
+        senderTabId: "new-initiator",
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Mismatched requestId must be ignored
+      peerChannel.postMessage({
+        type: "LOGOUT_CACHE_CLEARED",
+        requestId: "term-cycle-1",
+        senderTabId: "old-initiator",
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Matching requestId triggers reload
+      peerChannel.postMessage({
+        type: "LOGOUT_CACHE_CLEARED",
+        requestId: "term-cycle-2",
+        senderTabId: "new-initiator",
+      });
+      await waitFor(() => {
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
     } finally {
       peerChannel.close();
     }

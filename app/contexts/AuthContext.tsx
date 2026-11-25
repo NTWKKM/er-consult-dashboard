@@ -30,6 +30,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   isAuthorizedStaff: boolean;
+  isPendingCleanup: boolean;
   logout: () => Promise<void>;
 }
 
@@ -37,6 +38,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   isAuthorizedStaff: false,
+  isPendingCleanup: false,
   logout: async () => {},
 });
 
@@ -97,7 +99,7 @@ type AuthSyncMessage =
   | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string }
   | { type: "LOGOUT_TERMINATE_DB_REQUEST"; requestId: string; senderTabId: string }
   | { type: "LOGOUT_TERMINATE_DB_ACK"; requestId: string; tabId: string }
-  | { type: "LOGOUT_CACHE_CLEARED"; senderTabId: string };
+  | { type: "LOGOUT_CACHE_CLEARED"; requestId?: string; senderTabId: string };
 
 async function confirmPendingWritesBeforeLogout(
   firestoreDb: Firestore | null,
@@ -213,10 +215,16 @@ export function AuthProvider({
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerDbTerminatedRef = useRef(false);
   const peerCacheClearedRef = useRef(false);
+  const pendingFirestoreCleanupRef = useRef(false);
+  const activeTerminateRequestIdRef = useRef<string | null>(null);
+  const terminatedDbRef = useRef<Firestore | null>(null);
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [cleanupPhase, setCleanupPhase] = useState<"idle" | "pending" | "manual_retry">("idle");
+  const [manualRetryInFlight, setManualRetryInFlight] = useState(false);
+  const [manualRetryError, setManualRetryError] = useState(false);
   const triggerPeerReloadIfReady = useCallback(() => {
     if (
-      signedOutAppliedRef.current &&
+      (signedOutAppliedRef.current || pendingFirestoreCleanupRef.current) &&
       peerDbTerminatedRef.current &&
       peerCacheClearedRef.current &&
       typeof window !== "undefined"
@@ -225,8 +233,14 @@ export function AuthProvider({
         clearTimeout(peerReloadFallbackTimerRef.current);
         peerReloadFallbackTimerRef.current = null;
       }
+      pendingFirestoreCleanupRef.current = false;
       peerDbTerminatedRef.current = false;
       peerCacheClearedRef.current = false;
+      activeTerminateRequestIdRef.current = null;
+      terminatedDbRef.current = null;
+      setCleanupPhase("idle");
+      setManualRetryInFlight(false);
+      setManualRetryError(false);
       window.location.reload();
     }
   }, []);
@@ -425,6 +439,14 @@ export function AuthProvider({
           break;
         case "LOGOUT_TERMINATE_DB_REQUEST":
           if (msg.senderTabId !== myTabId) {
+            // Reset peer reload-barrier state for each termination request so earlier signals cannot carry over
+            activeTerminateRequestIdRef.current = msg.requestId;
+            peerDbTerminatedRef.current = false;
+            peerCacheClearedRef.current = false;
+            if (peerReloadFallbackTimerRef.current !== null) {
+              clearTimeout(peerReloadFallbackTimerRef.current);
+              peerReloadFallbackTimerRef.current = null;
+            }
             const sendAck = () => {
               try {
                 channel.postMessage({
@@ -438,6 +460,12 @@ export function AuthProvider({
             };
             if (db) {
               const activeDb = db;
+              pendingFirestoreCleanupRef.current = true;
+              terminatedDbRef.current = activeDb;
+              setCleanupPhase("pending");
+              setManualRetryError(false);
+              setUser(null);
+              setIsAuthorizedStaff(false);
               void terminate(activeDb)
                 .catch(() => {})
                 .finally(() => {
@@ -448,7 +476,8 @@ export function AuthProvider({
                       triggerPeerReloadIfReady();
                     } else if (peerReloadFallbackTimerRef.current === null) {
                       // Safety fallback if initiating tab closed/crashed: clear persistence locally
-                      // before reloading; if initiating tab is still clearing, retry after another wait.
+                      // before reloading; if initiating tab is still clearing, retry up to 6 times,
+                      // then keep the tab in a manual retry cleanup state without reloading stale PHI.
                       const scheduleFallbackCheck = (attempt = 0) => {
                         peerReloadFallbackTimerRef.current = setTimeout(() => {
                           peerReloadFallbackTimerRef.current = null;
@@ -465,8 +494,13 @@ export function AuthProvider({
                               }
                             },
                             () => {
-                              if (channelRef.current === channel && attempt < 5) {
+                              if (channelRef.current !== channel) return;
+                              if (attempt < 5) {
                                 scheduleFallbackCheck(attempt + 1);
+                              } else {
+                                pendingFirestoreCleanupRef.current = true;
+                                terminatedDbRef.current = activeDb;
+                                setCleanupPhase("manual_retry");
                               }
                             }
                           );
@@ -490,6 +524,12 @@ export function AuthProvider({
         }
         case "LOGOUT_CACHE_CLEARED":
           if (msg.senderTabId !== myTabId) {
+            if (
+              msg.requestId !== undefined &&
+              msg.requestId !== activeTerminateRequestIdRef.current
+            ) {
+              break;
+            }
             peerCacheClearedRef.current = true;
             triggerPeerReloadIfReady();
           }
@@ -627,10 +667,10 @@ export function AuthProvider({
     return { hasPending: peerPending, hasDrafts: peerDrafts, hasUnknownPeer };
   }, []);
 
-  const terminatePeerFirestoreTabs = useCallback(async (): Promise<void> => {
+  const terminatePeerFirestoreTabs = useCallback(async (): Promise<string | null> => {
     const channel = channelRef.current;
     const peers = peerTabsRef.current;
-    if (!channel || peers.size === 0) return;
+    if (!channel || peers.size === 0) return null;
 
     const expectedPeers = new Set(peers);
     const acked = new Set<string>();
@@ -666,6 +706,8 @@ export function AuthProvider({
         finish();
       }
     });
+
+    return requestId;
   }, []);
 
   useEffect(() => {
@@ -707,9 +749,16 @@ export function AuthProvider({
       }
 
       signedOutAppliedRef.current = false;
+      if (pendingFirestoreCleanupRef.current) {
+        // Keep sign-in and operational routes blocked until terminated Firestore cache cleanup completes
+        setUser(null);
+        setIsAuthorizedStaff(false);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       void checkIsAuthorizedStaff(currentUser).then((authorized) => {
-        if (!cancelled && generation === authGeneration) {
+        if (!cancelled && generation === authGeneration && !pendingFirestoreCleanupRef.current) {
           setUser(currentUser);
           setIsAuthorizedStaff(authorized);
           setLoading(false);
@@ -849,13 +898,14 @@ export function AuthProvider({
       // Clear local IndexedDB cache on shared ER workstations so patient PHI does not persist across shifts
       if (db && typeof window !== "undefined") {
         try {
-          await terminatePeerFirestoreTabs();
+          const terminateRequestId = await terminatePeerFirestoreTabs();
           await terminate(db);
           await clearIndexedDbPersistence(db);
           // Notify peers ONLY after IndexedDB persistence deletion actually succeeded
           try {
             channelRef.current?.postMessage({
               type: "LOGOUT_CACHE_CLEARED",
+              ...(terminateRequestId ? { requestId: terminateRequestId } : {}),
               senderTabId: tabIdRef.current,
             } satisfies AuthSyncMessage);
           } catch {
@@ -892,9 +942,63 @@ export function AuthProvider({
     }
   }, [queryPeerTabsBeforeLogout, terminatePeerFirestoreTabs, requestDiscardConfirmation, activeReservationStore]);
 
+  const handleManualRetryCleanup = useCallback(async () => {
+    if (manualRetryInFlight) return;
+    const targetDb = terminatedDbRef.current ?? db;
+    if (!targetDb) return;
+
+    setManualRetryInFlight(true);
+    setManualRetryError(false);
+    try {
+      await clearIndexedDbPersistence(targetDb);
+      peerCacheClearedRef.current = true;
+      peerDbTerminatedRef.current = true;
+      triggerPeerReloadIfReady();
+    } catch {
+      pendingFirestoreCleanupRef.current = true;
+      setCleanupPhase("manual_retry");
+      setManualRetryError(true);
+    } finally {
+      setManualRetryInFlight(false);
+    }
+  }, [manualRetryInFlight, triggerPeerReloadIfReady]);
+
+  const isPendingCleanup = cleanupPhase !== "idle";
+
   return (
-    <AuthContext.Provider value={{ user, loading, isAuthorizedStaff, logout }}>
+    <AuthContext.Provider value={{ user, loading, isAuthorizedStaff, isPendingCleanup, logout }}>
       {children}
+      {cleanupPhase === "manual_retry" && (
+        <div
+          className="fixed inset-0 z-[130] bg-paper-3/90 flex items-center justify-center p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="cleanup-retry-title"
+          aria-describedby="cleanup-retry-desc"
+        >
+          <div className="w-full max-w-md rounded-[10px] border border-rule bg-paper-2 p-6">
+            <h2 id="cleanup-retry-title" className="text-lg font-medium text-ink mb-2">
+              จำเป็นต้องล้างข้อมูลแคชก่อนใช้งานต่อ
+            </h2>
+            <p id="cleanup-retry-desc" className="text-sm text-ink-2 mb-4">
+              ระบบยังไม่สามารถล้างข้อมูลผู้ป่วยในเบราว์เซอร์ได้อัตโนมัติ (อาจมีแท็บอื่นเปิดค้างอยู่) กรุณาปิดแท็บอื่นของระบบแล้วกดลองล้างแคชอีกครั้งเพื่อความปลอดภัย
+            </p>
+            {manualRetryError && (
+              <p role="alert" className="text-xs font-medium text-bad bg-bad-soft border border-bad/35 rounded-[6px] px-3 py-2 mb-4">
+                การล้างแคชยังไม่สำเร็จ กรุณาปิดแท็บอื่นที่เปิดค้างอยู่แล้วลองใหม่อีกครั้ง
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleManualRetryCleanup()}
+              disabled={manualRetryInFlight}
+              className="w-full px-4 py-2.5 rounded-[6px] bg-accent text-accent-ink font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed tap-feedback"
+            >
+              {manualRetryInFlight ? "กำลังล้างแคช…" : "ลองล้างแคชและโหลดหน้าใหม่"}
+            </button>
+          </div>
+        </div>
+      )}
       <ConfirmModal
         isOpen={Boolean(logoutDiscardPrompt)}
         title="ยืนยันการออกจากระบบ"

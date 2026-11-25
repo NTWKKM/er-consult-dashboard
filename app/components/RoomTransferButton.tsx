@@ -81,10 +81,12 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       setIsOpen(false);
       setFocusedIndex(-1);
       
+      let backgroundFailed = false;
       const { transferred, backgroundPromise, isOfflineQueued } = await transferConsultRoom(
         consultId, 
         newRoom,
         (err) => {
+          backgroundFailed = true;
           console.error("Background transfer error:", err);
           const isConditionNotMet =
             err instanceof Error && err.message === "TRANSACTION_CONDITION_NOT_MET";
@@ -97,14 +99,14 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
         }
       );
       if (transferred) {
-        addToast(
-          isOfflineQueued
-            ? {
-                message: `คิวคำขอย้ายเคสไปยัง ${newRoom} ในเซสชันนี้แล้ว (อย่าปิดหน้านี้ก่อนออนไลน์เพื่อซิงค์)`,
-                type: "info",
-              }
-            : { message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" }
-        );
+        if (isOfflineQueued) {
+          addToast({
+            message: `คิวคำขอย้ายเคสไปยัง ${newRoom} ในเซสชันนี้แล้ว (อย่าปิดหน้านี้ก่อนออนไลน์เพื่อซิงค์)`,
+            type: "info",
+          });
+        } else if (!backgroundPromise && !backgroundFailed) {
+          addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+        }
         onTransferEnd?.(true); // success callback
         // Hold the UI/case lock only while an online transaction is settling.
         // Offline-queued writes settle only upon reconnect, so release immediately after queueing.
@@ -115,7 +117,17 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
             setIsTransferring(false);
             releaseCaseLock(consultId);
           };
-          void backgroundPromise.then(release, release);
+          void backgroundPromise.then(
+            () => {
+              release();
+              if (!backgroundFailed) {
+                addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+              }
+            },
+            () => {
+              release();
+            }
+          );
         }
       } else {
         addToast({ 

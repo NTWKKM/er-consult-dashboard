@@ -773,4 +773,55 @@ describe("CompletedPage re-consult failed drafts", () => {
     });
     expect(mockAddToast).toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
   });
+
+  it("disables Re-consult modal close and Cancel buttons while initial submission is pending, then closes programmatically once applied", async () => {
+    mockFetchCompletedConsultsPage.mockResolvedValueOnce({
+      consults: [caseA],
+      lastDoc: undefined,
+      hasMore: false,
+    });
+
+    render(<CompletedPage />);
+    await screen.findAllByText("111111");
+
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: /^Ortho/ }));
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Pending close disable check" },
+    });
+
+    const initialDeferred = createDeferred<{
+      consult: Consult | null;
+      isQueued: boolean;
+      backgroundPromise: Promise<void> | null;
+      applied: boolean;
+    }>();
+    mockUpdateConsult.mockReturnValueOnce(initialDeferred.promise);
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+
+    const closeBtn = screen.getByRole("button", { name: "ปิดหน้าต่าง Re-consult" });
+    const cancelBtn = screen.getByRole("button", { name: "ยกเลิก" });
+    expect(closeBtn).toBeDisabled();
+    expect(cancelBtn).toBeDisabled();
+
+    fireEvent.click(closeBtn);
+    fireEvent.click(cancelBtn);
+    expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
+
+    await act(async () => {
+      initialDeferred.resolve({
+        consult: { ...caseA, status: "pending" },
+        isQueued: false,
+        backgroundPromise: null,
+        applied: true,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+    });
+  });
 });

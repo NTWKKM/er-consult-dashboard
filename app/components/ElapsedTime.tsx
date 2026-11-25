@@ -41,27 +41,34 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: Elapse
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let active = true;
 
-    const bump = () => setTick((t) => t + 1);
+    const scheduleNext = () => {
+      if (!active) return;
 
-    // Calculate ms until the next minute boundary (never 0ms; handle ahead-of-clock skew cleanly)
-    const createdMs = new Date(createdAt).getTime();
-    const now = Date.now();
-    const msUntilNextMinute = !Number.isFinite(createdMs)
-      ? 60000
-      : createdMs > now
-        ? (createdMs - now) + 60000
-        : 60000 - ((now - createdMs) % 60000);
+      // Recheck wall clock at least every 60s so clock jumps or long future skew recover promptly
+      const createdMs = new Date(createdAt).getTime();
+      const now = Date.now();
+      const msUntilNextMinute = !Number.isFinite(createdMs)
+        ? 60000
+        : createdMs > now
+          ? (createdMs - now) + 60000
+          : 60000 - ((now - createdMs) % 60000);
+      const delay = Math.min(60000, Math.max(1, msUntilNextMinute));
 
-    const timeout = setTimeout(() => {
-      bump();
-      interval = setInterval(bump, 60000);
-    }, msUntilNextMinute);
+      timeout = setTimeout(() => {
+        if (!active) return;
+        setTick((t) => t + 1);
+        scheduleNext();
+      }, delay);
+    };
+
+    scheduleNext();
 
     return () => {
-      clearTimeout(timeout);
-      if (interval) clearInterval(interval);
+      active = false;
+      if (timeout !== null) clearTimeout(timeout);
     };
   }, [createdAt]);
 

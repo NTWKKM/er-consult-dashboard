@@ -6,16 +6,28 @@ import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, isAuthorizedStaff, logout } = useAuth();
+  const { user, loading, isAuthorizedStaff, isPendingCleanup, logout } = useAuth();
   const { addToast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user && pathname !== "/login") {
+    if (!loading && !user && !isPendingCleanup && pathname !== "/login") {
       router.push("/login");
     }
-  }, [user, loading, pathname, router]);
+  }, [user, loading, isPendingCleanup, pathname, router]);
+
+  if (isPendingCleanup) {
+    return (
+      <main className="min-h-screen bg-paper flex flex-col items-center justify-center gap-3 p-4" role="status" aria-live="polite">
+        <div aria-hidden="true" className="w-10 h-10 border-4 border-rule border-t-accent rounded-full motion-safe:animate-spin"></div>
+        <p className="text-sm font-medium text-ink">กำลังล้างข้อมูลเซสชันก่อนหน้า…</p>
+        <p className="text-xs text-muted text-center max-w-sm">
+          กรุณารอสักครู่ ระบบจะรีโหลดหน้าจออัตโนมัติเมื่อล้างข้อมูลเสร็จสมบูรณ์
+        </p>
+      </main>
+    );
+  }
 
   // If loading, show nothing or a spinner
   if (loading) {

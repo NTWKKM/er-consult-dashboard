@@ -741,9 +741,13 @@ async function readConsultSnapshotCacheFirst(docRef: DocumentReference<DocumentD
             }
         }
     } catch {
-        // Cache miss, unavailable, or partial test mock — fall back to standard getDoc
+        // Cache miss, unavailable, or partial test mock — fall back to server/getDoc
     }
-    return { snap: await getDoc(docRef), fromCache: false };
+    const isOnline = typeof navigator === "undefined" || navigator.onLine !== false;
+    return {
+        snap: isOnline ? await readConsultSnapshotServerOnly(docRef) : await getDoc(docRef),
+        fromCache: false,
+    };
 }
 
 /**
@@ -917,7 +921,7 @@ export async function transactionalUpdateConsult(
         // before short-circuiting (e.g. stale cache missing a re-consult or room change).
         const isOnline = typeof navigator === "undefined" || navigator.onLine !== false;
         if (!preApplied && initialRead.fromCache && isOnline) {
-            const serverSnap = await getDoc(docRef);
+            const serverSnap = await readConsultSnapshotServerOnly(docRef);
             evaluatePreSnap(serverSnap);
         }
 
@@ -1055,9 +1059,12 @@ export async function transferConsultRoom(
 }> {
     const now = new Date().toISOString();
     const requestEpoch = ++transferEpochSeq;
-    latestTransferEpochByCaseId.set(id, requestEpoch);
+    let ownershipClaimed = false;
     const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
     const buildTransferPayload = (current: Consult): ConsultUpdate | null => {
+        if (ownershipClaimed && latestTransferEpochByCaseId.get(id) !== requestEpoch) {
+            return null;
+        }
         if (current.room === newRoom) return null;
 
         const pendingDeptKeys = Object.keys(current.departments).filter(
@@ -1065,6 +1072,15 @@ export async function transferConsultRoom(
         );
         
         if (pendingDeptKeys.length === 0) return null;
+
+        if (!ownershipClaimed) {
+            const currentLatest = latestTransferEpochByCaseId.get(id) ?? 0;
+            if (requestEpoch < currentLatest) {
+                return null;
+            }
+            ownershipClaimed = true;
+            latestTransferEpochByCaseId.set(id, requestEpoch);
+        }
 
         const payload: ConsultUpdate = {
             room: newRoom

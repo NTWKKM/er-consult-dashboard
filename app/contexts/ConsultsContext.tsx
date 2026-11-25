@@ -58,9 +58,9 @@ function ActiveConsultsSubscription({
  * while keying subscription state by user UID so sign-out or account switch never flashes stale PHI.
  */
 export function ConsultsProvider({ children }: { children: React.ReactNode }) {
-  const { user, isAuthorizedStaff } = useAuth();
+  const { user, isAuthorizedStaff, isPendingCleanup } = useAuth();
 
-  if (!user || !isAuthorizedStaff) {
+  if (!user || !isAuthorizedStaff || isPendingCleanup) {
     return (
       <ConsultsContext.Provider value={{ cases: [], loading: false, error: null }}>
         {children}

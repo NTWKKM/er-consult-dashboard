@@ -1803,7 +1803,7 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     mockGetDocFromCache.mockResolvedValueOnce(
       makeDocSnapshot("c-stale", baseConsult({ room: "SSW" }))
     );
-    mockGetDoc.mockResolvedValueOnce(
+    mockGetDocFromServer.mockResolvedValueOnce(
       makeDocSnapshot("c-stale", baseConsult({ room: "NT" }))
     );
     mockRunTransaction.mockImplementation(async (_db, fn) =>
@@ -1820,10 +1820,29 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     );
 
     expect(mockGetDocFromCache).toHaveBeenCalledTimes(1);
-    expect(mockGetDoc).toHaveBeenCalledTimes(1);
+    expect(mockGetDocFromServer).toHaveBeenCalledTimes(1);
+    expect(mockGetDoc).not.toHaveBeenCalled();
     expect(res.applied).toBe(true);
     await res.backgroundPromise;
     expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("transactionalUpdateConsult({ awaitRemote: false }) uses server-only read on cache miss when online", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockRejectedValueOnce(new Error("cache miss"));
+    mockGetDocFromServer.mockRejectedValueOnce(new Error("client is offline"));
+
+    await expect(
+      transactionalUpdateConsult(
+        "c-miss-srv",
+        () => ({ room: "SSW" }),
+        { awaitRemote: false }
+      )
+    ).rejects.toThrow(/offline/);
+
+    expect(mockGetDocFromCache).toHaveBeenCalledTimes(1);
+    expect(mockGetDocFromServer).toHaveBeenCalledTimes(1);
+    expect(mockGetDoc).not.toHaveBeenCalled();
   });
 
   it("transferConsultRoom queues transfer intent offline without stale updateDoc and commits transactionally on reconnect", async () => {
@@ -1989,6 +2008,117 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     await Promise.all([first.backgroundPromise, second.backgroundPromise]);
 
     expect(committedRooms).toEqual(["Urgent"]);
+  });
+
+  it("transferConsultRoom preserves queued transfer epoch when a replacement request fails preflight", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-keep-epoch",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    mockRunTransaction.mockImplementation(async (_db, fn) =>
+      fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-keep-epoch",
+            baseConsult({
+              room: "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      })
+    );
+
+    const queued = await transferConsultRoom("c-keep-epoch", "SSW");
+    expect(queued.transferred).toBe(true);
+
+    // Replacement fails preflight (same room as current "NT") -> must NOT steal epoch from queued "SSW" transfer
+    const failedReplacement = await transferConsultRoom("c-keep-epoch", "NT");
+    expect(failedReplacement.transferred).toBe(false);
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await queued.backgroundPromise;
+
+    expect(committedRooms).toEqual(["SSW"]);
+  });
+
+  it("transferConsultRoom aborts superseded transaction inside buildTransferPayload when a newer valid transfer takes ownership mid-flight", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-midflight",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    let releaseFirstTxGet!: () => void;
+    let firstTxStarted!: () => void;
+    const firstTxStartedPromise = new Promise<void>((resolve) => {
+      firstTxStarted = resolve;
+    });
+
+    let txCount = 0;
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      const idx = ++txCount;
+      if (idx === 1) {
+        firstTxStarted();
+        await new Promise<void>((resolve) => {
+          releaseFirstTxGet = resolve;
+        });
+      }
+      return fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-midflight",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      });
+    });
+
+    const onFirstErr = vi.fn();
+    const first = await transferConsultRoom("c-midflight", "SSW", onFirstErr);
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await firstTxStartedPromise;
+
+    // Newer valid transfer takes ownership while first transaction is mid-flight
+    const second = await transferConsultRoom("c-midflight", "Urgent");
+    await second.backgroundPromise;
+
+    // Unblock first transaction -> buildTransferPayload sees superseded epoch and returns null (no overwrite)
+    releaseFirstTxGet();
+    await first.backgroundPromise;
+
+    expect(committedRooms).toEqual(["Urgent"]);
+    expect(onFirstErr).not.toHaveBeenCalled();
   });
 
   it("transferConsultRoom retains and retries offline transfer after a retryable connection failure", async () => {
