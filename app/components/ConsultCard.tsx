@@ -73,16 +73,25 @@ function ConsultCard({ caseData, caseId, departmentName, onUpdate, animationDela
     await handleToggleUrgency(isUrgent);
   }, [isUrgent, handleToggleUrgency]);
 
+  const acceptPendingFlashRef = useRef(false);
+
   const handleAcceptCase = useCallback(async () => {
-    const success = await handleAccept();
-    if (success) {
-      if (document.startViewTransition) {
-        document.startViewTransition(() => {
-          setFlashSuccess(true);
-        });
-      } else {
-        setFlashSuccess(true);
-      }
+    acceptPendingFlashRef.current = true;
+    const queued = await handleAccept();
+    if (!queued) {
+      acceptPendingFlashRef.current = false;
+    }
+  }, [handleAccept]);
+
+  useEffect(() => {
+    if (!acceptPendingFlashRef.current || isUpdating) return;
+    acceptPendingFlashRef.current = false;
+    if (!isAccepted) return;
+
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setFlashSuccess(true);
       if (flashTimerRef.current !== null) {
         clearTimeout(flashTimerRef.current);
       }
@@ -90,8 +99,11 @@ function ConsultCard({ caseData, caseId, departmentName, onUpdate, animationDela
         flashTimerRef.current = null;
         setFlashSuccess(false);
       }, 700);
-    }
-  }, [handleAccept]);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isUpdating, isAccepted]);
 
   useEffect(() => {
     return () => {
@@ -317,6 +329,7 @@ function ConsultCard({ caseData, caseId, departmentName, onUpdate, animationDela
                       aria-label="เลือกสถานะถัดไป"
                       value={actionStatus && actionStatus !== ACCEPT_STATUS ? actionStatus : ""}
                       onChange={(e) => handleStatusChange(e.target.value as PostAcceptStatus)}
+                      disabled={isUpdating}
                       className={`w-full h-full pl-2 pr-7 py-1.5 rounded-[6px] font-medium text-xs transition-colors duration-200 appearance-none text-center cursor-pointer border ${
                         actionStatus && actionStatus !== ACCEPT_STATUS
                           ? "bg-accent-soft text-accent border-accent"

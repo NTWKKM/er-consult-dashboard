@@ -194,6 +194,23 @@ describe("ElapsedTime", () => {
 
       expect(container.querySelector(".elapsed-warning")).toBeInTheDocument();
     });
+    it("does not schedule a 0ms timer at exact minute boundaries and handles ahead-of-clock skew cleanly (Bug #9)", () => {
+      const futureCreatedAt = new Date(BASE_TIME + 15_000).toISOString();
+      render(<ElapsedTime createdAt={futureCreatedAt} />);
+      expect(screen.getByText(/รอ 0 นาที/)).toBeInTheDocument();
+
+      // Advance 60s (45s elapsed -> still 0 นาที, not prematurely 1 นาที)
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByText(/รอ 0 นาที/)).toBeInTheDocument();
+
+      // Advance remaining 15s (60s elapsed -> ticks to 1 นาที right on boundary)
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+      expect(screen.getByText(/รอ 1 นาที/)).toBeInTheDocument();
+    });
   });
 
   // -------------------------------------------------------------------------

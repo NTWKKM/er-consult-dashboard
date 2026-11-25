@@ -1,11 +1,11 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type QueryConstraint, type UpdateData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, getDocFromCache, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type DocumentReference, type Firestore, type QueryConstraint, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
 import { ConsultSchema, type Consult, type ConsultDepartment, type ConsultTransfer } from "./schema";
 import { isSubmissionBlockedByLogout } from "./logoutReservation";
-import { z, ZodError } from "zod";
+import { ZodError } from "zod";
 
 export type { Consult, ConsultDepartment, ConsultTransfer };
 
@@ -324,23 +324,14 @@ export interface RetainedSubmitDraft {
     replacesDraftId?: string;
 }
 
-const SUBMIT_DRAFTS_STORAGE_KEY = "er_consult_submit_drafts_v1";
-const PersistedSubmitDraftSchema = z.object({
-    consult: ConsultSchema,
-    status: z.enum(["pending", "failed"]),
-    replacesDraftId: z.string().optional(),
-});
-
 const retainedSubmitDrafts = new Map<string, RetainedSubmitDraft>();
 const activeSubmitWriteIds = new Set<string>();
 const draftTokens = new Map<string, number>();
 let submitDraftGeneration = 0;
 let nextDraftToken = 0;
 const failedDraftListeners = new Set<(draft: Consult, error?: unknown) => void>();
-let draftsHydrated = false;
 
 export function hasRetainedSubmitDrafts(): boolean {
-    ensureDraftsHydrated();
     return retainedSubmitDrafts.size > 0;
 }
 
@@ -366,29 +357,6 @@ function notifyFailedDraftListeners(draft: Consult, error?: unknown): number {
     return notified;
 }
 
-function persistSubmitDrafts(): boolean {
-    if (typeof window === "undefined") return false;
-    try {
-        if (!window.sessionStorage) return false;
-        if (retainedSubmitDrafts.size === 0) {
-            window.sessionStorage.removeItem(SUBMIT_DRAFTS_STORAGE_KEY);
-            return true;
-        }
-        const serialized = Array.from(retainedSubmitDrafts.values()).map(
-            ({ consult, status, replacesDraftId }) => ({
-                consult,
-                status,
-                ...(replacesDraftId ? { replacesDraftId } : {}),
-            })
-        );
-        window.sessionStorage.setItem(SUBMIT_DRAFTS_STORAGE_KEY, JSON.stringify(serialized));
-        return true;
-    } catch {
-        // Ignore storage quota or private-browsing errors unless the caller checks the return value
-        return false;
-    }
-}
-
 function retireSupersededDraft(replacesDraftId: string | undefined, replacementId: string): void {
     if (!replacesDraftId || replacesDraftId === replacementId) return;
     retainedSubmitDrafts.delete(replacesDraftId);
@@ -396,41 +364,7 @@ function retireSupersededDraft(replacesDraftId: string | undefined, replacementI
     draftTokens.delete(replacesDraftId);
 }
 
-function isUnavailableFirestoreError(err: unknown): boolean {
-    if (typeof err !== "object" || err === null) return false;
-    const code = (err as { code?: unknown }).code;
-    return typeof code === "string" && (code === "unavailable" || code.endsWith("/unavailable"));
-}
-
-function ensureDraftsHydrated(): void {
-    if (draftsHydrated) return;
-    draftsHydrated = true;
-    if (typeof window === "undefined") return;
-    try {
-        const raw = window.sessionStorage?.getItem(SUBMIT_DRAFTS_STORAGE_KEY);
-        if (!raw) return;
-        const parsed: unknown = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return;
-        for (const item of parsed) {
-            const validated = PersistedSubmitDraftSchema.safeParse(item);
-            if (validated.success && !retainedSubmitDrafts.has(validated.data.consult.id)) {
-                retainedSubmitDrafts.set(validated.data.consult.id, {
-                    consult: validated.data.consult,
-                    status: validated.data.status,
-                    ...(validated.data.replacesDraftId
-                        ? { replacesDraftId: validated.data.replacesDraftId }
-                        : {}),
-                });
-                draftTokens.set(validated.data.consult.id, ++nextDraftToken);
-            }
-        }
-    } catch {
-        // Ignore malformed storage entries
-    }
-}
-
 export function getLatestFailedSubmitDraft(): Consult | null {
-    ensureDraftsHydrated();
     const supersededByPending = new Set<string>();
     for (const entry of retainedSubmitDrafts.values()) {
         if (entry.status === "pending" && entry.replacesDraftId) {
@@ -447,169 +381,20 @@ export function getLatestFailedSubmitDraft(): Consult | null {
 }
 
 export function getRetainedSubmitDraft(id: string): RetainedSubmitDraft | undefined {
-    ensureDraftsHydrated();
     return retainedSubmitDrafts.get(id);
 }
 
 export function clearRetainedSubmitDraft(id?: string): void {
-    ensureDraftsHydrated();
     if (id === undefined) {
         submitDraftGeneration += 1;
         retainedSubmitDrafts.clear();
         activeSubmitWriteIds.clear();
         draftTokens.clear();
-        persistSubmitDrafts();
         return;
     }
     retainedSubmitDrafts.delete(id);
     activeSubmitWriteIds.delete(id);
     draftTokens.delete(id);
-    persistSubmitDrafts();
-}
-
-/**
- * Reconciles submit drafts loaded from sessionStorage after a page reload before an
- * optimistic write settled. Clears drafts already committed to Firestore and promotes
- * server-confirmed missing or errored drafts to "failed" so the user can retry them.
- */
-export async function reconcileReloadedSubmitDrafts(): Promise<Consult | null> {
-    ensureDraftsHydrated();
-    if (!db) return getLatestFailedSubmitDraft();
-
-    const captureGeneration = submitDraftGeneration;
-    const orphanedPending = Array.from(retainedSubmitDrafts.entries())
-        .filter(([id, entry]) => entry.status === "pending" && !activeSubmitWriteIds.has(id))
-        .map(([id, entry]) => ({ id, entry, token: draftTokens.get(id) }));
-
-    let mutated = false;
-    for (const { id, entry, token } of orphanedPending) {
-        const isStillOwned = () =>
-            submitDraftGeneration === captureGeneration &&
-            draftTokens.get(id) === token &&
-            retainedSubmitDrafts.has(id);
-
-        try {
-            const docSnap = await getDoc(doc(db, COLLECTION_NAME, id));
-            if (!isStillOwned()) continue;
-            if (docSnap.exists() && !docSnap.metadata?.hasPendingWrites) {
-                retainedSubmitDrafts.delete(id);
-                draftTokens.delete(id);
-                retireSupersededDraft(entry.replacesDraftId, id);
-                mutated = true;
-            } else if (!docSnap.exists() && docSnap.metadata?.fromCache === false) {
-                retainedSubmitDrafts.set(id, { ...entry, status: "failed" });
-                retireSupersededDraft(entry.replacesDraftId, id);
-                mutated = true;
-            }
-        } catch (err) {
-            if (!isStillOwned()) continue;
-            if (isUnavailableFirestoreError(err)) {
-                // Offline/unavailable read cannot confirm absence; keep pending for monitor or retry
-                continue;
-            }
-            retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
-            retireSupersededDraft(entry.replacesDraftId, id);
-            mutated = true;
-        }
-    }
-
-    if (submitDraftGeneration !== captureGeneration) {
-        return null;
-    }
-
-    if (mutated) {
-        persistSubmitDrafts();
-    }
-    return getLatestFailedSubmitDraft();
-}
-
-/**
- * Monitors reloaded "pending" submit drafts across all routes via Firestore metadata-aware
- * snapshot listeners until each draft either commits remotely or fails/rolls back.
- * Invokes `onFailed` once per draft that fails after reload and keeps it retryable in sessionStorage.
- */
-export function monitorReloadedPendingSubmitDrafts(
-    onFailed?: (draft: Consult, error?: unknown) => void
-): () => void {
-    ensureDraftsHydrated();
-    if (!db) return () => {};
-
-    const database = db;
-    const captureGeneration = submitDraftGeneration;
-    const unsubscribers: Array<() => void> = [];
-
-    for (const [id, entry] of retainedSubmitDrafts.entries()) {
-        if (entry.status !== "pending" || activeSubmitWriteIds.has(id)) {
-            continue;
-        }
-
-        const captureToken = draftTokens.get(id);
-        let settled = false;
-        let unsubscribe: (() => void) | null = null;
-        const isStillOwned = () =>
-            submitDraftGeneration === captureGeneration &&
-            draftTokens.get(id) === captureToken &&
-            retainedSubmitDrafts.has(id);
-        const finish = () => {
-            settled = true;
-            if (unsubscribe) {
-                unsubscribe();
-                unsubscribe = null;
-            }
-        };
-        const markFailed = (err?: unknown) => {
-            if (settled) return;
-            finish();
-            if (!isStillOwned()) return;
-            retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
-            retireSupersededDraft(entry.replacesDraftId, id);
-            persistSubmitDrafts();
-            onFailed?.(entry.consult, err);
-            notifyFailedDraftListeners(entry.consult, err);
-        };
-
-        unsubscribe = onSnapshot(
-            doc(database, COLLECTION_NAME, id),
-            { includeMetadataChanges: true },
-            (docSnap) => {
-                if (settled) return;
-                if (!isStillOwned()) {
-                    finish();
-                    return;
-                }
-                const hasPendingWrites = Boolean(docSnap.metadata?.hasPendingWrites);
-                if (docSnap.exists() && !hasPendingWrites) {
-                    // Server commit confirmed — remove retained draft and any draft it replaced
-                    finish();
-                    retainedSubmitDrafts.delete(id);
-                    draftTokens.delete(id);
-                    retireSupersededDraft(entry.replacesDraftId, id);
-                    persistSubmitDrafts();
-                    return;
-                }
-                if (!docSnap.exists() && !hasPendingWrites && docSnap.metadata?.fromCache === false) {
-                    // Server-confirmed missing document (queued write was rejected/rolled back)
-                    markFailed();
-                }
-            },
-            (err) => {
-                markFailed(err);
-            }
-        );
-
-        unsubscribers.push(() => {
-            if (unsubscribe) {
-                unsubscribe();
-                unsubscribe = null;
-            }
-        });
-    }
-
-    return () => {
-        for (const unsub of unsubscribers) {
-            unsub();
-        }
-    };
 }
 
 function trackOptimisticWrite<T>(promise: Promise<T>): Promise<T> {
@@ -858,9 +643,8 @@ export async function addConsult(
     };
 
     if (!awaitRemote) {
-        // Optimistic offline-first write: retain a retryable draft across navigation/reloads
-        // until the Firestore write settles so hospital Wi-Fi drops never lose submissions.
-        ensureDraftsHydrated();
+        // Optimistic offline-first write: retain a retryable draft in memory during the active
+        // session without writing plaintext PHI into Web Storage.
         const captureGeneration = submitDraftGeneration;
         const captureToken = ++nextDraftToken;
         draftTokens.set(newConsult.id, captureToken);
@@ -870,16 +654,6 @@ export async function addConsult(
             status: "pending",
             ...(replacesDraftId ? { replacesDraftId } : {}),
         });
-        const persisted = persistSubmitDrafts();
-        if (replacesDraftId && !persisted) {
-            // Abort queueing replacement write if the replacement link cannot be persisted across reloads
-            retainedSubmitDrafts.delete(newConsult.id);
-            activeSubmitWriteIds.delete(newConsult.id);
-            draftTokens.delete(newConsult.id);
-            throw new Error(
-                "ไม่สามารถบันทึกข้อมูลการส่งซ้ำลงในหน่วยความจำชั่วคราวได้ กรุณาลองใหม่อีกครั้งเมื่อกลับมาออนไลน์"
-            );
-        }
 
         const isStillOwned = () =>
             submitDraftGeneration === captureGeneration &&
@@ -894,7 +668,6 @@ export async function addConsult(
                 retainedSubmitDrafts.delete(newConsult.id);
                 draftTokens.delete(newConsult.id);
                 retireSupersededDraft(replacesDraftId, newConsult.id);
-                persistSubmitDrafts();
                 onBackgroundSuccess?.(newConsult);
             },
             (err) => {
@@ -907,7 +680,6 @@ export async function addConsult(
                     ...(replacesDraftId ? { replacesDraftId } : {}),
                 });
                 retireSupersededDraft(replacesDraftId, newConsult.id);
-                persistSubmitDrafts();
                 const notifiedListenerCount = failedDraftListeners.size;
                 onBackgroundError?.(err, newConsult, { notifiedListenerCount });
                 notifyFailedDraftListeners(newConsult, err);
@@ -940,6 +712,24 @@ function buildOptimisticConsult(current: Consult, updates: ConsultUpdate): Consu
     return hasDottedKeys ? null : ({ ...current, ...updates } as Consult);
 }
 
+/**
+ * Reads local persistent cache first when available to avoid redundant server reads
+ * and network stalls on optimistic paths, falling back to getDoc on cache miss.
+ */
+async function readConsultSnapshotCacheFirst(docRef: DocumentReference<DocumentData>) {
+    try {
+        if (typeof getDocFromCache === "function") {
+            const cachedSnap = await getDocFromCache(docRef);
+            if (cachedSnap.exists()) {
+                return cachedSnap;
+            }
+        }
+    } catch {
+        // Cache miss, unavailable, or partial test mock — fall back to standard getDoc
+    }
+    return getDoc(docRef);
+}
+
 export async function updateConsult(
     id: string,
     updater: ConsultUpdater | ConsultUpdate,
@@ -951,9 +741,8 @@ export async function updateConsult(
 
     if (typeof updater === "function") {
         if (!awaitRemote) {
-            // Optimistic Path: Return immediately after local read, then sync safely in background.
-            // Note: getDoc usually hit the local cache first, so this is fast.
-            const docSnap = await getDoc(docRef);
+            // Optimistic Path: Read local cache first for immediate UI response, then sync safely in background.
+            const docSnap = await readConsultSnapshotCacheFirst(docRef);
             if (!docSnap.exists()) {
                 throw new Error(`Consult not found: ${id}`);
             }
@@ -1070,8 +859,8 @@ export async function transactionalUpdateConsult(
     let preApplied = false;
 
     if (!awaitRemote) {
-        // Pre-read for optimistic response (may hit local cache)
-        const preSnap = await getDoc(docRef);
+        // Pre-read from local cache first so transactional writes avoid double server reads
+        const preSnap = await readConsultSnapshotCacheFirst(docRef);
         if (preSnap.exists()) {
             const preData = mapRawToConsult(preSnap.id, preSnap.data());
             if (preData) {
@@ -1166,7 +955,8 @@ export async function transferConsultRoom(
     onBackgroundError?: (error: unknown) => void
 ): Promise<{ transferred: boolean; backgroundPromise: Promise<void> | null }> {
     const now = new Date().toISOString();
-    const result = await updateConsult(id, (current) => {
+    const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const buildTransferPayload = (current: Consult): ConsultUpdate | null => {
         if (current.room === newRoom) return null;
 
         const pendingDeptKeys = Object.keys(current.departments).filter(
@@ -1186,10 +976,17 @@ export async function transferConsultRoom(
         });
 
         return payload;
-    }, {
-        awaitRemote: false,
-        onBackgroundError,
-    });
+    };
+
+    const result = isOffline
+        ? await updateConsult(id, buildTransferPayload, {
+              awaitRemote: false,
+              onBackgroundError,
+          })
+        : await transactionalUpdateConsult(id, buildTransferPayload, {
+              awaitRemote: false,
+              onBackgroundError,
+          });
 
     return {
         transferred: result.applied,

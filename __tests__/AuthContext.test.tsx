@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
 import React from "react";
 
 const {
@@ -84,6 +84,14 @@ describe("AuthContext", () => {
     emailVerified: true,
     getIdTokenResult: vi.fn().mockResolvedValue({ claims: { staff: true } }),
   });
+
+  async function respondToDiscardDialog(confirm: boolean): Promise<string> {
+    const dialog = await screen.findByRole("dialog");
+    const text = dialog.textContent ?? "";
+    const buttonName = confirm ? "ยืนยันละทิ้งและออกจากระบบ" : "ยกเลิก";
+    fireEvent.click(within(dialog).getByRole("button", { name: buttonName }));
+    return text;
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -184,43 +192,6 @@ describe("AuthContext", () => {
   it("aborts logout and preserves persistence when pending writes exist and user declines discard confirmation", async () => {
     mockHasPendingOptimisticWrites.mockReturnValue(true);
     mockWaitForPendingWrites.mockReturnValue(new Promise(() => {}));
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-
-    const originalOnLine = navigator.onLine;
-    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
-
-    try {
-      render(
-        <AuthProvider>
-          <AuthProbe />
-        </AuthProvider>
-      );
-
-      await act(async () => {
-        authCallback!(makeMockStaffUser());
-        await Promise.resolve();
-      });
-
-      await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
-        await Promise.resolve();
-      });
-
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
-      expect(mockSignOut).not.toHaveBeenCalled();
-      expect(mockTerminate).not.toHaveBeenCalled();
-      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
-      expect(reloadSpy).not.toHaveBeenCalled();
-    } finally {
-      Object.defineProperty(navigator, "onLine", { configurable: true, value: originalOnLine });
-    }
-  });
-
-  it("proceeds with signOut and persistence clearing when user explicitly confirms discarding pending writes", async () => {
-    mockHasPendingOptimisticWrites.mockReturnValue(true);
-    mockWaitForPendingWrites.mockReturnValue(new Promise(() => {}));
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     const originalOnLine = navigator.onLine;
     Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
@@ -238,9 +209,44 @@ describe("AuthContext", () => {
       });
 
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await respondToDiscardDialog(false);
 
       await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      expect(mockSignOut).not.toHaveBeenCalled();
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: originalOnLine });
+    }
+  });
+
+  it("proceeds with signOut and persistence clearing when user explicitly confirms discarding pending writes", async () => {
+    mockHasPendingOptimisticWrites.mockReturnValue(true);
+    mockWaitForPendingWrites.mockReturnValue(new Promise(() => {}));
+
+    const originalOnLine = navigator.onLine;
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await respondToDiscardDialog(true);
+
+      await waitFor(() => {
         expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
         expect(mockSignOut).toHaveBeenCalledTimes(1);
         expect(mockTerminate).toHaveBeenCalledTimes(1);
@@ -255,7 +261,6 @@ describe("AuthContext", () => {
   it("requires explicit confirmation when retained failed drafts remain even if no writes are pending", async () => {
     mockHasPendingOptimisticWrites.mockReturnValue(false);
     mockHasRetainedSubmitDrafts.mockReturnValue(true);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
 
     render(
       <AuthProvider>
@@ -269,20 +274,23 @@ describe("AuthContext", () => {
     });
 
     // First attempt: user declines discarding failed draft recovery data
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+    await respondToDiscardDialog(false);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
       await Promise.resolve();
     });
-
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
     expect(mockSignOut).not.toHaveBeenCalled();
 
     // Second attempt: user explicitly confirms discarding recovery data
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+    await respondToDiscardDialog(true);
 
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledTimes(2);
       expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
       expect(mockSignOut).toHaveBeenCalledTimes(1);
       expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
@@ -293,7 +301,6 @@ describe("AuthContext", () => {
     mockHasPendingOptimisticWrites.mockReturnValue(true);
     mockHasRetainedSubmitDrafts.mockReturnValue(true);
     mockWaitForPendingWrites.mockReturnValue(new Promise(() => {}));
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     const originalOnLine = navigator.onLine;
     Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
@@ -311,11 +318,11 @@ describe("AuthContext", () => {
       });
 
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      const promptText = await respondToDiscardDialog(true);
 
+      expect(promptText).toContain("ข้อมูลร่าง");
+      expect(promptText).toContain("รอการซิงค์");
       await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
-        expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("ข้อมูลร่าง"));
-        expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("รอการซิงค์"));
         expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
         expect(mockSignOut).toHaveBeenCalledTimes(1);
       });
@@ -333,7 +340,6 @@ describe("AuthContext", () => {
     );
     mockHasPendingOptimisticWrites.mockReturnValue(false);
     mockHasRetainedSubmitDrafts.mockReturnValue(false);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
 
     render(
       <AuthProvider>
@@ -355,8 +361,9 @@ describe("AuthContext", () => {
       await Promise.resolve();
     });
 
+    await respondToDiscardDialog(false);
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
     expect(mockSignOut).not.toHaveBeenCalled();
@@ -403,10 +410,14 @@ describe("AuthContext", () => {
           hasPending: false,
           hasDrafts: true,
         });
+      } else if (msg.type === "LOGOUT_TERMINATE_DB_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_ACK",
+          requestId: msg.requestId,
+          tabId: "peer-tab-2",
+        });
       }
     };
-
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
 
     try {
       render(
@@ -428,27 +439,27 @@ describe("AuthContext", () => {
       // Local tab has no drafts, but peer-tab-2 reports retained drafts -> prompts & aborts on Cancel
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
 
-      await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
-      });
-      expect(confirmSpy).toHaveBeenCalledWith(
-        expect.stringContaining("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง")
-      );
-      expect(confirmSpy).not.toHaveBeenCalledWith(expect.stringContaining("แท็บอื่น"));
+      const firstPrompt = await respondToDiscardDialog(false);
+      expect(firstPrompt).toContain("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง");
+      expect(firstPrompt).not.toContain("แท็บอื่น");
       expect(mockSignOut).not.toHaveBeenCalled();
       expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(false);
       await waitFor(() => {
         expect(peerMessages.some((m) => m.type === "LOGOUT_RESERVATION_RELEASE")).toBe(true);
       });
+      await act(async () => {
+        await Promise.resolve();
+      });
 
       // User confirms -> clears drafts locally and broadcasts LOGOUT_CLEAR_DRAFTS to peer tab
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await respondToDiscardDialog(true);
 
       await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(2);
         expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
         expect(mockSignOut).toHaveBeenCalledTimes(1);
         expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(true);
+        expect(peerMessages.some((m) => m.type === "LOGOUT_TERMINATE_DB_REQUEST")).toBe(true);
       });
     } finally {
       peerChannel.close();
@@ -467,8 +478,6 @@ describe("AuthContext", () => {
       }
     };
 
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
-
     try {
       render(
         <AuthProvider>
@@ -486,24 +495,25 @@ describe("AuthContext", () => {
       });
 
       // Peer never answers LOGOUT_CHECK_REQUEST within 120ms -> treated as unknown, requires confirmation
-      await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
-        await new Promise((r) => setTimeout(r, 150));
-      });
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      const unknownPrompt = await respondToDiscardDialog(false);
 
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("แท็บอื่น"));
+      expect(unknownPrompt).toContain("แท็บอื่น");
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      // Let logout() finally block finish releasing logoutInProgressRef before clicking Logout again
+      await act(async () => {
+        await Promise.resolve();
+      });
       expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
       expect(mockSignOut).not.toHaveBeenCalled();
 
       // Still remembered on retry -> confirming proceeds with logout and broadcasts clear
-      await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
-        await new Promise((r) => setTimeout(r, 150));
-      });
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await respondToDiscardDialog(true);
 
       await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(2);
         expect(mockClearRetainedSubmitDraft).toHaveBeenCalledTimes(1);
         expect(mockSignOut).toHaveBeenCalledTimes(1);
         expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(true);
@@ -525,7 +535,6 @@ describe("AuthContext", () => {
       }
     };
 
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     const originalOnLine = navigator.onLine;
     Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
 
@@ -550,23 +559,24 @@ describe("AuthContext", () => {
       mockHasRetainedSubmitDrafts.mockReturnValue(false);
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
 
-      await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
-      });
-      const pendingMixedPrompt = confirmSpy.mock.calls[0][0] as string;
+      const pendingMixedPrompt = await respondToDiscardDialog(false);
       expect(pendingMixedPrompt).toContain("รอการซิงค์");
       expect(pendingMixedPrompt).toContain("แท็บอื่น");
       expect(pendingMixedPrompt).not.toContain("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง");
 
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
       // Case 2: Only failed drafts known + unresponsive peer (must NOT claim pending writes are present)
+      await act(async () => {
+        await Promise.resolve();
+      });
       mockHasPendingOptimisticWrites.mockReturnValue(false);
       mockHasRetainedSubmitDrafts.mockReturnValue(true);
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
 
-      await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(2);
-      });
-      const draftMixedPrompt = confirmSpy.mock.calls[1][0] as string;
+      const draftMixedPrompt = await respondToDiscardDialog(false);
       expect(draftMixedPrompt).toContain("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง");
       expect(draftMixedPrompt).toContain("แท็บอื่น");
       expect(draftMixedPrompt).not.toContain("รอการซิงค์");
@@ -934,8 +944,6 @@ describe("AuthContext", () => {
       }
     };
 
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-
     try {
       render(
         <AuthProvider>
@@ -954,11 +962,9 @@ describe("AuthContext", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Logout" }));
 
-      await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
-      });
       // Must wait for Peer B timeout and include unanswered-peer warning rather than finishing early on Peer A
-      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("แท็บอื่น"));
+      const promptText = await respondToDiscardDialog(false);
+      expect(promptText).toContain("แท็บอื่น");
       expect(mockSignOut).not.toHaveBeenCalled();
     } finally {
       peerChannelA.close();
@@ -1074,7 +1080,6 @@ describe("AuthContext", () => {
             resolveWait = resolve;
           })
       );
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
       peerMessages.length = 0;
 
       const secondMount = render(
@@ -1106,18 +1111,16 @@ describe("AuthContext", () => {
         await Promise.resolve();
       });
 
+      const joinDraftPrompt = await respondToDiscardDialog(false);
+      expect(joinDraftPrompt).toContain("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง");
       await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       });
-      expect(confirmSpy).toHaveBeenCalledWith(
-        expect.stringContaining("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง")
-      );
       expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
       expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(false);
       secondMount.unmount();
 
       // Case 3: Clean joining tab (hasDrafts: false, hasPending: false) preserves prompt-free logout
-      confirmSpy.mockClear();
       peerMessages.length = 0;
       peerChannel.onmessage = (event) => {
         const msg = event.data as { type: string; requestId?: string };
@@ -1129,6 +1132,12 @@ describe("AuthContext", () => {
             tabId: "clean-joining-tab",
             hasPending: false,
             hasDrafts: false,
+          });
+        } else if (msg.type === "LOGOUT_TERMINATE_DB_REQUEST" && msg.requestId) {
+          peerChannel.postMessage({
+            type: "LOGOUT_TERMINATE_DB_ACK",
+            requestId: msg.requestId,
+            tabId: "clean-joining-tab",
           });
         }
       };
@@ -1170,8 +1179,9 @@ describe("AuthContext", () => {
       await waitFor(() => {
         expect(mockSignOut).toHaveBeenCalledTimes(1);
         expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(true);
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
       });
-      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     } finally {
       peerChannel.close();
     }
@@ -1211,7 +1221,6 @@ describe("AuthContext", () => {
           resolveSignOut = resolve;
         })
     );
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
 
     try {
       const firstRender = render(
@@ -1262,13 +1271,11 @@ describe("AuthContext", () => {
         await Promise.resolve();
       });
 
+      const postSignOutPrompt = await respondToDiscardDialog(false);
       await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
         expect(peerMessages.some((m) => m.type === "LOGOUT_DECLINED_PRESERVE_DRAFTS")).toBe(true);
       });
-      expect(confirmSpy).toHaveBeenCalledWith(
-        expect.stringContaining("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง")
-      );
+      expect(postSignOutPrompt).toContain("มีข้อมูลร่างเคสที่ยังส่งไม่สำเร็จเก็บไว้ในเครื่อง");
       expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
       expect(peerMessages.some((m) => m.type === "LOGOUT_CLEAR_DRAFTS")).toBe(false);
       expect(mockTerminate).not.toHaveBeenCalled();
@@ -1810,4 +1817,130 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   }, 15000);
+
+  it("keeps renewing logout reservation leases while async discard modal is open past TTL (Bug #1)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestIds?: string[] }> = [];
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestIds?: string[] };
+      peerMessages.push(msg);
+      if (msg.type === "HELLO") {
+        peerChannel.postMessage({ type: "HELLO_ACK", tabId: "peer-lease-tab" });
+      }
+    };
+
+    try {
+      mockHasRetainedSubmitDrafts.mockReturnValue(true);
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+        await vi.advanceTimersByTimeAsync(150);
+      });
+
+      // Async modal is open (unlike synchronous window.confirm, event loop keeps running)
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // Advance 6,000ms (> 5,000ms TTL) while modal stays open -> renewals fire and submission stays blocked
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+
+      expect(peerMessages.filter((m) => m.type === "LOGOUT_RESERVATION_RENEW").length).toBeGreaterThanOrEqual(2);
+      expect(isSubmissionBlockedByLogout()).toBe(true);
+
+      fireEvent.click(screen.getByRole("button", { name: "ยกเลิก" }));
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    } finally {
+      vi.useRealTimers();
+      peerChannel.close();
+    }
+  });
+
+  it("terminates peer tab Firestore connection and replies ACK on LOGOUT_TERMINATE_DB_REQUEST (Bug #2)", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; requestId?: string });
+    };
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-req-1",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(
+          peerMessages.some((m) => m.type === "LOGOUT_TERMINATE_DB_ACK" && m.requestId === "term-req-1")
+        ).toBe(true);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("keeps loading=true while checkIsAuthorizedStaff resolves on sign-in so ProtectedRoute never bounces (Bug #8)", async () => {
+    let resolveToken!: (res: { claims: Record<string, unknown> }) => void;
+    const pendingUser = {
+      uid: "staff-pending",
+      email: "staff@mnrh.com",
+      emailVerified: true,
+      getIdTokenResult: vi.fn(
+        () =>
+          new Promise<{ claims: Record<string, unknown> }>((resolve) => {
+            resolveToken = resolve;
+          })
+      ),
+    };
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    act(() => {
+      authCallback!(null);
+    });
+    expect(screen.getByTestId("loading")).toHaveTextContent("false");
+
+    act(() => {
+      authCallback!(pendingUser);
+    });
+    expect(screen.getByTestId("loading")).toHaveTextContent("true");
+
+    await act(async () => {
+      resolveToken({ claims: { staff: true } });
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("loading")).toHaveTextContent("false");
+    expect(screen.getByTestId("uid")).toHaveTextContent("staff-pending");
+  });
 });

@@ -12,7 +12,7 @@ service cloud.firestore {
     //   - hn: string (required, numeric digits '^[0-9]+$', 1..32 chars, immutable)
     //   - firstName: string (required, non-empty on create, <= 200 chars, immutable)
     //   - lastName: string (required, non-empty on create, <= 200 chars, immutable)
-    //   - room: string (required, 1..200 chars)
+    //   - room: string (required, one of ROOMS: "Resus Team 1" | "Resus Team 2" | "Resus Team 3" | "Resus Team 4" | "Urgent" | "NT" | "SSW")
     //   - problem: string (required, 1..5000 chars on create, 1..10000 chars on update)
     //   - createdAt: string (required, ISO-8601 UTC timestamp on create, immutable, <= 64 chars)
     //   - reconsultedAt: string (optional, ISO-8601 UTC timestamp)
@@ -90,8 +90,7 @@ service cloud.firestore {
         && data.lastName is string
         && data.lastName.size() <= 200
         && data.room is string
-        && data.room.size() > 0
-        && data.room.size() <= 200
+        && data.room in ["Resus Team 1", "Resus Team 2", "Resus Team 3", "Resus Team 4", "Urgent", "NT", "SSW"]
         && data.problem is string
         && data.problem.size() > 0
         && data.problem.size() <= maxProblemLength

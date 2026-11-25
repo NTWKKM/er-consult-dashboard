@@ -1057,5 +1057,62 @@ describe("useConsultActions", () => {
       const updated = captureAndRunUpdater(snapshot) as Record<string, unknown> | null;
       expect(updated!.isUrgent).toBe(false);
     });
+
+    it("is idempotent when another clinician already switched urgency to the target state (Bug #3)", async () => {
+      mockUpdateConsult.mockResolvedValue(makeSuccessResult());
+      const { result } = renderHook(
+        () => useConsultActions("consult-1", "Gen Sx", "123456"),
+        { wrapper }
+      );
+
+      await act(async () => {
+        await result.current.handleToggleUrgency(false); // user confirmed FAST TRACK (target=true)
+      });
+
+      // Remote doc is ALREADY isUrgent: true -> must return null instead of flipping back to false
+      const alreadyUrgentSnapshot = makePendingConsult({ isUrgent: true });
+      const updated = captureAndRunUpdater(alreadyUrgentSnapshot);
+      expect(updated).toBeNull();
+    });
+
+    it("blocks concurrent transactions across different departments on the same caseId (Bug #6)", async () => {
+      let resolveBackground!: () => void;
+      const backgroundPromise = new Promise<void>((resolve) => {
+        resolveBackground = resolve;
+      });
+      mockTransactionalUpdateConsult.mockResolvedValueOnce({
+        consult: makePendingConsult(),
+        isQueued: true,
+        backgroundPromise,
+        applied: true,
+      });
+
+      const { result } = renderHook(
+        () => ({
+          genSx: useConsultActions("shared-case-1", "Gen Sx", "123456"),
+          ortho: useConsultActions("shared-case-1", "Ortho", "123456"),
+        }),
+        { wrapper }
+      );
+
+      await act(async () => {
+        const started = await result.current.genSx.handleAccept();
+        expect(started).toBe(true);
+      });
+
+      expect(result.current.ortho.isUpdating).toBe(true);
+      let orthoAccepted = true;
+      await act(async () => {
+        orthoAccepted = await result.current.ortho.handleAccept();
+      });
+      expect(orthoAccepted).toBe(false);
+      expect(mockTransactionalUpdateConsult).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveBackground();
+        await backgroundPromise;
+      });
+      expect(result.current.ortho.isUpdating).toBe(false);
+    });
   });
 });

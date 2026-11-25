@@ -4,6 +4,10 @@ import React from "react";
 
 const mockPush = vi.fn();
 const mockSignInWithEmailAndPassword = vi.fn();
+let mockAuthValue: { user: { uid: string } | null; loading: boolean } = {
+  user: null,
+  loading: false,
+};
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
@@ -18,7 +22,7 @@ vi.mock("@/lib/firebase", () => ({
 }));
 
 vi.mock("@/app/contexts/AuthContext", () => ({
-  useAuth: () => ({ user: null, loading: false }),
+  useAuth: () => mockAuthValue,
 }));
 
 import LoginPage from "@/app/login/page";
@@ -26,18 +30,20 @@ import LoginPage from "@/app/login/page";
 describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAuthValue = { user: null, loading: false };
   });
 
   function submitPasscode(value: string) {
-    render(<LoginPage />);
+    const view = render(<LoginPage />);
     const input = screen.getByLabelText("Passcode");
     fireEvent.change(input, { target: { value } });
     fireEvent.submit(input.closest("form")!);
+    return view;
   }
 
-  it("trims whitespace and strips accidental @mnrh.com domain before sign-in", async () => {
+  it("trims whitespace and strips accidental @mnrh.com domain before sign-in and waits for AuthContext user before navigating", async () => {
     mockSignInWithEmailAndPassword.mockResolvedValueOnce({ user: { uid: "u1" } });
-    submitPasscode("  erresus@mnrh.com  ");
+    const { rerender } = submitPasscode("  erresus@mnrh.com  ");
 
     await waitFor(() => {
       expect(mockSignInWithEmailAndPassword).toHaveBeenCalledWith(
@@ -45,6 +51,15 @@ describe("LoginPage", () => {
         "erresus@mnrh.com",
         "erresus"
       );
+    });
+
+    // Must NOT push("/") prematurely while AuthContext is still resolving user/claims
+    expect(mockPush).not.toHaveBeenCalled();
+
+    mockAuthValue = { user: { uid: "u1" }, loading: false };
+    rerender(<LoginPage />);
+
+    await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith("/");
     });
   });

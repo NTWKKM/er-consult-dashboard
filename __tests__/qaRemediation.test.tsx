@@ -238,6 +238,7 @@ describe("QA Remediation Regressions (Sprints 1-3)", () => {
       expect(rulesText).toContain("^[0-9]+$");
       expect(rulesText).toContain("reconsultedAt");
       expect(rulesText).toContain("reconsultHistory");
+      expect(rulesText).toContain('data.room in ["Resus Team 1"');
     });
   });
 });

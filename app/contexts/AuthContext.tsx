@@ -14,6 +14,7 @@ import {
   releaseLogoutReservation,
   reserveSubmissionsForLogout,
 } from "../../lib/logoutReservation";
+import ConfirmModal from "../components/ConfirmModal";
 
 type LogoutReservationActions = Pick<
   LogoutReservationStore,
@@ -60,6 +61,7 @@ async function checkIsAuthorizedStaff(currentUser: User): Promise<boolean> {
 const PENDING_WRITE_SYNC_TIMEOUT_MS = 1200;
 const AUTH_SYNC_CHANNEL = "er_consult_auth_sync_v1";
 const PEER_LOGOUT_CHECK_TIMEOUT_MS = 120;
+const PEER_TERMINATE_TIMEOUT_MS = 500;
 const LOGOUT_RESERVATION_TTL_MS = 5000;
 const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 
@@ -91,16 +93,15 @@ type AuthSyncMessage =
   | { type: "LOGOUT_RESERVATION_RENEW"; requestIds: string[]; senderTabId: string }
   | { type: "LOGOUT_RESERVATION_RELEASE"; requestId: string; senderTabId: string }
   | { type: "LOGOUT_DECLINED_PRESERVE_DRAFTS"; senderTabId: string }
-  | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string };
+  | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string }
+  | { type: "LOGOUT_TERMINATE_DB_REQUEST"; requestId: string; senderTabId: string }
+  | { type: "LOGOUT_TERMINATE_DB_ACK"; requestId: string; tabId: string };
 
 async function confirmPendingWritesBeforeLogout(
   firestoreDb: Firestore | null,
+  requestDiscardConfirmation: (message: string) => Promise<boolean>,
   queryPeerTabs?: () => Promise<PeerTabDirtyState>
 ): Promise<{ canProceed: boolean; confirmedDiscard: boolean }> {
-  const confirmDiscard = (message: string) =>
-    typeof window !== "undefined" &&
-    typeof window.confirm === "function" &&
-    window.confirm(message);
 
   const pendingMessage =
     "ยังมีข้อมูลเคสที่รอการซิงค์ขึ้นระบบ หากออกจากระบบตอนนี้ข้อมูลที่ยังไม่ซิงค์อาจสูญหาย ต้องการยืนยันละทิ้งข้อมูลและออกจากระบบหรือไม่?";
@@ -160,25 +161,25 @@ async function confirmPendingWritesBeforeLogout(
 
   if (peerState.hasUnknownPeer) {
     if (hasPending && hasDrafts) {
-      return { canProceed: confirmDiscard(combinedWithUnknownPeerMessage), confirmedDiscard: true };
+      return { canProceed: await requestDiscardConfirmation(combinedWithUnknownPeerMessage), confirmedDiscard: true };
     }
     if (hasPending) {
-      return { canProceed: confirmDiscard(pendingWithUnknownPeerMessage), confirmedDiscard: true };
+      return { canProceed: await requestDiscardConfirmation(pendingWithUnknownPeerMessage), confirmedDiscard: true };
     }
     if (hasDrafts) {
-      return { canProceed: confirmDiscard(draftWithUnknownPeerMessage), confirmedDiscard: true };
+      return { canProceed: await requestDiscardConfirmation(draftWithUnknownPeerMessage), confirmedDiscard: true };
     }
-    return { canProceed: confirmDiscard(unknownPeerMessage), confirmedDiscard: true };
+    return { canProceed: await requestDiscardConfirmation(unknownPeerMessage), confirmedDiscard: true };
   }
 
   if (hasPending && hasDrafts) {
-    return { canProceed: confirmDiscard(combinedMessage), confirmedDiscard: true };
+    return { canProceed: await requestDiscardConfirmation(combinedMessage), confirmedDiscard: true };
   }
   if (hasPending) {
-    return { canProceed: confirmDiscard(pendingMessage), confirmedDiscard: true };
+    return { canProceed: await requestDiscardConfirmation(pendingMessage), confirmedDiscard: true };
   }
   if (hasDrafts) {
-    return { canProceed: confirmDiscard(retainedDraftMessage), confirmedDiscard: true };
+    return { canProceed: await requestDiscardConfirmation(retainedDraftMessage), confirmedDiscard: true };
   }
 
   return { canProceed: true, confirmedDiscard: false };
@@ -207,8 +208,16 @@ export function AuthProvider({
   const holdClearOnConsentTabRef = useRef<string | null>(null);
   const preserveDraftOnSignOutDeclineRef = useRef(false);
   const helloHandshakeStateRef = useRef<"settled" | "pending" | "unknown">("settled");
-  const pendingNullClearAfterHandshakeRef = useRef(false);
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peerDbTerminatedRef = useRef(false);
+  const [logoutDiscardPrompt, setLogoutDiscardPrompt] = useState<{
+    message: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
+  const logoutDiscardPromptRef = useRef<{
+    message: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
   const joinedDirtyDuringLogoutRef = useRef<{ hasPending: boolean; hasDrafts: boolean }>({
     hasPending: false,
     hasDrafts: false,
@@ -221,6 +230,35 @@ export function AuthProvider({
   const pendingPeerChecksRef = useRef<
     Map<string, (response: { tabId: string; hasPending: boolean; hasDrafts: boolean }) => void>
   >(new Map());
+  const pendingTerminateAcksRef = useRef<Map<string, (tabId: string) => void>>(new Map());
+
+  const requestDiscardConfirmation = useCallback((message: string): Promise<boolean> => {
+    if (typeof window === "undefined") {
+      return Promise.resolve(false);
+    }
+    return new Promise<boolean>((resolve) => {
+      const prompt = { message, resolve };
+      logoutDiscardPromptRef.current = prompt;
+      setLogoutDiscardPrompt(prompt);
+    });
+  }, []);
+
+  const settleDiscardPrompt = useCallback((confirmed: boolean) => {
+    const activePrompt = logoutDiscardPromptRef.current;
+    logoutDiscardPromptRef.current = null;
+    setLogoutDiscardPrompt(null);
+    activePrompt?.resolve(confirmed);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (logoutDiscardPromptRef.current) {
+        const pending = logoutDiscardPromptRef.current;
+        logoutDiscardPromptRef.current = null;
+        pending.resolve(false);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
@@ -272,7 +310,6 @@ export function AuthProvider({
             }
             if (msg.awaitConsentBeforeClear) {
               holdClearOnConsentTabRef.current = msg.tabId;
-              pendingNullClearAfterHandshakeRef.current = false;
             }
             if (msg.activeLogoutReservationId) {
               // Newly opened or bfcache-restored tabs must respect an in-flight logout reservation
@@ -341,7 +378,6 @@ export function AuthProvider({
         case "LOGOUT_DECLINED_PRESERVE_DRAFTS":
           if (msg.senderTabId !== myTabId) {
             preserveDraftOnSignOutDeclineRef.current = true;
-            pendingNullClearAfterHandshakeRef.current = false;
             if (holdClearOnConsentTabRef.current === msg.senderTabId) {
               holdClearOnConsentTabRef.current = null;
             }
@@ -350,7 +386,6 @@ export function AuthProvider({
         case "LOGOUT_CLEAR_DRAFTS":
           if (msg.senderTabId !== myTabId) {
             preserveDraftOnSignOutDeclineRef.current = false;
-            pendingNullClearAfterHandshakeRef.current = false;
             helloHandshakeStateRef.current = "settled";
             holdClearOnConsentTabRef.current = null;
             clearRetainedSubmitDraft();
@@ -368,6 +403,34 @@ export function AuthProvider({
             }
           }
           break;
+        case "LOGOUT_TERMINATE_DB_REQUEST":
+          if (msg.senderTabId !== myTabId) {
+            const sendAck = () => {
+              try {
+                channel.postMessage({
+                  type: "LOGOUT_TERMINATE_DB_ACK",
+                  requestId: msg.requestId,
+                  tabId: myTabId,
+                } satisfies AuthSyncMessage);
+              } catch {
+                // Ignore closed channel during teardown
+              }
+            };
+            if (db) {
+              peerDbTerminatedRef.current = true;
+              void terminate(db).catch(() => {}).finally(sendAck);
+            } else {
+              sendAck();
+            }
+          }
+          break;
+        case "LOGOUT_TERMINATE_DB_ACK": {
+          const handler = pendingTerminateAcksRef.current.get(msg.requestId);
+          if (handler) {
+            handler(msg.tabId);
+          }
+          break;
+        }
       }
     };
 
@@ -381,17 +444,6 @@ export function AuthProvider({
         handshakeTimerRef.current = null;
         if (helloHandshakeStateRef.current === "pending") {
           helloHandshakeStateRef.current = "unknown";
-        }
-        const hasLocalDirtyState = hasPendingOptimisticWrites() || hasRetainedSubmitDrafts();
-        if (
-          pendingNullClearAfterHandshakeRef.current &&
-          !logoutInProgressRef.current &&
-          !holdClearOnConsentTabRef.current &&
-          !preserveDraftOnSignOutDeclineRef.current &&
-          !hasLocalDirtyState
-        ) {
-          pendingNullClearAfterHandshakeRef.current = false;
-          clearRetainedSubmitDraft();
         }
       }, PEER_LOGOUT_CHECK_TIMEOUT_MS);
 
@@ -427,6 +479,7 @@ export function AuthProvider({
     const peerReservations = peerReservationsRef.current;
     const pendingSignedOutReservations = pendingSignedOutReservationsRef.current;
     const pendingPeerChecks = pendingPeerChecksRef.current;
+    const pendingTerminateAcks = pendingTerminateAcksRef.current;
     return () => {
       window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("pagehide", notifyBye);
@@ -435,7 +488,6 @@ export function AuthProvider({
         handshakeTimerRef.current = null;
       }
       helloHandshakeStateRef.current = "settled";
-      pendingNullClearAfterHandshakeRef.current = false;
       notifyBye();
       channelRef.current = null;
       peerTabs.clear();
@@ -448,6 +500,7 @@ export function AuthProvider({
       }
       pendingSignedOutReservations.clear();
       pendingPeerChecks.clear();
+      pendingTerminateAcks.clear();
       channel.close();
     };
   }, [activeReservationStore]);
@@ -507,6 +560,47 @@ export function AuthProvider({
     return { hasPending: peerPending, hasDrafts: peerDrafts, hasUnknownPeer };
   }, []);
 
+  const terminatePeerFirestoreTabs = useCallback(async (): Promise<void> => {
+    const channel = channelRef.current;
+    const peers = peerTabsRef.current;
+    if (!channel || peers.size === 0) return;
+
+    const expectedPeers = new Set(peers);
+    const acked = new Set<string>();
+    const requestId = `term-${tabIdRef.current}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        pendingTerminateAcksRef.current.delete(requestId);
+        resolve();
+      };
+
+      const timeoutId = setTimeout(finish, PEER_TERMINATE_TIMEOUT_MS);
+      pendingTerminateAcksRef.current.set(requestId, (tabId) => {
+        if (expectedPeers.has(tabId)) {
+          acked.add(tabId);
+        }
+        if (acked.size >= expectedPeers.size) {
+          finish();
+        }
+      });
+
+      try {
+        channel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_REQUEST",
+          requestId,
+          senderTabId: tabIdRef.current,
+        } satisfies AuthSyncMessage);
+      } catch {
+        finish();
+      }
+    });
+  }, []);
+
   useEffect(() => {
     if (!auth) {
       return;
@@ -540,11 +634,16 @@ export function AuthProvider({
             activeReservationStoreRef.current.releaseLogoutReservation(reservationId);
           }
           pendingSignedOutReservationsRef.current.clear();
+          if (peerDbTerminatedRef.current && typeof window !== "undefined") {
+            peerDbTerminatedRef.current = false;
+            window.location.reload();
+          }
         }
         return;
       }
 
       signedOutAppliedRef.current = false;
+      setLoading(true);
       void checkIsAuthorizedStaff(currentUser).then((authorized) => {
         if (!cancelled && generation === authGeneration) {
           setUser(currentUser);
@@ -605,7 +704,11 @@ export function AuthProvider({
     try {
       let confirmedDiscard = false;
       if (typeof window !== "undefined") {
-        const initialCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsWithJoinedDirty);
+        const initialCheck = await confirmPendingWritesBeforeLogout(
+          db,
+          requestDiscardConfirmation,
+          queryPeerTabsWithJoinedDirty
+        );
         if (!initialCheck.canProceed) {
           return;
         }
@@ -622,7 +725,11 @@ export function AuthProvider({
             latePeerState.hasDrafts ||
             latePeerState.hasUnknownPeer
           ) {
-            const lateCheck = await confirmPendingWritesBeforeLogout(db, queryPeerTabsWithJoinedDirty);
+            const lateCheck = await confirmPendingWritesBeforeLogout(
+              db,
+              requestDiscardConfirmation,
+              queryPeerTabsWithJoinedDirty
+            );
             if (!lateCheck.canProceed) {
               return;
             }
@@ -645,6 +752,7 @@ export function AuthProvider({
       ) {
         const postSignOutCheck = await confirmPendingWritesBeforeLogout(
           db,
+          requestDiscardConfirmation,
           queryPeerTabsWithJoinedDirty
         );
         if (!postSignOutCheck.canProceed) {
@@ -677,6 +785,7 @@ export function AuthProvider({
       // Clear local IndexedDB cache on shared ER workstations so patient PHI does not persist across shifts
       if (db && typeof window !== "undefined") {
         try {
+          await terminatePeerFirestoreTabs();
           await terminate(db);
           await clearIndexedDbPersistence(db);
         } catch {
@@ -708,11 +817,21 @@ export function AuthProvider({
       }
       logoutInProgressRef.current = false;
     }
-  }, [queryPeerTabsBeforeLogout, activeReservationStore]);
+  }, [queryPeerTabsBeforeLogout, terminatePeerFirestoreTabs, requestDiscardConfirmation, activeReservationStore]);
 
   return (
     <AuthContext.Provider value={{ user, loading, isAuthorizedStaff, logout }}>
       {children}
+      <ConfirmModal
+        isOpen={Boolean(logoutDiscardPrompt)}
+        title="ยืนยันการออกจากระบบ"
+        message={logoutDiscardPrompt?.message ?? ""}
+        confirmText="ยืนยันละทิ้งและออกจากระบบ"
+        cancelText="ยกเลิก"
+        variant="danger"
+        onConfirm={() => settleDiscardPrompt(true)}
+        onCancel={() => settleDiscardPrompt(false)}
+      />
     </AuthContext.Provider>
   );
 }

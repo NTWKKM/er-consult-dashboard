@@ -717,4 +717,60 @@ describe("CompletedPage re-consult failed drafts", () => {
       expect(screen.getByText(/จำกัดสูงสุด 100 เคส/)).toBeInTheDocument();
     });
   });
+
+  it("labels local page department filtering accurately, displays lastName-only patient names in modal, and defers success toast until commit (Bugs #4, #16, #17)", async () => {
+    const lastNameOnlyCase = makeConsult({
+      id: "case-lastname-only",
+      hn: "987654",
+      firstName: "",
+      lastName: "นามสกุลเดี่ยว",
+      departments: {
+        Ortho: { status: "completed", completedAt: "2026-11-18T10:00:00.000Z" },
+      },
+    });
+    mockFetchCompletedConsultsPage.mockResolvedValueOnce({
+      consults: [caseA, lastNameOnlyCase],
+      lastDoc: undefined,
+      hasMore: false,
+    });
+
+    render(<CompletedPage />);
+    await screen.findAllByText("987654");
+
+    // Department filter without HN/date search displays "กรองเฉพาะหน้านี้:" instead of "ผลการค้นหา:"
+    fireEvent.change(screen.getByLabelText(/กรองแผนก/i), { target: { value: "Ortho" } });
+    expect(screen.getByText("กรองเฉพาะหน้านี้:")).toBeInTheDocument();
+
+    // Re-consult modal shows lastName even when firstName is empty
+    clickRowReConsult("987654");
+    const heading = await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    expect(heading).toHaveTextContent("นามสกุลเดี่ยว");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ortho/ }));
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Deferred commit check" },
+    });
+
+    const deferred = createDeferred<void>();
+    mockUpdateConsult.mockResolvedValueOnce({
+      consult: { ...lastNameOnlyCase, status: "pending" },
+      isQueued: true,
+      backgroundPromise: deferred.promise,
+      applied: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+    });
+
+    // Success toast must NOT appear before backgroundPromise commits
+    expect(mockAddToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
+
+    await act(async () => {
+      deferred.resolve();
+      await Promise.resolve();
+    });
+    expect(mockAddToast).toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
+  });
 });

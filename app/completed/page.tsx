@@ -6,8 +6,97 @@ import { fetchCompletedConsultsPage, transactionalUpdateConsult, Consult, Consul
 import { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { ALL_DEPARTMENTS, MAX_PROBLEM_UPDATE_LENGTH, MAX_RECONSULT_HISTORY } from "@/lib/constants";
 import { inclusiveDayCount, MAX_EXPORT_DAYS } from "@/lib/dateUtils";
-import { buildCompletedExportRows } from "@/lib/excelExport";
+import { buildCompletedExportRows, exportCompletedRowsToExcel } from "@/lib/excelExport";
 import { useToast } from "../contexts/ToastContext";
+
+function toBangkokDateKey(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+}
+
+function formatHistoryMilestoneTime(iso: string, createdAtIso?: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  const sameBangkokDay = Boolean(
+    createdAtIso && toBangkokDateKey(iso) === toBangkokDateKey(createdAtIso)
+  );
+  return date.toLocaleString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    ...(sameBangkokDay ? {} : { day: "numeric", month: "short" }),
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function CompletedDepartmentMilestones({
+  departments,
+  createdAt,
+  compact = false,
+}: {
+  departments: Record<string, ConsultDepartment>;
+  createdAt?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? "flex flex-col gap-1.5 mb-2" : "flex flex-col gap-1.5 text-[11px] font-medium"}>
+      {Object.entries(departments).map(([dept, data]) => (
+        <div key={dept} className="p-2 rounded-[6px] border border-rule bg-paper-3">
+          <span
+            className={`inline-block px-2 py-0.5 mb-1 rounded-[4px] text-xs font-medium border ${
+              data.status === "cancelled"
+                ? "bg-bad-soft text-bad line-through border-bad/30"
+                : "bg-paper-2 text-ink border-rule"
+            }`}
+          >
+            {dept} {data.status === "cancelled" && "(ยกเลิก)"}
+          </span>
+          <div className={`flex flex-wrap gap-x-3 gap-y-0.5 text-muted measured ${compact ? "text-[11px]" : ""}`}>
+            {data.acceptedAt && (
+              <div className="whitespace-nowrap">
+                <span className="font-medium text-ok">รับ:</span>{" "}
+                {formatHistoryMilestoneTime(data.acceptedAt, createdAt)}
+              </div>
+            )}
+            {data.admittedAt && (
+              <div className="whitespace-nowrap">
+                <span className="font-medium text-cool">Admit:</span>{" "}
+                {formatHistoryMilestoneTime(data.admittedAt, createdAt)}
+              </div>
+            )}
+            {data.returnedAt && (
+              <div className="whitespace-nowrap">
+                <span className="font-medium text-accent">คืน ER:</span>{" "}
+                {formatHistoryMilestoneTime(data.returnedAt, createdAt)}
+              </div>
+            )}
+            {data.dischargedAt && (
+              <div className="whitespace-nowrap">
+                <span className="font-medium text-cool">D/C:</span>{" "}
+                {formatHistoryMilestoneTime(data.dischargedAt, createdAt)}
+              </div>
+            )}
+            {Array.isArray(data.transfers) &&
+              data.transfers.map((transfer, idx) => (
+                <div key={`${transfer.to}-${transfer.at ?? idx}`} className="whitespace-nowrap">
+                  <span className="font-medium text-cool">ย้าย {transfer.to}:</span>{" "}
+                  {transfer.at ? formatHistoryMilestoneTime(transfer.at, createdAt) : "-"}
+                </div>
+              ))}
+            {data.completedAt && (
+              <div className="whitespace-nowrap">
+                <span className={data.status === "cancelled" ? "text-bad font-medium" : "text-ink-2 font-medium"}>
+                  {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
+                </span>{" "}
+                {formatHistoryMilestoneTime(data.completedAt, createdAt)}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function CompletedPage() {
   const [cases, setCases] = useState<Consult[]>([]);
@@ -240,6 +329,7 @@ export default function CompletedPage() {
     const submittedProblem = newProblem;
     const submittedDepartments = [...selectedDepartments];
     let backgroundFailed = false;
+    let holdLockForBackground = false;
     let validationRejection: "history_limit" | "problem_length" | null = null;
     
     try {
@@ -288,14 +378,26 @@ export default function CompletedPage() {
         awaitRemote: false,
         onBackgroundError: (error: unknown) => {
           backgroundFailed = true;
-          const errMsg = error instanceof Error ? error.message : "";
-          addToast({ 
-            type: "error", 
-            message:
-              errMsg === "TRANSACTION_CONDITION_NOT_MET"
-                ? "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช"
-                : "ส่งปรึกษาใหม่ไม่สำเร็จ: เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล กรุณาลองใหม่อีกครั้ง"
-          });
+          if (validationRejection === "history_limit") {
+            addToast({
+              type: "error",
+              message: `ไม่สามารถส่งปรึกษาใหม่ได้: ประวัติการปรึกษาซ้ำครบขีดจำกัด ${MAX_RECONSULT_HISTORY} ครั้งแล้ว`,
+            });
+          } else if (validationRejection === "problem_length") {
+            addToast({
+              type: "error",
+              message: `รายละเอียดปัญหารวมเกินขีดจำกัด ${MAX_PROBLEM_UPDATE_LENGTH.toLocaleString()} ตัวอักษร กรุณาย่อข้อความใหม่`,
+            });
+          } else {
+            const errMsg = error instanceof Error ? error.message : "";
+            addToast({ 
+              type: "error", 
+              message:
+                errMsg === "TRANSACTION_CONDITION_NOT_MET"
+                  ? "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช"
+                  : "ส่งปรึกษาใหม่ไม่สำเร็จ: เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล กรุณาลองใหม่อีกครั้ง"
+            });
+          }
           
           // Refetch directly instead of rolling back with stale snapshot
           refreshCompletedList();
@@ -334,11 +436,11 @@ export default function CompletedPage() {
       setSearchResults((prev) => prev !== null ? prev.filter((c) => c.id !== caseId) : null);
 
       closeReConsultModal();
-      addToast({ type: "success", message: "✓ ส่งปรึกษาใหม่สำเร็จ!" });
 
-      // Keep reason and departments per case while background sync is in flight so they remain
-      // available for reconciliation if the remote write rejects.
+      // Keep reason, departments, and in-flight lock until background transaction commits
+      // so validation/network errors never emit a premature success toast or overlapping transactions.
       if (result.backgroundPromise) {
+          holdLockForBackground = true;
           reconsultFailedDraftsRef.current.set(caseId, {
               problem: submittedProblem,
               selectedDepartments: submittedDepartments,
@@ -351,22 +453,29 @@ export default function CompletedPage() {
                       setNewProblem("");
                       setSelectedDepartments([]);
                   }
+                  addToast({ type: "success", message: "✓ ส่งปรึกษาใหม่สำเร็จ!" });
               },
               () => {
                   // Retained in state and reconsultFailedDraftsRef for this caseId; onBackgroundError notifies user.
               }
-          );
+          ).finally(() => {
+              reconsultInFlightRef.current = false;
+              setIsUpdating(false);
+          });
       } else if (!backgroundFailed) {
           reconsultFailedDraftsRef.current.delete(caseId);
           setNewProblem("");
           setSelectedDepartments([]);
+          addToast({ type: "success", message: "✓ ส่งปรึกษาใหม่สำเร็จ!" });
       }
     } catch (error) {
       console.error("Error re-consulting:", error);
       addToast({ type: "error", message: "เกิดข้อผิดพลาด" });
     } finally {
-      reconsultInFlightRef.current = false;
-      setIsUpdating(false);
+      if (!holdLockForBackground) {
+        reconsultInFlightRef.current = false;
+        setIsUpdating(false);
+      }
     }
   };
 
@@ -493,18 +602,12 @@ export default function CompletedPage() {
         return;
       }
 
-      // Dynamic import to reduce bundle size
-      const xlsxModule = await import("xlsx");
-      if (!isActiveSession()) return;
-      const XLSX = xlsxModule.default ?? xlsxModule;
-
       const exportData = buildCompletedExportRows(exportList);
-
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Cases");
       if (!isActiveSession()) return;
-      XLSX.writeFile(workbook, `completed-cases-${submittedStartDate}-to-${submittedEndDate}.xlsx`);
+      await exportCompletedRowsToExcel(
+        exportData,
+        `completed-cases-${submittedStartDate}-to-${submittedEndDate}.xlsx`
+      );
       if (!isActiveSession()) return;
 
       if (truncated) {
@@ -666,7 +769,9 @@ export default function CompletedPage() {
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
-          closeReConsultModal();
+          if (!reconsultInFlightRef.current && !isUpdating) {
+            closeReConsultModal();
+          }
           return;
         }
         if (e.key === "Tab" && reconsultModalRef.current) {
@@ -714,7 +819,7 @@ export default function CompletedPage() {
           ?.focus();
       }
     }
-  }, [showModal, closeReConsultModal]);
+  }, [showModal, closeReConsultModal, isUpdating]);
 
   // Focus management for Export Modal
   useEffect(() => {
@@ -832,7 +937,13 @@ export default function CompletedPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-[6px] border border-rule bg-paper-2">
-                <span className="font-medium text-sm text-muted">ผลการค้นหา:</span>
+                <span className="font-medium text-sm text-muted">
+                  {trimmedSearchHN || filterDate
+                    ? "ผลการค้นหา:"
+                    : filterDept
+                      ? "กรองเฉพาะหน้านี้:"
+                      : "แสดงในหน้านี้:"}
+                </span>
                 <span className="text-lg font-medium measured text-ink">
                   {searchStatus === "loading" ? "…" : filteredCases.length}
                 </span>
@@ -976,70 +1087,36 @@ export default function CompletedPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs measured text-ink-2">
-                        {caseData.createdAt
-                          ? new Date(caseData.createdAt).toLocaleDateString("th-TH", {
+                        <div>
+                          {caseData.createdAt
+                            ? new Date(caseData.createdAt).toLocaleDateString("th-TH", {
+                                timeZone: "Asia/Bangkok",
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "-"}
+                        </div>
+                        {caseData.reconsultedAt && (
+                          <div className="mt-1 text-[11px] text-accent">
+                            Re-consult:{" "}
+                            {new Date(caseData.reconsultedAt).toLocaleDateString("th-TH", {
                               timeZone: "Asia/Bangkok",
-                              year: "numeric",
                               month: "short",
                               day: "numeric",
                               hour: "2-digit",
                               minute: "2-digit",
-                            })
-                          : "-"}
+                            })}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <div className="flex flex-col gap-1.5 text-[11px] font-medium">
-                          {Object.entries(caseData.departments).map(([dept, data]) => (
-                            <div
-                              key={dept}
-                              className="p-2 rounded-[6px] border border-rule bg-paper-3"
-                            >
-                              <span
-                                className={`font-medium border-b pb-0.5 mb-1 block ${
-                                  data.status === "cancelled"
-                                    ? "text-bad line-through border-bad/30"
-                                    : "border-rule text-ink"
-                                }`}
-                              >
-                                {dept} {data.status === "cancelled" && "(ยกเลิก)"}
-                              </span>
-                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-muted measured">
-                                {data.acceptedAt && (
-                                  <div className="whitespace-nowrap">
-                                    <span className="font-medium text-ok">รับ:</span>{" "}
-                                    {new Date(data.acceptedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                                  </div>
-                                )}
-                                {data.admittedAt && (
-                                  <div className="whitespace-nowrap">
-                                    <span className="font-medium text-cool">Admit:</span>{" "}
-                                    {new Date(data.admittedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                                  </div>
-                                )}
-                                {data.returnedAt && (
-                                  <div className="whitespace-nowrap">
-                                    <span className="font-medium text-accent">คืน ER:</span>{" "}
-                                    {new Date(data.returnedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                                  </div>
-                                )}
-                                {data.dischargedAt && (
-                                  <div className="whitespace-nowrap">
-                                    <span className="font-medium text-cool">D/C:</span>{" "}
-                                    {new Date(data.dischargedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                                  </div>
-                                )}
-                                {data.completedAt && (
-                                  <div className="whitespace-nowrap">
-                                    <span className={data.status === "cancelled" ? "text-bad font-medium" : "text-ink-2 font-medium"}>
-                                      {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
-                                    </span>{" "}
-                                    {new Date(data.completedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                        <CompletedDepartmentMilestones
+                          departments={caseData.departments}
+                          createdAt={caseData.createdAt}
+                        />
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button
@@ -1098,55 +1175,11 @@ export default function CompletedPage() {
                       {caseData.problem}
                     </p>
                   </div>
-                  <div className="flex flex-col gap-1.5 mb-2">
-                    {Object.entries(caseData.departments).map(([dept, data]) => (
-                      <div key={dept} className="p-2 rounded-[6px] border border-rule bg-paper-3">
-                        <span
-                          className={`inline-block px-2 py-0.5 mb-1 rounded-[4px] text-xs font-medium border ${
-                            data.status === "cancelled"
-                              ? "bg-bad-soft text-bad line-through border-bad/30"
-                              : "bg-paper-2 text-ink border-rule"
-                          }`}
-                        >
-                          {dept} {data.status === "cancelled" && "(ยกเลิก)"}
-                        </span>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted measured">
-                          {data.acceptedAt && (
-                            <div className="whitespace-nowrap">
-                              <span className="font-medium text-ok">รับ:</span>{" "}
-                              {new Date(data.acceptedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          )}
-                          {data.admittedAt && (
-                            <div className="whitespace-nowrap">
-                              <span className="font-medium text-cool">Admit:</span>{" "}
-                              {new Date(data.admittedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          )}
-                          {data.returnedAt && (
-                            <div className="whitespace-nowrap">
-                              <span className="font-medium text-accent">คืน ER:</span>{" "}
-                              {new Date(data.returnedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          )}
-                          {data.dischargedAt && (
-                            <div className="whitespace-nowrap">
-                              <span className="font-medium text-cool">D/C:</span>{" "}
-                              {new Date(data.dischargedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          )}
-                          {data.completedAt && (
-                            <div className="whitespace-nowrap">
-                              <span className={data.status === "cancelled" ? "text-bad font-medium" : "text-ink-2 font-medium"}>
-                                {data.status === "cancelled" ? "เวลาที่ยกเลิก:" : "ปิด:"}
-                              </span>{" "}
-                              {new Date(data.completedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <CompletedDepartmentMilestones
+                    departments={caseData.departments}
+                    createdAt={caseData.createdAt}
+                    compact
+                  />
                   <div className="text-[11px] text-muted measured">
                     {caseData.createdAt
                       ? new Date(caseData.createdAt).toLocaleDateString("th-TH", {
@@ -1158,6 +1191,18 @@ export default function CompletedPage() {
                           minute: "2-digit",
                         })
                       : "-"}
+                    {caseData.reconsultedAt && (
+                      <div className="mt-0.5 text-accent">
+                        Re-consult:{" "}
+                        {new Date(caseData.reconsultedAt).toLocaleDateString("th-TH", {
+                          timeZone: "Asia/Bangkok",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -1259,9 +1304,9 @@ export default function CompletedPage() {
             <div className="flex items-start justify-between gap-2 mb-4 pb-3 border-b border-rule">
               <h2 id="reconsult-modal-title" className="text-lg font-medium text-ink min-w-0 break-words">
                 Re-consult เคส <span className="measured whitespace-nowrap">HN: {selectedCase?.hn}</span>
-                {selectedCase?.firstName && (
+                {(selectedCase?.firstName || selectedCase?.lastName) && (
                   <span className="text-sm font-normal ml-2 text-muted">
-                    ({[selectedCase.firstName, selectedCase.lastName].filter(Boolean).join(" ")})
+                    ({[selectedCase?.firstName, selectedCase?.lastName].filter(Boolean).join(" ")})
                   </span>
                 )}
               </h2>

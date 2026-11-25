@@ -84,7 +84,6 @@ export default function LoginPage() {
       const password = normalizedPasscode;
 
       await signInWithEmailAndPassword(auth, email, password);
-      router.push("/");
     } catch (err: unknown) {
       const code = getAuthErrorCode(err);
       console.error("Login failed:", code || (err instanceof Error ? err.message : "unknown"));

@@ -22,6 +22,7 @@ vi.mock("@/app/contexts/ToastContext", () => ({
 }));
 
 import { RoomTransferButton } from "@/app/components/RoomTransferButton";
+import { clearAllCaseLocksForTests } from "@/lib/caseLock";
 import { ROOMS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ function renderButton(props: Partial<React.ComponentProps<typeof RoomTransferBut
 describe("RoomTransferButton", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCaseLocksForTests();
     mockTransferConsultRoom.mockResolvedValue({
       transferred: true,
       backgroundPromise: null,

@@ -45,10 +45,14 @@ export const ElapsedTime = React.memo(function ElapsedTime({ createdAt }: Elapse
 
     const bump = () => setTick((t) => t + 1);
 
-    // Calculate ms until the next minute boundary
+    // Calculate ms until the next minute boundary (never 0ms; handle ahead-of-clock skew cleanly)
     const createdMs = new Date(createdAt).getTime();
-    const elapsedMs = Number.isFinite(createdMs) ? Math.max(0, Date.now() - createdMs) : 0;
-    const msUntilNextMinute = 60000 - (elapsedMs % 60000 || 60000);
+    const now = Date.now();
+    const msUntilNextMinute = !Number.isFinite(createdMs)
+      ? 60000
+      : createdMs > now
+        ? (createdMs - now) + 60000
+        : 60000 - ((now - createdMs) % 60000);
 
     const timeout = setTimeout(() => {
       bump();
