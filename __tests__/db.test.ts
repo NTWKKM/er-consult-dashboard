@@ -1821,7 +1821,7 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     expect(mockRunTransaction).toHaveBeenCalledTimes(1);
   });
 
-  it("transferConsultRoom flags isOfflineQueued=true offline and backfills newly pending departments on reconnect", async () => {
+  it("transferConsultRoom queues transfer intent offline without stale updateDoc and commits transactionally on reconnect", async () => {
     setNavigatorOnLine(false);
     // While offline, only Gen Sx is cached as pending; Ortho was completed locally
     mockGetDocFromCache.mockResolvedValueOnce(
@@ -1837,26 +1837,15 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
       )
     );
 
-    let resolveOfflineWrite!: () => void;
-    mockUpdateDoc.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        resolveOfflineWrite = resolve;
-      })
-    );
-
     const transactionUpdateSpy = vi.fn();
     mockRunTransaction.mockImplementation(async (_db, fn) => {
-      // On reconnect, Ortho had been re-consulted remotely while Gen Sx already got the offline transfer
+      // On reconnect, Ortho was re-consulted remotely so both Gen Sx and Ortho are pending on server
       const latestServerDoc = makeDocSnapshot(
         "c-xfer",
         baseConsult({
-          room: "SSW",
+          room: "NT",
           departments: {
-            "Gen Sx": {
-              status: "pending",
-              completedAt: null,
-              transfers: [{ to: "SSW", at: mockArrayUnion.mock.calls[0]?.[0] ? (mockArrayUnion.mock.calls[0][0] as { at: string }).at : "" }],
-            },
+            "Gen Sx": { status: "pending", completedAt: null },
             Ortho: { status: "pending", completedAt: null },
           },
         })
@@ -1867,19 +1856,75 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
       });
     });
 
-    const res = await transferConsultRoom("c-xfer", "SSW");
+    const onBackgroundError = vi.fn();
+    const res = await transferConsultRoom("c-xfer", "SSW", onBackgroundError);
     expect(res.transferred).toBe(true);
     expect(res.isOfflineQueued).toBe(true);
     expect(res.backgroundPromise).not.toBeNull();
+    // Offline path must NOT issue a blind fixed-payload updateDoc or runTransaction while still offline
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
     expect(mockRunTransaction).not.toHaveBeenCalled();
 
-    // Simulate reconnect sync completion
-    resolveOfflineWrite();
+    // Simulate network reconnection -> online listener fires deferred transaction
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
     await res.backgroundPromise;
 
     expect(mockRunTransaction).toHaveBeenCalledTimes(1);
     expect(transactionUpdateSpy).toHaveBeenCalledTimes(1);
-    const backfillArgs = transactionUpdateSpy.mock.calls[0][1] as Record<string, unknown>;
-    expect(Object.keys(backfillArgs)).toEqual(["departments.Ortho.transfers"]);
+    const txPayload = transactionUpdateSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(txPayload.room).toBe("SSW");
+    expect(txPayload["departments.Gen Sx.transfers"]).toBeDefined();
+    expect(txPayload["departments.Ortho.transfers"]).toBeDefined();
+    expect(onBackgroundError).not.toHaveBeenCalled();
+  });
+
+  it("transferConsultRoom aborts deferred offline transfer cleanly on reconnect if all departments completed remotely", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValueOnce(
+      makeDocSnapshot(
+        "c-xfer-done",
+        baseConsult({
+          room: "NT",
+          departments: {
+            "Gen Sx": { status: "pending", completedAt: null },
+          },
+        })
+      )
+    );
+
+    const transactionUpdateSpy = vi.fn();
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      // By the time reconnect happens, another client already completed Gen Sx
+      const completedDoc = makeDocSnapshot(
+        "c-xfer-done",
+        baseConsult({
+          room: "NT",
+          status: "completed",
+          departments: {
+            "Gen Sx": { status: "completed", completedAt: "2024-01-10T09:00:00.000Z" },
+          },
+        })
+      );
+      return fn({
+        get: vi.fn().mockResolvedValue(completedDoc),
+        update: transactionUpdateSpy,
+      });
+    });
+
+    const onBackgroundError = vi.fn();
+    const res = await transferConsultRoom("c-xfer-done", "SSW", onBackgroundError);
+    expect(res.isOfflineQueued).toBe(true);
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await res.backgroundPromise;
+
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+    expect(transactionUpdateSpy).not.toHaveBeenCalled();
+    expect(onBackgroundError).toHaveBeenCalledTimes(1);
+    expect((onBackgroundError.mock.calls[0][0] as Error).message).toBe(
+      "TRANSACTION_CONDITION_NOT_MET"
+    );
   });
 });

@@ -62,6 +62,7 @@ const PENDING_WRITE_SYNC_TIMEOUT_MS = 1200;
 const AUTH_SYNC_CHANNEL = "er_consult_auth_sync_v1";
 const PEER_LOGOUT_CHECK_TIMEOUT_MS = 120;
 const PEER_TERMINATE_TIMEOUT_MS = 500;
+const PEER_CACHE_CLEAR_FALLBACK_MS = 1500;
 const LOGOUT_RESERVATION_TTL_MS = 5000;
 const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 
@@ -95,7 +96,8 @@ type AuthSyncMessage =
   | { type: "LOGOUT_DECLINED_PRESERVE_DRAFTS"; senderTabId: string }
   | { type: "LOGOUT_CLEAR_DRAFTS"; senderTabId: string }
   | { type: "LOGOUT_TERMINATE_DB_REQUEST"; requestId: string; senderTabId: string }
-  | { type: "LOGOUT_TERMINATE_DB_ACK"; requestId: string; tabId: string };
+  | { type: "LOGOUT_TERMINATE_DB_ACK"; requestId: string; tabId: string }
+  | { type: "LOGOUT_CACHE_CLEARED"; senderTabId: string };
 
 async function confirmPendingWritesBeforeLogout(
   firestoreDb: Firestore | null,
@@ -210,6 +212,24 @@ export function AuthProvider({
   const helloHandshakeStateRef = useRef<"settled" | "pending" | "unknown">("settled");
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerDbTerminatedRef = useRef(false);
+  const peerCacheClearedRef = useRef(false);
+  const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerPeerReloadIfReady = useCallback(() => {
+    if (
+      signedOutAppliedRef.current &&
+      peerDbTerminatedRef.current &&
+      peerCacheClearedRef.current &&
+      typeof window !== "undefined"
+    ) {
+      if (peerReloadFallbackTimerRef.current !== null) {
+        clearTimeout(peerReloadFallbackTimerRef.current);
+        peerReloadFallbackTimerRef.current = null;
+      }
+      peerDbTerminatedRef.current = false;
+      peerCacheClearedRef.current = false;
+      window.location.reload();
+    }
+  }, []);
   const [logoutDiscardPrompt, setLogoutDiscardPrompt] = useState<{
     message: string;
     resolve: (confirmed: boolean) => void;
@@ -417,18 +437,24 @@ export function AuthProvider({
               }
             };
             if (db) {
-              peerDbTerminatedRef.current = true;
               void terminate(db)
                 .catch(() => {})
                 .finally(() => {
                   sendAck();
-                  if (
-                    signedOutAppliedRef.current &&
-                    channelRef.current === channel &&
-                    typeof window !== "undefined"
-                  ) {
-                    peerDbTerminatedRef.current = false;
-                    window.location.reload();
+                  if (channelRef.current === channel) {
+                    peerDbTerminatedRef.current = true;
+                    if (peerCacheClearedRef.current) {
+                      triggerPeerReloadIfReady();
+                    } else if (peerReloadFallbackTimerRef.current === null) {
+                      // Safety fallback in case initiating tab closes before clearing persistence
+                      peerReloadFallbackTimerRef.current = setTimeout(() => {
+                        peerReloadFallbackTimerRef.current = null;
+                        if (channelRef.current === channel) {
+                          peerCacheClearedRef.current = true;
+                          triggerPeerReloadIfReady();
+                        }
+                      }, PEER_CACHE_CLEAR_FALLBACK_MS);
+                    }
                   }
                 });
             } else {
@@ -443,6 +469,12 @@ export function AuthProvider({
           }
           break;
         }
+        case "LOGOUT_CACHE_CLEARED":
+          if (msg.senderTabId !== myTabId) {
+            peerCacheClearedRef.current = true;
+            triggerPeerReloadIfReady();
+          }
+          break;
       }
     };
 
@@ -499,6 +531,10 @@ export function AuthProvider({
         clearTimeout(handshakeTimerRef.current);
         handshakeTimerRef.current = null;
       }
+      if (peerReloadFallbackTimerRef.current !== null) {
+        clearTimeout(peerReloadFallbackTimerRef.current);
+        peerReloadFallbackTimerRef.current = null;
+      }
       helloHandshakeStateRef.current = "settled";
       notifyBye();
       channelRef.current = null;
@@ -515,7 +551,7 @@ export function AuthProvider({
       pendingTerminateAcks.clear();
       channel.close();
     };
-  }, [activeReservationStore]);
+  }, [activeReservationStore, triggerPeerReloadIfReady]);
 
   const queryPeerTabsBeforeLogout = useCallback(async (issuedRequestIds?: string[]): Promise<PeerTabDirtyState> => {
     const channel = channelRef.current;
@@ -646,10 +682,7 @@ export function AuthProvider({
             activeReservationStoreRef.current.releaseLogoutReservation(reservationId);
           }
           pendingSignedOutReservationsRef.current.clear();
-          if (peerDbTerminatedRef.current && typeof window !== "undefined") {
-            peerDbTerminatedRef.current = false;
-            window.location.reload();
-          }
+          triggerPeerReloadIfReady();
         }
         return;
       }
@@ -670,7 +703,7 @@ export function AuthProvider({
       authGeneration += 1;
       unsubscribe();
     };
-  }, []);
+  }, [triggerPeerReloadIfReady]);
 
   const logout = useCallback(async () => {
     if (logoutInProgressRef.current) return;
@@ -802,6 +835,15 @@ export function AuthProvider({
           await clearIndexedDbPersistence(db);
         } catch {
           // Ignore if another tab holds an active Firestore connection
+        } finally {
+          try {
+            channelRef.current?.postMessage({
+              type: "LOGOUT_CACHE_CLEARED",
+              senderTabId: tabIdRef.current,
+            } satisfies AuthSyncMessage);
+          } catch {
+            // Ignore broadcast errors during logout
+          }
         }
         // Full page reload after terminate(db) initializes a clean Firestore instance and redirects via ProtectedRoute
         window.location.reload();

@@ -330,6 +330,12 @@ describe("RoomTransferButton", () => {
         expect(mockTransferConsultRoom).toHaveBeenCalledTimes(2);
         expect(isCaseLocked("case-offline-lock")).toBe(false);
         expect(screen.getByTitle("เปลี่ยนห้อง")).not.toBeDisabled();
+        expect(mockAddToast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "info",
+            message: expect.stringContaining("SSW"),
+          })
+        );
       });
     });
   });

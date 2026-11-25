@@ -963,6 +963,27 @@ export async function transactionalUpdateConsult(
     };
 }
 
+function waitForOnlineReconnect(): Promise<void> {
+    if (
+        typeof window === "undefined" ||
+        typeof navigator === "undefined" ||
+        navigator.onLine !== false
+    ) {
+        return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+        const handleOnline = () => {
+            window.removeEventListener("online", handleOnline);
+            resolve();
+        };
+        window.addEventListener("online", handleOnline);
+        if (navigator.onLine !== false) {
+            window.removeEventListener("online", handleOnline);
+            resolve();
+        }
+    });
+}
+
 export async function transferConsultRoom(
     id: string,
     newRoom: RoomName,
@@ -996,66 +1017,60 @@ export async function transferConsultRoom(
         return payload;
     };
 
-    const result = isOffline
-        ? await updateConsult(id, buildTransferPayload, {
-              awaitRemote: false,
-              onBackgroundError,
-          })
-        : await transactionalUpdateConsult(id, buildTransferPayload, {
-              awaitRemote: false,
-              onBackgroundError,
-          });
+    if (isOffline) {
+        // Pre-validate locally from cache, then queue a reconnect transfer intent
+        // so server-side department completion is re-checked transactionally once online
+        // rather than blindly overwriting a completed case via queued updateDoc.
+        const database = requireDb();
+        const docRef = doc(database, COLLECTION_NAME, id);
+        const { snap } = await readConsultSnapshotCacheFirst(docRef);
+        if (!snap.exists()) {
+            throw new Error(`Consult not found: ${id}`);
+        }
+        const currentData = mapRawToConsult(snap.id, snap.data());
+        if (!currentData) {
+            throw new Error(`Consult not found: ${id}`);
+        }
+        if (buildTransferPayload(currentData) === null) {
+            return {
+                transferred: false,
+                backgroundPromise: null,
+                isOfflineQueued: false,
+            };
+        }
 
-    // When queued offline, re-consulted pending departments added remotely before reconnect
-    // may lack this transfer milestone; backfill them transactionally once the offline write syncs.
-    const backgroundPromise =
-        isOffline && result.backgroundPromise
-            ? trackOptimisticWrite(
-                  result.backgroundPromise.then(
-                      async () => {
-                          try {
-                              await transactionalUpdateConsult(
-                                  id,
-                                  (latest) => {
-                                      if (latest.room !== newRoom) return null;
-                                      const missingPendingDepts = Object.keys(
-                                          latest.departments
-                                      ).filter((deptKey) => {
-                                          const dept = latest.departments[deptKey];
-                                          if (dept.status !== "pending") return false;
-                                          const existingTransfers = dept.transfers ?? [];
-                                          return !existingTransfers.some(
-                                              (t) => t.to === newRoom && t.at === now
-                                          );
-                                      });
-                                      if (missingPendingDepts.length === 0) return null;
-                                      const backfillPayload: Record<string, unknown> = {};
-                                      missingPendingDepts.forEach((deptKey) => {
-                                          backfillPayload[`departments.${deptKey}.transfers`] =
-                                              arrayUnion({
-                                                  to: newRoom,
-                                                  at: now,
-                                              });
-                                      });
-                                      return backfillPayload as ConsultUpdate;
-                                  },
-                                  { awaitRemote: true }
-                              );
-                          } catch (err) {
-                              console.error("Offline transfer reconciliation failed:", err);
-                              onBackgroundError?.(err);
-                          }
-                      },
-                      () => {
-                          // Primary offline write rejection was already reported by updateConsult
-                      }
-                  )
-              )
-            : result.backgroundPromise;
+        const reconnectPromise = trackOptimisticWrite(
+            waitForOnlineReconnect()
+                .then(() =>
+                    transactionalUpdateConsult(id, buildTransferPayload, { awaitRemote: true })
+                )
+                .then((txResult) => {
+                    if (!txResult.applied) {
+                        onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
+                    }
+                })
+                .catch((err) => {
+                    console.error("Deferred offline transfer failed:", err);
+                    onBackgroundError?.(err);
+                })
+        );
+        void reconnectPromise;
+
+        return {
+            transferred: true,
+            backgroundPromise: reconnectPromise,
+            isOfflineQueued: true,
+        };
+    }
+
+    const result = await transactionalUpdateConsult(id, buildTransferPayload, {
+        awaitRemote: false,
+        onBackgroundError,
+    });
 
     return {
         transferred: result.applied,
-        backgroundPromise,
-        isOfflineQueued: isOffline && result.applied,
+        backgroundPromise: result.backgroundPromise,
+        isOfflineQueued: false,
     };
 }

@@ -1944,7 +1944,7 @@ describe("AuthContext", () => {
     expect(screen.getByTestId("uid")).toHaveTextContent("staff-pending");
   });
 
-  it("reloads peer tab when LOGOUT_TERMINATE_DB_REQUEST arrives after onAuthStateChanged(null) already ran", async () => {
+  it("waits for LOGOUT_CACHE_CLEARED before reloading peer when onAuthStateChanged(null) already ran, and broadcasts LOGOUT_CACHE_CLEARED from initiator", async () => {
     const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
     const peerMessages: Array<{ type: string; requestId?: string }> = [];
     peerChannel.onmessage = (event) => {
@@ -1978,9 +1978,64 @@ describe("AuthContext", () => {
             (m) => m.type === "LOGOUT_TERMINATE_DB_ACK" && m.requestId === "term-after-null-1"
           )
         ).toBe(true);
+      });
+
+      // Must NOT reload until initiating tab clears IndexedDB persistence and broadcasts LOGOUT_CACHE_CLEARED
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      peerChannel.postMessage({
+        type: "LOGOUT_CACHE_CLEARED",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
         expect(reloadSpy).toHaveBeenCalledTimes(1);
       });
     } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("recovers peer via fallback timer if initiating tab crashes before broadcasting LOGOUT_CACHE_CLEARED", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; requestId?: string });
+    };
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-fallback-1",
+        senderTabId: "crashed-tab",
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
       peerChannel.close();
     }
   });

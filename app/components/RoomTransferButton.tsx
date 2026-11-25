@@ -86,11 +86,22 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
         newRoom,
         (err) => {
           console.error("Background transfer error:", err);
-          addToast({ message: "เครือข่ายไม่เสถียร การย้ายห้องอาจล่าช้ากว่าปกติ", type: "error" });
+          const isConditionNotMet =
+            err instanceof Error && err.message === "TRANSACTION_CONDITION_NOT_MET";
+          addToast({
+            message: isConditionNotMet
+              ? "ไม่สามารถย้ายห้องได้: เคสนี้ถูกอัปเดตหรือปิดไปแล้ว"
+              : "เครือข่ายไม่เสถียร การย้ายห้องอาจล่าช้ากว่าปกติ",
+            type: "error",
+          });
         }
       );
       if (transferred) {
-        addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+        addToast(
+          isOfflineQueued
+            ? { message: `บันทึกคำขอย้ายเคสไปยัง ${newRoom} แล้ว (รอซิงค์เมื่อออนไลน์)`, type: "info" }
+            : { message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" }
+        );
         onTransferEnd?.(true); // success callback
         // Hold the UI/case lock only while an online transaction is settling.
         // Offline-queued writes settle only upon reconnect, so release immediately after queueing.
