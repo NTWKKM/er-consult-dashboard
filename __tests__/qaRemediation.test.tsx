@@ -16,6 +16,7 @@ let mockAuthState = {
   user: null as { uid: string; email?: string } | null,
   loading: false,
   isAuthorizedStaff: false,
+  isPendingCleanup: false,
   logout: mockLogout,
 };
 
@@ -37,6 +38,7 @@ describe("QA Remediation Regressions (Sprints 1-3)", () => {
       user: null,
       loading: false,
       isAuthorizedStaff: false,
+      isPendingCleanup: false,
       logout: mockLogout,
     };
   });
@@ -144,6 +146,7 @@ describe("QA Remediation Regressions (Sprints 1-3)", () => {
         user: { uid: "unauth-1", email: "guest@example.com" },
         loading: false,
         isAuthorizedStaff: false,
+        isPendingCleanup: false,
         logout: mockLogout,
       };
 
@@ -164,6 +167,7 @@ describe("QA Remediation Regressions (Sprints 1-3)", () => {
         user: { uid: "staff-1", email: "er@mnrh.com" },
         loading: false,
         isAuthorizedStaff: true,
+        isPendingCleanup: false,
         logout: mockLogout,
       };
 
@@ -174,6 +178,25 @@ describe("QA Remediation Regressions (Sprints 1-3)", () => {
       );
 
       expect(screen.getByText("Sensitive Whiteboard")).toBeInTheDocument();
+    });
+
+    it("blocks operational routes while Firestore cleanup is pending", () => {
+      mockAuthState = {
+        user: { uid: "staff-1", email: "er@mnrh.com" },
+        loading: false,
+        isAuthorizedStaff: true,
+        isPendingCleanup: true,
+        logout: mockLogout,
+      };
+
+      render(
+        <ProtectedRoute>
+          <div>Sensitive Whiteboard</div>
+        </ProtectedRoute>
+      );
+
+      expect(screen.queryByText("Sensitive Whiteboard")).not.toBeInTheDocument();
+      expect(screen.getByText(/กำลังล้างข้อมูลเซสชันก่อนหน้า/)).toBeInTheDocument();
     });
   });
 
@@ -238,6 +261,7 @@ describe("QA Remediation Regressions (Sprints 1-3)", () => {
       expect(rulesText).toContain("^[0-9]+$");
       expect(rulesText).toContain("reconsultedAt");
       expect(rulesText).toContain("reconsultHistory");
+      expect(rulesText).toContain('data.room in ["Resus Team 1"');
     });
   });
 });

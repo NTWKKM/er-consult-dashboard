@@ -49,17 +49,21 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, isPendingCleanup } = useAuth();
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && !isPendingCleanup) {
       router.push("/");
     }
-  }, [user, loading, router]);
+  }, [user, loading, isPendingCleanup, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (isPendingCleanup) {
+      setError("กำลังล้างข้อมูลเซสชันก่อนหน้า กรุณารอสักครู่");
+      return;
+    }
     setIsLoading(true);
 
     if (!auth) {
@@ -84,7 +88,6 @@ export default function LoginPage() {
       const password = normalizedPasscode;
 
       await signInWithEmailAndPassword(auth, email, password);
-      router.push("/");
     } catch (err: unknown) {
       const code = getAuthErrorCode(err);
       console.error("Login failed:", code || (err instanceof Error ? err.message : "unknown"));
@@ -139,10 +142,10 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || isPendingCleanup}
               className="w-full bg-accent hover:opacity-90 text-accent-ink font-medium py-3 px-4 rounded-[6px] transition-opacity duration-200 disabled:opacity-50 tap-feedback whitespace-nowrap"
             >
-              {isLoading ? "Authenticating…" : "Enter"}
+              {isPendingCleanup ? "กำลังล้างข้อมูลเซสชัน…" : isLoading ? "Authenticating…" : "Enter"}
             </button>
           </form>
         </div>

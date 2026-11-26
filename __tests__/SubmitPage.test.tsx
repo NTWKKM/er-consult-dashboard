@@ -8,7 +8,6 @@ const mockPush = vi.fn();
 const mockAddConsult = vi.fn();
 const mockClearRetainedSubmitDraft = vi.fn();
 const mockGetLatestFailedSubmitDraft = vi.fn<() => Consult | null>(() => null);
-const mockReconcileReloadedSubmitDrafts = vi.fn<() => Promise<Consult | null>>(async () => null);
 const mockSubscribeToFailedSubmitDrafts = vi.fn<(listener: (draft: Consult) => void) => () => void>(() => () => {});
 const mockAddToast = vi.fn();
 let mockPendingCases: Consult[] = [];
@@ -22,7 +21,6 @@ vi.mock("@/lib/db", () => ({
   addConsult: (...args: unknown[]) => mockAddConsult(...args),
   clearRetainedSubmitDraft: (...args: unknown[]) => mockClearRetainedSubmitDraft(...args),
   getLatestFailedSubmitDraft: () => mockGetLatestFailedSubmitDraft(),
-  reconcileReloadedSubmitDrafts: () => mockReconcileReloadedSubmitDrafts(),
   subscribeToFailedSubmitDrafts: (listener: (draft: Consult) => void) =>
     mockSubscribeToFailedSubmitDrafts(listener),
 }));
@@ -347,17 +345,16 @@ describe("SubmitPage mount and redirect safety", () => {
     expect(screen.getByLabelText("Gen Sx")).toBeChecked();
   });
 
-  it("does not overwrite dirty form when async reconciliation finds a draft, offering explicit restore instead", async () => {
-    let resolveReconcile!: (draft: Consult | null) => void;
-    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
-      new Promise<Consult | null>((resolve) => {
-        resolveReconcile = resolve;
-      })
-    );
+  it("does not overwrite dirty form when background failure arrives, offering explicit restore instead", async () => {
+    let failedListener: ((draft: Consult) => void) | null = null;
+    mockSubscribeToFailedSubmitDrafts.mockImplementationOnce((listener: (draft: Consult) => void) => {
+      failedListener = listener;
+      return () => {};
+    });
 
     render(<SubmitPage />);
 
-    // User starts typing a new consult while reconciliation is in flight
+    // User starts typing a new consult while earlier submission is still settling
     fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "999999" } });
     fireEvent.change(screen.getByPlaceholderText("ชื่อผู้ป่วย"), { target: { value: "ผู้ป่วยใหม่" } });
 
@@ -372,7 +369,7 @@ describe("SubmitPage mount and redirect safety", () => {
     });
 
     await act(async () => {
-      resolveReconcile(reconciledDraft);
+      failedListener?.(reconciledDraft);
       await Promise.resolve();
     });
 
@@ -524,12 +521,11 @@ describe("SubmitPage mount and redirect safety", () => {
   });
 
   it("preserves unrelated pending recovery banner and keeps staff on /submit after submitting a new case", async () => {
-    let resolveReconcile!: (draft: Consult | null) => void;
-    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
-      new Promise<Consult | null>((resolve) => {
-        resolveReconcile = resolve;
-      })
-    );
+    let failedListener: ((draft: Consult) => void) | null = null;
+    mockSubscribeToFailedSubmitDrafts.mockImplementationOnce((listener: (draft: Consult) => void) => {
+      failedListener = listener;
+      return () => {};
+    });
     mockAddConsult.mockResolvedValueOnce(makeConsult({ id: "new-case-1", hn: "555666" }));
 
     render(<SubmitPage />);
@@ -546,7 +542,7 @@ describe("SubmitPage mount and redirect safety", () => {
     });
 
     await act(async () => {
-      resolveReconcile(recoveredDraft);
+      failedListener?.(recoveredDraft);
       await Promise.resolve();
     });
 
@@ -740,12 +736,11 @@ describe("SubmitPage mount and redirect safety", () => {
   });
 
   it("keeps active submit guard locked and preserves earlier failed draft when older submission fails during a newer submit", async () => {
-    let resolveReconcile!: (draft: Consult | null) => void;
-    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
-      new Promise<Consult | null>((resolve) => {
-        resolveReconcile = resolve;
-      })
-    );
+    let failedListener: ((draft: Consult) => void) | null = null;
+    mockSubscribeToFailedSubmitDrafts.mockImplementationOnce((listener: (draft: Consult) => void) => {
+      failedListener = listener;
+      return () => {};
+    });
 
     let onBgError1: ((err: unknown, draft: Consult) => void) | undefined;
     const failedDraft1 = makeConsult({
@@ -774,7 +769,7 @@ describe("SubmitPage mount and redirect safety", () => {
 
     render(<SubmitPage />);
 
-    // Dirty form before reconcile finishes so seed recovery shows in banner instead of auto-restoring
+    // Dirty form before seed failure arrives so seed recovery shows in banner instead of auto-restoring
     fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "222333" } });
     fireEvent.change(screen.getByPlaceholderText("ชื่อผู้ป่วย"), { target: { value: "เคสแรก" } });
     fireEvent.change(screen.getByPlaceholderText("นามสกุลผู้ป่วย"), { target: { value: "ล้มเหลว" } });
@@ -783,7 +778,7 @@ describe("SubmitPage mount and redirect safety", () => {
     fireEvent.click(screen.getByLabelText("Ortho"));
 
     await act(async () => {
-      resolveReconcile(
+      failedListener?.(
         makeConsult({
           id: "seed-recovery-0",
           hn: "000111",
@@ -844,12 +839,11 @@ describe("SubmitPage mount and redirect safety", () => {
   });
 
   it("prevents restoring draft A while submission B is active and older write C fails (A/B/C/D order) so D cannot delete draft A", async () => {
-    let resolveReconcile!: (draft: Consult | null) => void;
-    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
-      new Promise<Consult | null>((resolve) => {
-        resolveReconcile = resolve;
-      })
-    );
+    let failedListener: ((draft: Consult) => void) | null = null;
+    mockSubscribeToFailedSubmitDrafts.mockImplementationOnce((listener: (draft: Consult) => void) => {
+      failedListener = listener;
+      return () => {};
+    });
 
     const draftA = makeConsult({
       id: "draft-a-abcd",
@@ -897,7 +891,7 @@ describe("SubmitPage mount and redirect safety", () => {
     fireEvent.click(screen.getByLabelText("Ortho"));
 
     await act(async () => {
-      resolveReconcile(draftA);
+      failedListener?.(draftA);
       await Promise.resolve();
     });
     expect(screen.getByText("101010")).toBeInTheDocument();
@@ -986,19 +980,18 @@ describe("SubmitPage mount and redirect safety", () => {
       departments: { Ortho: { status: "pending", completedAt: null } },
     });
 
-    let resolveReconcile!: (draft: Consult | null) => void;
-    mockReconcileReloadedSubmitDrafts.mockReturnValueOnce(
-      new Promise<Consult | null>((resolve) => {
-        resolveReconcile = resolve;
-      })
-    );
+    let failedListener: ((draft: Consult) => void) | null = null;
+    mockSubscribeToFailedSubmitDrafts.mockImplementationOnce((listener: (draft: Consult) => void) => {
+      failedListener = listener;
+      return () => {};
+    });
 
     render(<SubmitPage />);
     // Dirty the form so draft2 displays in the banner instead of auto-restoring
     fireEvent.change(screen.getByLabelText(/HN/i), { target: { value: "999999" } });
 
     await act(async () => {
-      resolveReconcile(draft2);
+      failedListener?.(draft2);
       await Promise.resolve();
     });
     expect(screen.getByText("222002")).toBeInTheDocument();

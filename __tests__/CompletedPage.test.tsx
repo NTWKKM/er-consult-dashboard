@@ -717,4 +717,171 @@ describe("CompletedPage re-consult failed drafts", () => {
       expect(screen.getByText(/จำกัดสูงสุด 100 เคส/)).toBeInTheDocument();
     });
   });
+
+  it("labels local page department filtering accurately, displays lastName-only patient names in modal, and defers success toast until commit (Bugs #4, #16, #17)", async () => {
+    const lastNameOnlyCase = makeConsult({
+      id: "case-lastname-only",
+      hn: "987654",
+      firstName: "",
+      lastName: "นามสกุลเดี่ยว",
+      departments: {
+        Ortho: { status: "completed", completedAt: "2026-11-18T10:00:00.000Z" },
+      },
+    });
+    mockFetchCompletedConsultsPage.mockResolvedValueOnce({
+      consults: [caseA, lastNameOnlyCase],
+      lastDoc: undefined,
+      hasMore: false,
+    });
+
+    render(<CompletedPage />);
+    await screen.findAllByText("987654");
+
+    // Department filter without HN/date search displays "กรองเฉพาะหน้านี้:" instead of "ผลการค้นหา:"
+    fireEvent.change(screen.getByLabelText(/กรองแผนก/i), { target: { value: "Ortho" } });
+    expect(screen.getByText("กรองเฉพาะหน้านี้:")).toBeInTheDocument();
+
+    // Re-consult modal shows lastName even when firstName is empty
+    clickRowReConsult("987654");
+    const heading = await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    expect(heading).toHaveTextContent("นามสกุลเดี่ยว");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ortho/ }));
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Deferred commit check" },
+    });
+
+    const deferred = createDeferred<void>();
+    mockUpdateConsult.mockResolvedValueOnce({
+      consult: { ...lastNameOnlyCase, status: "pending" },
+      isQueued: true,
+      backgroundPromise: deferred.promise,
+      applied: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+    });
+
+    // Success toast must NOT appear before backgroundPromise commits
+    expect(mockAddToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
+
+    await act(async () => {
+      deferred.resolve();
+      await Promise.resolve();
+    });
+    expect(mockAddToast).toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
+  });
+
+  it("disables Re-consult modal close and Cancel buttons while initial submission is pending, then closes programmatically once applied", async () => {
+    mockFetchCompletedConsultsPage.mockResolvedValueOnce({
+      consults: [caseA],
+      lastDoc: undefined,
+      hasMore: false,
+    });
+
+    render(<CompletedPage />);
+    await screen.findAllByText("111111");
+
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: /^Ortho/ }));
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Pending close disable check" },
+    });
+
+    const initialDeferred = createDeferred<{
+      consult: Consult | null;
+      isQueued: boolean;
+      backgroundPromise: Promise<void> | null;
+      applied: boolean;
+    }>();
+    mockUpdateConsult.mockReturnValueOnce(initialDeferred.promise);
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+
+    const closeBtn = screen.getByRole("button", { name: "ปิดหน้าต่าง Re-consult" });
+    const cancelBtn = screen.getByRole("button", { name: "ยกเลิก" });
+    expect(closeBtn).toBeDisabled();
+    expect(cancelBtn).toBeDisabled();
+
+    fireEvent.click(closeBtn);
+    fireEvent.click(cancelBtn);
+    expect(screen.getByRole("heading", { name: /Re-consult เคส/i })).toBeInTheDocument();
+
+    await act(async () => {
+      initialDeferred.resolve({
+        consult: { ...caseA, status: "pending" },
+        isQueued: false,
+        backgroundPromise: null,
+        applied: true,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("blocks opening another case modal while background update is active and keeps idle modals dismissible", async () => {
+    render(<CompletedPage />);
+    await screen.findAllByText("111111");
+    await screen.findAllByText("222222");
+
+    // Submit Case A with pending backgroundPromise
+    clickRowReConsult("111111");
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: /^Ortho/ }));
+    fireEvent.change(screen.getByLabelText(/ปัญหาใหม่/i), {
+      target: { value: "Case A background pending" },
+    });
+
+    const bgDeferred = createDeferred<void>();
+    mockUpdateConsult.mockResolvedValueOnce({
+      consult: { ...caseA, status: "pending" },
+      isQueued: true,
+      backgroundPromise: bgDeferred.promise,
+      applied: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ส่งปรึกษาใหม่" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+    });
+
+    // While Case A backgroundPromise is pending, Case B Re-consult trigger is disabled and cannot open a locked modal
+    const table = screen.getByRole("table");
+    const rowB = within(table).getByText("222222").closest("tr")!;
+    const caseBBtn = within(rowB).getByRole("button", { name: /Re-consult/i });
+    expect(caseBBtn).toBeDisabled();
+    fireEvent.click(caseBBtn);
+    expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+
+    // Once Case A settles, Case B opens and can be dismissed via close, Cancel, and Escape
+    await act(async () => {
+      bgDeferred.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(caseBBtn).not.toBeDisabled();
+    });
+
+    fireEvent.click(caseBBtn);
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: "ปิดหน้าต่าง Re-consult" }));
+    expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+
+    fireEvent.click(caseBBtn);
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+
+    fireEvent.click(caseBBtn);
+    await screen.findByRole("heading", { name: /Re-consult เคส/i });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("heading", { name: /Re-consult เคส/i })).not.toBeInTheDocument();
+  });
 });

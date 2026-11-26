@@ -22,6 +22,7 @@ vi.mock("@/app/contexts/ToastContext", () => ({
 }));
 
 import { RoomTransferButton } from "@/app/components/RoomTransferButton";
+import { clearAllCaseLocksForTests, isCaseLocked } from "@/lib/caseLock";
 import { ROOMS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ function renderButton(props: Partial<React.ComponentProps<typeof RoomTransferBut
 describe("RoomTransferButton", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCaseLocksForTests();
     mockTransferConsultRoom.mockResolvedValue({
       transferred: true,
       backgroundPromise: null,
@@ -281,6 +283,131 @@ describe("RoomTransferButton", () => {
         expect(mockTransferConsultRoom).toHaveBeenCalled();
       });
       expect(onTransferEnd).not.toHaveBeenCalled();
+    });
+
+    it("holds case lock while online transaction backgroundPromise settles, but releases immediately for offline-queued transfers", async () => {
+      let resolveOnline!: () => void;
+      mockTransferConsultRoom.mockResolvedValueOnce({
+        transferred: true,
+        isOfflineQueued: false,
+        backgroundPromise: new Promise<void>((resolve) => {
+          resolveOnline = resolve;
+        }),
+      });
+
+      const { unmount } = renderButton({ consultId: "case-online-lock", currentRoom: "NT" });
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSW$/ }));
+
+      await waitFor(() => {
+        expect(isCaseLocked("case-online-lock")).toBe(true);
+      });
+      expect(screen.getByTitle("เปลี่ยนห้อง")).toBeDisabled();
+
+      await act(async () => {
+        resolveOnline();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(isCaseLocked("case-online-lock")).toBe(false);
+        expect(screen.getByTitle("เปลี่ยนห้อง")).not.toBeDisabled();
+      });
+      unmount();
+
+      // Offline-queued: backgroundPromise stays pending until reconnect, yet lock must release immediately
+      mockTransferConsultRoom.mockResolvedValueOnce({
+        transferred: true,
+        isOfflineQueued: true,
+        backgroundPromise: new Promise<void>(() => {}),
+      });
+
+      renderButton({ consultId: "case-offline-lock", currentRoom: "NT" });
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSW$/ }));
+
+      await waitFor(() => {
+        expect(mockTransferConsultRoom).toHaveBeenCalledTimes(2);
+        expect(isCaseLocked("case-offline-lock")).toBe(false);
+        expect(screen.getByTitle("เปลี่ยนห้อง")).not.toBeDisabled();
+        expect(mockAddToast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "info",
+            message: expect.stringContaining("SSW"),
+          })
+        );
+      });
+    });
+
+    it("shows online success toast only after backgroundPromise settles without onBackgroundError", async () => {
+      let resolveOnline!: () => void;
+      mockTransferConsultRoom.mockResolvedValueOnce({
+        transferred: true,
+        isOfflineQueued: false,
+        backgroundPromise: new Promise<void>((resolve) => {
+          resolveOnline = resolve;
+        }),
+      });
+
+      const { unmount } = renderButton({ consultId: "case-online-toast", currentRoom: "NT" });
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSW$/ }));
+
+      await waitFor(() => {
+        expect(isCaseLocked("case-online-toast")).toBe(true);
+      });
+      // Must NOT show success toast before backgroundPromise settles
+      expect(mockAddToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
+
+      await act(async () => {
+        resolveOnline();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockAddToast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "success",
+            message: expect.stringContaining("SSW"),
+          })
+        );
+      });
+      unmount();
+
+      // When onBackgroundError fires and backgroundPromise still fulfills (matching lib/db), must NOT show success toast
+      let resolveFailedOnline!: () => void;
+      mockAddToast.mockClear();
+      mockTransferConsultRoom.mockImplementationOnce(
+        async (_id, _room, onBackgroundError?: (err: unknown) => void) => ({
+          transferred: true,
+          isOfflineQueued: false,
+          backgroundPromise: new Promise<void>((resolve) => {
+            resolveFailedOnline = () => {
+              onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
+              resolve();
+            };
+          }),
+        })
+      );
+
+      renderButton({ consultId: "case-online-fail", currentRoom: "NT" });
+      fireEvent.click(screen.getByTitle("เปลี่ยนห้อง"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSW$/ }));
+
+      await waitFor(() => {
+        expect(isCaseLocked("case-online-fail")).toBe(true);
+      });
+
+      await act(async () => {
+        resolveFailedOnline();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(isCaseLocked("case-online-fail")).toBe(false);
+      });
+      expect(mockAddToast).toHaveBeenCalledWith(expect.objectContaining({ type: "error" }));
+      expect(mockAddToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
     });
   });
 

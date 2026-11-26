@@ -86,3 +86,57 @@ export function buildCompletedExportRows(consults: Consult[]): CompletedExportRo
     };
   });
 }
+
+export interface ExportExcelOptions {
+  signal?: AbortSignal;
+  shouldAbort?: () => boolean;
+}
+
+/**
+ * Generates an .xlsx buffer using ExcelJS and triggers a browser file download.
+ */
+export async function exportCompletedRowsToExcel(
+  rows: CompletedExportRow[],
+  filename: string,
+  options?: ExportExcelOptions
+): Promise<void> {
+  const isAborted = () => Boolean(options?.signal?.aborted || options?.shouldAbort?.());
+  if (isAborted()) return;
+
+  const ExcelJSModule = await import("exceljs");
+  if (isAborted()) return;
+
+  const ExcelJS = ExcelJSModule.default ?? ExcelJSModule;
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Completed Cases");
+
+  if (rows.length > 0) {
+    const headers = Object.keys(rows[0]) as Array<keyof CompletedExportRow>;
+    worksheet.columns = headers.map((header) => ({
+      header,
+      key: header,
+      width: header === "Dx" ? 36 : header === "HN" ? 14 : 20,
+    }));
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  if (isAborted()) return;
+
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

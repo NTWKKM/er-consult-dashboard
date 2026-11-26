@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { updateConsult, transactionalUpdateConsult, type UpdateResults } from "@/lib/db";
+import { acquireCaseLock, releaseCaseLock, useCaseLocked } from "@/lib/caseLock";
 import { SURGERY_DEPTS, ORTHO_DEPTS, ACCEPT_STATUS, POST_ACCEPT_STATUSES } from "@/lib/constants";
 import { useToast } from "../contexts/ToastContext";
 
@@ -12,7 +13,9 @@ export type PostAcceptStatus = (typeof POST_ACCEPT_STATUSES)[number];
  * Centralizes business logic and handles visual sync states.
  */
 export function useConsultActions(caseId: string, departmentName: string, hn: string, onUpdate?: () => void) {
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [isLocalUpdating, setIsLocalUpdating] = useState(false);
+  const isCaseBusy = useCaseLocked(caseId);
+  const isUpdating = isLocalUpdating || isCaseBusy;
   const [isSyncing, setIsSyncing] = useState(false);
   const inFlightRef = useRef(false);
   const { addToast } = useToast();
@@ -30,9 +33,9 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
   }, []);
 
   /**
-   * Shared action runner that manages in-flight locking, background sync tracking, and toast feedback.
+   * Shared action runner that manages per-case in-flight locking, background sync tracking, and toast feedback.
    * When `holdLockUntilRemote` is true (transactional writes), the UI lock stays held until
-   * `backgroundPromise` settles to prevent concurrent duplicate transactions.
+   * `backgroundPromise` settles to prevent concurrent duplicate transactions across departments.
    * When false (offline-queued writes), the lock releases immediately so offline ER edits never deadlock.
    */
   const executeAction = useCallback(
@@ -42,17 +45,25 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       getSuccessMessage,
       errorMessage,
       errorLogLabel,
+      onNotApplied,
     }: {
       run: (markBackgroundFailed: () => void) => Promise<UpdateResults>;
       holdLockUntilRemote: boolean;
       getSuccessMessage: () => string;
       errorMessage: string;
       errorLogLabel: string;
+      onNotApplied?: () => void;
     }): Promise<boolean> => {
-      if (inFlightRef.current) return false;
+      if (inFlightRef.current || !acquireCaseLock(caseId)) return false;
       inFlightRef.current = true;
-      setIsUpdating(true);
+      setIsLocalUpdating(true);
       beginSync();
+
+      const releaseLocks = () => {
+        setIsLocalUpdating(false);
+        inFlightRef.current = false;
+        releaseCaseLock(caseId);
+      };
 
       let backgroundFailed = false;
       const markBackgroundFailed = () => {
@@ -65,16 +76,22 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
       } catch (error) {
         console.error(errorLogLabel, error);
         addToast({ type: "error", message: errorMessage });
-        setIsUpdating(false);
         endSync();
-        inFlightRef.current = false;
+        releaseLocks();
         return false;
       }
 
       if (!result.applied) {
         endSync();
-        setIsUpdating(false);
-        inFlightRef.current = false;
+        releaseLocks();
+        if (onNotApplied) {
+          onNotApplied();
+        } else {
+          addToast({
+            type: "warning",
+            message: "เคสนี้ถูกอัปเดตโดยผู้ใช้อื่นแล้ว ระบบกำลังรีเฟรชข้อมูล",
+          });
+        }
         return false;
       }
 
@@ -92,8 +109,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           // and show final success toast only after the remote commit is confirmed.
           const release = () => {
             endSync();
-            setIsUpdating(false);
-            inFlightRef.current = false;
+            releaseLocks();
           };
           void result.backgroundPromise.then(
             () => {
@@ -108,12 +124,10 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           );
         } else {
           endSync();
-          setIsUpdating(false);
-          inFlightRef.current = false;
+          releaseLocks();
           emitSuccessToast();
         }
       } else {
-        setIsUpdating(false);
         if (result.backgroundPromise) {
           void result.backgroundPromise.then(
             () => endSync(),
@@ -122,7 +136,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
         } else {
           endSync();
         }
-        inFlightRef.current = false;
+        releaseLocks();
         emitSuccessToast();
       }
 
@@ -134,7 +148,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
 
       return true;
     },
-    [addToast, onUpdate, beginSync, endSync]
+    [caseId, addToast, onUpdate, beginSync, endSync]
   );
 
   const handleAccept = useCallback(async (): Promise<boolean> => {
@@ -241,7 +255,7 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
           onBackgroundError: () => {
             addToast({
               type: "error",
-              message: "อัปเดตไม่สำเร็จ: เคสนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ข้อมูลกำลังรีเฟรช",
+              message: "อัปเดตสถานะไม่สำเร็จ: เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล กรุณาลองใหม่อีกครั้ง",
             });
           },
         }),
@@ -332,20 +346,31 @@ export function useConsultActions(caseId: string, departmentName: string, hn: st
   }, [handleTerminalTransition, hn, departmentName]);
 
   const handleToggleUrgency = useCallback(async (currentUrgent: boolean): Promise<boolean> => {
-    let nextUrgent = !currentUrgent;
+    const targetUrgent = !currentUrgent;
     return executeAction({
       holdLockUntilRemote: false,
       errorLogLabel: "Error toggling urgency:",
       errorMessage: "เกิดข้อผิดพลาดในการเปลี่ยนสถานะความเร่งด่วน",
       getSuccessMessage: () =>
-        nextUrgent
+        targetUrgent
           ? "เปลี่ยนเป็นเคส FAST TRACK สำเร็จ"
           : "เปลี่ยนเป็นเคสปกติสำเร็จ",
+      onNotApplied: () => {
+        addToast({
+          type: "info",
+          message: targetUrgent
+            ? "เคสนี้เป็น FAST TRACK อยู่แล้ว"
+            : "เคสนี้เป็นเคสปกติอยู่แล้ว",
+        });
+      },
       run: () =>
         updateConsult(caseId, (current) => {
-          nextUrgent = !current.isUrgent;
+          // Idempotent target: avoid flipping back if another clinician already applied the intended urgency
+          if (current.isUrgent === targetUrgent) {
+            return null;
+          }
           return {
-            isUrgent: nextUrgent,
+            isUrgent: targetUrgent,
           };
         }, {
           awaitRemote: false,

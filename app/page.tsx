@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { flushSync } from "react-dom";
 import { useConsultActions, PostAcceptStatus } from "./hooks/useConsultActions";
 import ConsultCard from "@/app/components/ConsultCard";
 import SkeletonLoading from "@/app/components/SkeletonLoading";
@@ -22,74 +23,37 @@ import { buildDepartmentCasesMap, type RoomFilter, matchesRoomFilter } from "@/l
 export default function Dashboard() {
   const { cases: allCases, loading, error } = usePendingConsults();
   const [audioBlocked, setAudioBlocked] = useState(false);
-  
-  // Persistence logic for filters and view modes
-  const [view, setView] = useState<"both" | "surgery" | "ortho">("both");
-  const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
 
-  const settingsLoadedRef = useRef(false);
+  const settings = useSettings();
+  const { soundEnabled, displayMode, setDisplayMode } = settings;
+  // Fallback local state only when partial test mocks omit dashboardView/roomFilter
+  const [fallbackView, setFallbackView] = useState<"both" | "surgery" | "ortho">("both");
+  const [fallbackRoomFilter, setFallbackRoomFilter] = useState<RoomFilter>("all");
+  const view = settings.dashboardView ?? fallbackView;
+  const roomFilter = settings.roomFilter ?? fallbackRoomFilter;
+  const setView = settings.setDashboardView ?? setFallbackView;
+  const setRoomFilter = settings.setRoomFilter ?? setFallbackRoomFilter;
 
-  // Load from localStorage on mount (deferred to microtask to avoid hydration mismatch and cascading effect renders)
-  useEffect(() => {
-    let active = true;
-    void Promise.resolve().then(() => {
-      if (!active) return;
-      try {
-        const savedView = localStorage.getItem("dashboard_view");
-        const savedRoomFilter = localStorage.getItem("dashboard_roomFilter");
-        
-        if (savedView === "both" || savedView === "surgery" || savedView === "ortho") {
-          setView(savedView);
-        }
-        if (savedRoomFilter === "all" || savedRoomFilter === "resus" || savedRoomFilter === "non-resus") {
-          setRoomFilter(savedRoomFilter as RoomFilter);
-        }
-      } catch (e) {
-        console.warn("Failed to load settings from localStorage:", e);
-      } finally {
-        settingsLoadedRef.current = true;
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Save to localStorage when changed
-  useEffect(() => {
-    if (!settingsLoadedRef.current) return;
-    try {
-      localStorage.setItem("dashboard_view", view);
-      localStorage.setItem("dashboard_roomFilter", roomFilter);
-    } catch (e) {
-      console.warn("Failed to save settings to localStorage:", e);
+  const runViewTransition = (update: () => void) => {
+    if (typeof document !== "undefined" && document.startViewTransition) {
+      document.startViewTransition(() => {
+        flushSync(update);
+      });
+    } else {
+      update();
     }
-  }, [view, roomFilter]);
-
-  const { soundEnabled, displayMode, setDisplayMode } = useSettings();
+  };
 
   const handleSetDisplayMode = (mode: "card" | "table") => {
-    if (document.startViewTransition) {
-      document.startViewTransition(() => setDisplayMode(mode));
-    } else {
-      setDisplayMode(mode);
-    }
+    runViewTransition(() => setDisplayMode(mode));
   };
 
   const handleSetView = (v: "both" | "surgery" | "ortho") => {
-    if (document.startViewTransition) {
-      document.startViewTransition(() => setView(v));
-    } else {
-      setView(v);
-    }
+    runViewTransition(() => setView(v));
   };
 
   const handleSetRoomFilter = (filter: RoomFilter) => {
-    if (document.startViewTransition) {
-      document.startViewTransition(() => setRoomFilter(filter));
-    } else {
-      setRoomFilter(filter);
-    }
+    runViewTransition(() => setRoomFilter(filter));
   };
 
   const previousCaseIdsRef = useRef<Set<string>>(new Set());
@@ -174,49 +138,61 @@ export default function Dashboard() {
     [scheduleAlertBeeps]
   );
 
-  const initAudioContext = useCallback(() => {
-    if (typeof window !== "undefined") {
-      if (!audioContextRef.current) {
-        const AudioCtx =
-          window.AudioContext ||
-          (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        if (AudioCtx) {
-          audioContextRef.current = new AudioCtx();
-        }
-      }
-      const audioContext = audioContextRef.current;
-      if (!audioContext) return;
-
-      if (audioContext.state === "suspended") {
-        audioContext
-          .resume()
-          .then(() => {
-            if (audioContextRef.current !== audioContext) return;
-            if (audioContext.state === "running") {
-              setAudioBlocked(false);
-              flushPendingAlert(audioContext);
-            } else {
-              setAudioBlocked(true);
-            }
-          })
-          .catch(() => {
-            if (audioContextRef.current === audioContext) {
-              setAudioBlocked(true);
-            }
-          });
-      } else if (audioContext.state === "running") {
-        setAudioBlocked(false);
-        flushPendingAlert(audioContext);
+  const initAudioContext = useCallback(async (): Promise<boolean> => {
+    if (typeof window === "undefined") return false;
+    if (!audioContextRef.current) {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        audioContextRef.current = new AudioCtx();
       }
     }
+    const audioContext = audioContextRef.current;
+    if (!audioContext) return false;
+
+    if (audioContext.state === "suspended") {
+      try {
+        await audioContext.resume();
+        if (audioContextRef.current !== audioContext) return false;
+        const currentState = (audioContext as { state: AudioContextState }).state;
+        if (currentState === "running") {
+          setAudioBlocked(false);
+          flushPendingAlert(audioContext);
+          return true;
+        }
+        setAudioBlocked(true);
+        return false;
+      } catch {
+        if (audioContextRef.current === audioContext) {
+          setAudioBlocked(true);
+        }
+        return false;
+      }
+    }
+
+    if (audioContext.state === "running") {
+      setAudioBlocked(false);
+      flushPendingAlert(audioContext);
+      return true;
+    }
+
+    return false;
   }, [flushPendingAlert]);
 
   useEffect(() => {
-    const unlockAudio = () => {
-      initAudioContext();
+    let disposed = false;
+    const detachUnlockListeners = () => {
       document.removeEventListener("click", unlockAudio);
       document.removeEventListener("touchstart", unlockAudio);
       document.removeEventListener("keydown", unlockAudio);
+    };
+    const unlockAudio = () => {
+      void initAudioContext().then((unlocked) => {
+        if (!disposed && unlocked) {
+          detachUnlockListeners();
+        }
+      });
     };
 
     document.addEventListener("click", unlockAudio);
@@ -224,9 +200,8 @@ export default function Dashboard() {
     document.addEventListener("keydown", unlockAudio);
 
     return () => {
-      document.removeEventListener("click", unlockAudio);
-      document.removeEventListener("touchstart", unlockAudio);
-      document.removeEventListener("keydown", unlockAudio);
+      disposed = true;
+      detachUnlockListeners();
     };
   }, [initAudioContext]);
 
@@ -238,7 +213,7 @@ export default function Dashboard() {
 
     if (!audioContextRef.current) {
       pendingAlertRef.current = true;
-      initAudioContext();
+      void initAudioContext();
       if (audioContextRef.current && (audioContextRef.current as AudioContext).state === "suspended") {
         setAudioBlocked(true);
       }
@@ -550,6 +525,7 @@ export default function Dashboard() {
                         className="flex flex-col gap-2 scroll-mt-20 min-w-0"
                         ref={(el) => {
                           if (el) Reflect.set(deptRefs.current, dept, el);
+                          else Reflect.deleteProperty(deptRefs.current, dept);
                         }}
                       >
                         <div className="flex items-center justify-between px-3 py-2 rounded-[6px] border border-rule bg-paper-3">
@@ -612,6 +588,7 @@ export default function Dashboard() {
                         className="flex flex-col gap-2 max-w-full scroll-mt-20 min-w-0"
                         ref={(el) => {
                           if (el) Reflect.set(deptRefs.current, dept, el);
+                          else Reflect.deleteProperty(deptRefs.current, dept);
                         }}
                       >
                         <div className="flex items-center justify-between px-3 py-2 rounded-[6px] border border-rule bg-paper-3">
@@ -733,6 +710,7 @@ function MobilePatientCard({ caseData }: { caseData: Consult }) {
             <RoomTransferButton
               consultId={caseData.id}
               currentRoom={caseData.room}
+              disabled={isUpdating}
             />
           </div>
         </div>
@@ -847,6 +825,7 @@ function PatientTableRow({ caseData }: { caseData: Consult }) {
           <RoomTransferButton 
             consultId={caseData.id}
             currentRoom={caseData.room}
+            disabled={isUpdating}
           />
         </div>
       </td>
@@ -859,17 +838,17 @@ function PatientTableRow({ caseData }: { caseData: Consult }) {
             <DepartmentActionPanel key={dept} caseData={caseData} deptName={dept} />
           ))}
         </div>
+        <ConfirmModal
+          isOpen={showUrgencyConfirm}
+          title={caseData.isUrgent ? "ยกเลิก FAST TRACK" : "เปลี่ยนเป็น FAST TRACK"}
+          message={`คุณต้องการเปลี่ยนเคส HN: ${caseData.hn} ${caseData.isUrgent ? "กลับเป็นเคสปกติ" : "เป็นเคส FAST TRACK (ด่วน)"} หรือไม่?`}
+          confirmText="ยืนยัน"
+          cancelText="ยกเลิก"
+          variant={caseData.isUrgent ? "warning" : "danger"}
+          onConfirm={confirmToggleUrgency}
+          onCancel={() => setShowUrgencyConfirm(false)}
+        />
       </td>
-      <ConfirmModal
-        isOpen={showUrgencyConfirm}
-        title={caseData.isUrgent ? "ยกเลิก FAST TRACK" : "เปลี่ยนเป็น FAST TRACK"}
-        message={`คุณต้องการเปลี่ยนเคส HN: ${caseData.hn} ${caseData.isUrgent ? "กลับเป็นเคสปกติ" : "เป็นเคส FAST TRACK (ด่วน)"} หรือไม่?`}
-        confirmText="ยืนยัน"
-        cancelText="ยกเลิก"
-        variant={caseData.isUrgent ? "warning" : "danger"}
-        onConfirm={confirmToggleUrgency}
-        onCancel={() => setShowUrgencyConfirm(false)}
-      />
     </tr>
   );
 }

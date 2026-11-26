@@ -1,11 +1,11 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type Firestore, type QueryConstraint, type UpdateData } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, getDocFromCache, getDocFromServer, updateDoc, runTransaction, query, where, orderBy, onSnapshot, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData, arrayUnion, type DocumentReference, type Firestore, type QueryConstraint, type UpdateData } from "firebase/firestore";
 import { sortConsults } from "./utils";
 import { getUtcRangeForLocalDate } from "./dateUtils";
 import { RoomName } from "./constants";
 import { ConsultSchema, type Consult, type ConsultDepartment, type ConsultTransfer } from "./schema";
 import { isSubmissionBlockedByLogout } from "./logoutReservation";
-import { z, ZodError } from "zod";
+import { ZodError } from "zod";
 
 export type { Consult, ConsultDepartment, ConsultTransfer };
 
@@ -324,23 +324,29 @@ export interface RetainedSubmitDraft {
     replacesDraftId?: string;
 }
 
-const SUBMIT_DRAFTS_STORAGE_KEY = "er_consult_submit_drafts_v1";
-const PersistedSubmitDraftSchema = z.object({
-    consult: ConsultSchema,
-    status: z.enum(["pending", "failed"]),
-    replacesDraftId: z.string().optional(),
-});
-
 const retainedSubmitDrafts = new Map<string, RetainedSubmitDraft>();
 const activeSubmitWriteIds = new Set<string>();
 const draftTokens = new Map<string, number>();
 let submitDraftGeneration = 0;
 let nextDraftToken = 0;
 const failedDraftListeners = new Set<(draft: Consult, error?: unknown) => void>();
-let draftsHydrated = false;
+const LEGACY_SUBMIT_DRAFTS_STORAGE_KEY = "er_consult_submit_drafts_v1";
+
+/**
+ * Removes any legacy persisted submit drafts left in sessionStorage from older app builds.
+ */
+export function clearLegacySubmitDraftStorage(): void {
+    if (typeof window === "undefined") return;
+    try {
+        window.sessionStorage.removeItem(LEGACY_SUBMIT_DRAFTS_STORAGE_KEY);
+    } catch {
+        // Ignore restricted Web Storage environments
+    }
+}
+
+clearLegacySubmitDraftStorage();
 
 export function hasRetainedSubmitDrafts(): boolean {
-    ensureDraftsHydrated();
     return retainedSubmitDrafts.size > 0;
 }
 
@@ -366,29 +372,6 @@ function notifyFailedDraftListeners(draft: Consult, error?: unknown): number {
     return notified;
 }
 
-function persistSubmitDrafts(): boolean {
-    if (typeof window === "undefined") return false;
-    try {
-        if (!window.sessionStorage) return false;
-        if (retainedSubmitDrafts.size === 0) {
-            window.sessionStorage.removeItem(SUBMIT_DRAFTS_STORAGE_KEY);
-            return true;
-        }
-        const serialized = Array.from(retainedSubmitDrafts.values()).map(
-            ({ consult, status, replacesDraftId }) => ({
-                consult,
-                status,
-                ...(replacesDraftId ? { replacesDraftId } : {}),
-            })
-        );
-        window.sessionStorage.setItem(SUBMIT_DRAFTS_STORAGE_KEY, JSON.stringify(serialized));
-        return true;
-    } catch {
-        // Ignore storage quota or private-browsing errors unless the caller checks the return value
-        return false;
-    }
-}
-
 function retireSupersededDraft(replacesDraftId: string | undefined, replacementId: string): void {
     if (!replacesDraftId || replacesDraftId === replacementId) return;
     retainedSubmitDrafts.delete(replacesDraftId);
@@ -396,41 +379,7 @@ function retireSupersededDraft(replacesDraftId: string | undefined, replacementI
     draftTokens.delete(replacesDraftId);
 }
 
-function isUnavailableFirestoreError(err: unknown): boolean {
-    if (typeof err !== "object" || err === null) return false;
-    const code = (err as { code?: unknown }).code;
-    return typeof code === "string" && (code === "unavailable" || code.endsWith("/unavailable"));
-}
-
-function ensureDraftsHydrated(): void {
-    if (draftsHydrated) return;
-    draftsHydrated = true;
-    if (typeof window === "undefined") return;
-    try {
-        const raw = window.sessionStorage?.getItem(SUBMIT_DRAFTS_STORAGE_KEY);
-        if (!raw) return;
-        const parsed: unknown = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return;
-        for (const item of parsed) {
-            const validated = PersistedSubmitDraftSchema.safeParse(item);
-            if (validated.success && !retainedSubmitDrafts.has(validated.data.consult.id)) {
-                retainedSubmitDrafts.set(validated.data.consult.id, {
-                    consult: validated.data.consult,
-                    status: validated.data.status,
-                    ...(validated.data.replacesDraftId
-                        ? { replacesDraftId: validated.data.replacesDraftId }
-                        : {}),
-                });
-                draftTokens.set(validated.data.consult.id, ++nextDraftToken);
-            }
-        }
-    } catch {
-        // Ignore malformed storage entries
-    }
-}
-
 export function getLatestFailedSubmitDraft(): Consult | null {
-    ensureDraftsHydrated();
     const supersededByPending = new Set<string>();
     for (const entry of retainedSubmitDrafts.values()) {
         if (entry.status === "pending" && entry.replacesDraftId) {
@@ -447,169 +396,21 @@ export function getLatestFailedSubmitDraft(): Consult | null {
 }
 
 export function getRetainedSubmitDraft(id: string): RetainedSubmitDraft | undefined {
-    ensureDraftsHydrated();
     return retainedSubmitDrafts.get(id);
 }
 
 export function clearRetainedSubmitDraft(id?: string): void {
-    ensureDraftsHydrated();
+    clearLegacySubmitDraftStorage();
     if (id === undefined) {
         submitDraftGeneration += 1;
         retainedSubmitDrafts.clear();
         activeSubmitWriteIds.clear();
         draftTokens.clear();
-        persistSubmitDrafts();
         return;
     }
     retainedSubmitDrafts.delete(id);
     activeSubmitWriteIds.delete(id);
     draftTokens.delete(id);
-    persistSubmitDrafts();
-}
-
-/**
- * Reconciles submit drafts loaded from sessionStorage after a page reload before an
- * optimistic write settled. Clears drafts already committed to Firestore and promotes
- * server-confirmed missing or errored drafts to "failed" so the user can retry them.
- */
-export async function reconcileReloadedSubmitDrafts(): Promise<Consult | null> {
-    ensureDraftsHydrated();
-    if (!db) return getLatestFailedSubmitDraft();
-
-    const captureGeneration = submitDraftGeneration;
-    const orphanedPending = Array.from(retainedSubmitDrafts.entries())
-        .filter(([id, entry]) => entry.status === "pending" && !activeSubmitWriteIds.has(id))
-        .map(([id, entry]) => ({ id, entry, token: draftTokens.get(id) }));
-
-    let mutated = false;
-    for (const { id, entry, token } of orphanedPending) {
-        const isStillOwned = () =>
-            submitDraftGeneration === captureGeneration &&
-            draftTokens.get(id) === token &&
-            retainedSubmitDrafts.has(id);
-
-        try {
-            const docSnap = await getDoc(doc(db, COLLECTION_NAME, id));
-            if (!isStillOwned()) continue;
-            if (docSnap.exists() && !docSnap.metadata?.hasPendingWrites) {
-                retainedSubmitDrafts.delete(id);
-                draftTokens.delete(id);
-                retireSupersededDraft(entry.replacesDraftId, id);
-                mutated = true;
-            } else if (!docSnap.exists() && docSnap.metadata?.fromCache === false) {
-                retainedSubmitDrafts.set(id, { ...entry, status: "failed" });
-                retireSupersededDraft(entry.replacesDraftId, id);
-                mutated = true;
-            }
-        } catch (err) {
-            if (!isStillOwned()) continue;
-            if (isUnavailableFirestoreError(err)) {
-                // Offline/unavailable read cannot confirm absence; keep pending for monitor or retry
-                continue;
-            }
-            retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
-            retireSupersededDraft(entry.replacesDraftId, id);
-            mutated = true;
-        }
-    }
-
-    if (submitDraftGeneration !== captureGeneration) {
-        return null;
-    }
-
-    if (mutated) {
-        persistSubmitDrafts();
-    }
-    return getLatestFailedSubmitDraft();
-}
-
-/**
- * Monitors reloaded "pending" submit drafts across all routes via Firestore metadata-aware
- * snapshot listeners until each draft either commits remotely or fails/rolls back.
- * Invokes `onFailed` once per draft that fails after reload and keeps it retryable in sessionStorage.
- */
-export function monitorReloadedPendingSubmitDrafts(
-    onFailed?: (draft: Consult, error?: unknown) => void
-): () => void {
-    ensureDraftsHydrated();
-    if (!db) return () => {};
-
-    const database = db;
-    const captureGeneration = submitDraftGeneration;
-    const unsubscribers: Array<() => void> = [];
-
-    for (const [id, entry] of retainedSubmitDrafts.entries()) {
-        if (entry.status !== "pending" || activeSubmitWriteIds.has(id)) {
-            continue;
-        }
-
-        const captureToken = draftTokens.get(id);
-        let settled = false;
-        let unsubscribe: (() => void) | null = null;
-        const isStillOwned = () =>
-            submitDraftGeneration === captureGeneration &&
-            draftTokens.get(id) === captureToken &&
-            retainedSubmitDrafts.has(id);
-        const finish = () => {
-            settled = true;
-            if (unsubscribe) {
-                unsubscribe();
-                unsubscribe = null;
-            }
-        };
-        const markFailed = (err?: unknown) => {
-            if (settled) return;
-            finish();
-            if (!isStillOwned()) return;
-            retainedSubmitDrafts.set(id, { ...entry, status: "failed", error: err });
-            retireSupersededDraft(entry.replacesDraftId, id);
-            persistSubmitDrafts();
-            onFailed?.(entry.consult, err);
-            notifyFailedDraftListeners(entry.consult, err);
-        };
-
-        unsubscribe = onSnapshot(
-            doc(database, COLLECTION_NAME, id),
-            { includeMetadataChanges: true },
-            (docSnap) => {
-                if (settled) return;
-                if (!isStillOwned()) {
-                    finish();
-                    return;
-                }
-                const hasPendingWrites = Boolean(docSnap.metadata?.hasPendingWrites);
-                if (docSnap.exists() && !hasPendingWrites) {
-                    // Server commit confirmed — remove retained draft and any draft it replaced
-                    finish();
-                    retainedSubmitDrafts.delete(id);
-                    draftTokens.delete(id);
-                    retireSupersededDraft(entry.replacesDraftId, id);
-                    persistSubmitDrafts();
-                    return;
-                }
-                if (!docSnap.exists() && !hasPendingWrites && docSnap.metadata?.fromCache === false) {
-                    // Server-confirmed missing document (queued write was rejected/rolled back)
-                    markFailed();
-                }
-            },
-            (err) => {
-                markFailed(err);
-            }
-        );
-
-        unsubscribers.push(() => {
-            if (unsubscribe) {
-                unsubscribe();
-                unsubscribe = null;
-            }
-        });
-    }
-
-    return () => {
-        for (const unsub of unsubscribers) {
-            unsub();
-        }
-    };
 }
 
 function trackOptimisticWrite<T>(promise: Promise<T>): Promise<T> {
@@ -858,9 +659,8 @@ export async function addConsult(
     };
 
     if (!awaitRemote) {
-        // Optimistic offline-first write: retain a retryable draft across navigation/reloads
-        // until the Firestore write settles so hospital Wi-Fi drops never lose submissions.
-        ensureDraftsHydrated();
+        // Optimistic offline-first write: retain a retryable draft in memory during the active
+        // session without writing plaintext PHI into Web Storage.
         const captureGeneration = submitDraftGeneration;
         const captureToken = ++nextDraftToken;
         draftTokens.set(newConsult.id, captureToken);
@@ -870,16 +670,6 @@ export async function addConsult(
             status: "pending",
             ...(replacesDraftId ? { replacesDraftId } : {}),
         });
-        const persisted = persistSubmitDrafts();
-        if (replacesDraftId && !persisted) {
-            // Abort queueing replacement write if the replacement link cannot be persisted across reloads
-            retainedSubmitDrafts.delete(newConsult.id);
-            activeSubmitWriteIds.delete(newConsult.id);
-            draftTokens.delete(newConsult.id);
-            throw new Error(
-                "ไม่สามารถบันทึกข้อมูลการส่งซ้ำลงในหน่วยความจำชั่วคราวได้ กรุณาลองใหม่อีกครั้งเมื่อกลับมาออนไลน์"
-            );
-        }
 
         const isStillOwned = () =>
             submitDraftGeneration === captureGeneration &&
@@ -894,7 +684,6 @@ export async function addConsult(
                 retainedSubmitDrafts.delete(newConsult.id);
                 draftTokens.delete(newConsult.id);
                 retireSupersededDraft(replacesDraftId, newConsult.id);
-                persistSubmitDrafts();
                 onBackgroundSuccess?.(newConsult);
             },
             (err) => {
@@ -907,7 +696,6 @@ export async function addConsult(
                     ...(replacesDraftId ? { replacesDraftId } : {}),
                 });
                 retireSupersededDraft(replacesDraftId, newConsult.id);
-                persistSubmitDrafts();
                 const notifiedListenerCount = failedDraftListeners.size;
                 onBackgroundError?.(err, newConsult, { notifiedListenerCount });
                 notifyFailedDraftListeners(newConsult, err);
@@ -940,6 +728,47 @@ function buildOptimisticConsult(current: Consult, updates: ConsultUpdate): Consu
     return hasDottedKeys ? null : ({ ...current, ...updates } as Consult);
 }
 
+/**
+ * Reads local persistent cache first when available to avoid redundant server reads
+ * and network stalls on offline/optimistic paths, falling back to getDoc on cache miss.
+ */
+async function readConsultSnapshotCacheFirst(docRef: DocumentReference<DocumentData>) {
+    try {
+        if (typeof getDocFromCache === "function") {
+            const cachedSnap = await getDocFromCache(docRef);
+            if (cachedSnap.exists()) {
+                return { snap: cachedSnap, fromCache: true };
+            }
+        }
+    } catch {
+        // Cache miss, unavailable, or partial test mock — fall back to server/getDoc
+    }
+    const isOnline = typeof navigator === "undefined" || navigator.onLine !== false;
+    return {
+        snap: isOnline ? await readConsultSnapshotServerOnly(docRef) : await getDoc(docRef),
+        fromCache: false,
+    };
+}
+
+/**
+ * Forces a server-authoritative read when online so Firestore does not silently serve
+ * local cache during backend unavailability.
+ */
+async function readConsultSnapshotServerOnly(docRef: DocumentReference<DocumentData>) {
+    let serverGetter: typeof getDocFromServer | undefined;
+    try {
+        if (typeof getDocFromServer === "function") {
+            serverGetter = getDocFromServer;
+        }
+    } catch {
+        // Partial test mock without getDocFromServer export — fall back to mocked getDoc
+    }
+    if (serverGetter) {
+        return serverGetter(docRef);
+    }
+    return getDoc(docRef);
+}
+
 export async function updateConsult(
     id: string,
     updater: ConsultUpdater | ConsultUpdate,
@@ -951,9 +780,12 @@ export async function updateConsult(
 
     if (typeof updater === "function") {
         if (!awaitRemote) {
-            // Optimistic Path: Return immediately after local read, then sync safely in background.
-            // Note: getDoc usually hit the local cache first, so this is fast.
-            const docSnap = await getDoc(docRef);
+            // Read local cache only when offline; when online, read from server so
+            // authoritative remote state (e.g. department completed elsewhere) is respected.
+            const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+            const docSnap = isOffline
+                ? (await readConsultSnapshotCacheFirst(docRef)).snap
+                : await readConsultSnapshotServerOnly(docRef);
             if (!docSnap.exists()) {
                 throw new Error(`Consult not found: ${id}`);
             }
@@ -1070,21 +902,31 @@ export async function transactionalUpdateConsult(
     let preApplied = false;
 
     if (!awaitRemote) {
-        // Pre-read for optimistic response (may hit local cache)
-        const preSnap = await getDoc(docRef);
-        if (preSnap.exists()) {
-            const preData = mapRawToConsult(preSnap.id, preSnap.data());
-            if (preData) {
-                const preUpdates = updater(preData);
-                if (preUpdates !== null) {
-                    preApplied = true;
-                    optimisticConsult = buildOptimisticConsult(preData, preUpdates);
-                }
+        // Pre-read from local cache first so transactional writes avoid double server reads
+        const initialRead = await readConsultSnapshotCacheFirst(docRef);
+        const evaluatePreSnap = (snap: typeof initialRead.snap) => {
+            if (!snap.exists()) return;
+            const preData = mapRawToConsult(snap.id, snap.data());
+            if (!preData) return;
+            const preUpdates = updater(preData);
+            if (preUpdates !== null) {
+                preApplied = true;
+                optimisticConsult = buildOptimisticConsult(preData, preUpdates);
             }
+        };
+
+        evaluatePreSnap(initialRead.snap);
+
+        // If cache failed the precondition while online, check authoritative server state once
+        // before short-circuiting (e.g. stale cache missing a re-consult or room change).
+        const isOnline = typeof navigator === "undefined" || navigator.onLine !== false;
+        if (!preApplied && initialRead.fromCache && isOnline) {
+            const serverSnap = await readConsultSnapshotServerOnly(docRef);
+            evaluatePreSnap(serverSnap);
         }
 
         if (!preApplied) {
-            // Local precondition failed — do not fire a doomed background write
+            // Precondition failed — do not fire a doomed background write
             return {
                 consult: null,
                 isQueued: false,
@@ -1160,13 +1002,127 @@ export async function transactionalUpdateConsult(
     };
 }
 
+const latestTransferEpochByCaseId = new Map<string, number>();
+const pendingTransferTailByCaseId = new Map<string, Promise<void>>();
+let transferEpochSeq = 0;
+
+function enqueueCaseTransfer<T>(caseId: string, task: () => Promise<T>): Promise<T> {
+    const prev = pendingTransferTailByCaseId.get(caseId) ?? Promise.resolve();
+    const run = prev.catch(() => {}).then(task);
+    const tail = run.then(
+        () => {},
+        () => {}
+    );
+    pendingTransferTailByCaseId.set(caseId, tail);
+    void tail.then(() => {
+        if (pendingTransferTailByCaseId.get(caseId) === tail) {
+            pendingTransferTailByCaseId.delete(caseId);
+        }
+    });
+    return run;
+}
+
+function isRetryableTransferError(err: unknown): boolean {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+    const code =
+        typeof err === "object" && err !== null && "code" in err
+            ? String((err as { code?: unknown }).code).toLowerCase()
+            : "";
+    if (
+        code.includes("unavailable") ||
+        code.includes("aborted") ||
+        code.includes("deadline-exceeded")
+    ) {
+        return true;
+    }
+    const msg = err instanceof Error ? err.message.toLowerCase() : "";
+    return (
+        msg.includes("offline") ||
+        msg.includes("network") ||
+        msg.includes("unavailable") ||
+        msg.includes("timeout")
+    );
+}
+
+const pendingTransferWaitReleasesByCaseId = new Map<string, Set<() => void>>();
+
+function releaseSupersededTransferWaits(caseId: string) {
+    const wakers = pendingTransferWaitReleasesByCaseId.get(caseId);
+    if (!wakers) return;
+    pendingTransferWaitReleasesByCaseId.delete(caseId);
+    wakers.forEach((wake) => wake());
+}
+
+function waitForOnlineReconnect(caseId?: string, expectedEpoch?: number): Promise<void> {
+    if (
+        caseId !== undefined &&
+        expectedEpoch !== undefined &&
+        latestTransferEpochByCaseId.get(caseId) !== expectedEpoch
+    ) {
+        return Promise.resolve();
+    }
+    if (
+        typeof window === "undefined" ||
+        typeof navigator === "undefined" ||
+        navigator.onLine !== false
+    ) {
+        return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+        let settled = false;
+        let wakers: Set<() => void> | undefined;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            window.removeEventListener("online", finish);
+            if (wakers) {
+                wakers.delete(finish);
+                if (
+                    wakers.size === 0 &&
+                    caseId !== undefined &&
+                    pendingTransferWaitReleasesByCaseId.get(caseId) === wakers
+                ) {
+                    pendingTransferWaitReleasesByCaseId.delete(caseId);
+                }
+            }
+            resolve();
+        };
+        window.addEventListener("online", finish);
+        if (caseId !== undefined && expectedEpoch !== undefined) {
+            let set = pendingTransferWaitReleasesByCaseId.get(caseId);
+            if (!set) {
+                set = new Set();
+                pendingTransferWaitReleasesByCaseId.set(caseId, set);
+            }
+            wakers = set;
+            set.add(finish);
+            if (latestTransferEpochByCaseId.get(caseId) !== expectedEpoch) {
+                finish();
+                return;
+            }
+        }
+        if (navigator.onLine !== false) {
+            finish();
+        }
+    });
+}
+
 export async function transferConsultRoom(
     id: string,
     newRoom: RoomName,
     onBackgroundError?: (error: unknown) => void
-): Promise<{ transferred: boolean; backgroundPromise: Promise<void> | null }> {
+): Promise<{
+    transferred: boolean;
+    backgroundPromise: Promise<void> | null;
+    isOfflineQueued: boolean;
+}> {
     const now = new Date().toISOString();
-    const result = await updateConsult(id, (current) => {
+    const requestEpoch = ++transferEpochSeq;
+    let ownershipClaimed = false;
+    const buildTransferPayload = (current: Consult): ConsultUpdate | null => {
+        if (ownershipClaimed && latestTransferEpochByCaseId.get(id) !== requestEpoch) {
+            return null;
+        }
         if (current.room === newRoom) return null;
 
         const pendingDeptKeys = Object.keys(current.departments).filter(
@@ -1174,6 +1130,16 @@ export async function transferConsultRoom(
         );
         
         if (pendingDeptKeys.length === 0) return null;
+
+        if (!ownershipClaimed) {
+            const currentLatest = latestTransferEpochByCaseId.get(id) ?? 0;
+            if (requestEpoch < currentLatest) {
+                return null;
+            }
+            ownershipClaimed = true;
+            latestTransferEpochByCaseId.set(id, requestEpoch);
+            releaseSupersededTransferWaits(id);
+        }
 
         const payload: ConsultUpdate = {
             room: newRoom
@@ -1186,13 +1152,142 @@ export async function transferConsultRoom(
         });
 
         return payload;
-    }, {
-        awaitRemote: false,
-        onBackgroundError,
-    });
-
-    return {
-        transferred: result.applied,
-        backgroundPromise: result.backgroundPromise,
     };
+
+    const queueOfflineTransferInSlot = async (): Promise<{
+        transferred: boolean;
+        backgroundPromise: Promise<void> | null;
+        isOfflineQueued: boolean;
+    }> => {
+        const database = requireDb();
+        const docRef = doc(database, COLLECTION_NAME, id);
+        const { snap } = await readConsultSnapshotCacheFirst(docRef);
+        if (!snap.exists()) {
+            throw new Error(`Consult not found: ${id}`);
+        }
+        const currentData = mapRawToConsult(snap.id, snap.data());
+        if (!currentData) {
+            throw new Error(`Consult not found: ${id}`);
+        }
+        if (buildTransferPayload(currentData) === null) {
+            return {
+                transferred: false,
+                backgroundPromise: null,
+                isOfflineQueued: false,
+            };
+        }
+
+        const runDeferredTransfer = async (): Promise<void> => {
+            const maxRetryAttempts = 3;
+            let retryCount = 0;
+            while (latestTransferEpochByCaseId.get(id) === requestEpoch) {
+                await waitForOnlineReconnect(id, requestEpoch);
+                if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
+                try {
+                    const txResult = await enqueueCaseTransfer(id, async () => {
+                        if (latestTransferEpochByCaseId.get(id) !== requestEpoch) {
+                            return {
+                                deferredOffline: false as const,
+                                consult: null,
+                                isQueued: false,
+                                backgroundPromise: null,
+                                applied: false,
+                            };
+                        }
+                        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+                            return { deferredOffline: true as const };
+                        }
+                        const res = await transactionalUpdateConsult(id, buildTransferPayload, {
+                            awaitRemote: true,
+                        });
+                        return { deferredOffline: false as const, ...res };
+                    });
+                    if (txResult.deferredOffline) {
+                        continue;
+                    }
+                    if (!txResult.applied && latestTransferEpochByCaseId.get(id) === requestEpoch) {
+                        onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
+                    }
+                    return;
+                } catch (err) {
+                    if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
+                    if (isRetryableTransferError(err) && retryCount < maxRetryAttempts) {
+                        retryCount += 1;
+                        if (typeof navigator !== "undefined" && navigator.onLine !== false) {
+                            await new Promise((r) => setTimeout(r, Math.min(250 * retryCount, 1000)));
+                        }
+                        continue;
+                    }
+                    console.error("Deferred offline transfer failed:", err);
+                    onBackgroundError?.(err);
+                    return;
+                }
+            }
+        };
+
+        const reconnectPromise = trackOptimisticWrite(runDeferredTransfer());
+        void reconnectPromise;
+
+        return {
+            transferred: true,
+            backgroundPromise: reconnectPromise,
+            isOfflineQueued: true,
+        };
+    };
+
+    // Serialize preflight + ownership claim together with transaction execution per case,
+    // and recheck connectivity once this transfer obtains its serialized queue slot.
+    return new Promise((resolveImmediate, rejectImmediate) => {
+        let settledImmediate = false;
+        let resolveBackground!: () => void;
+        const backgroundPromise = trackOptimisticWrite(
+            new Promise<void>((res) => {
+                resolveBackground = res;
+            })
+        );
+        void backgroundPromise;
+
+        void enqueueCaseTransfer(id, async () => {
+            try {
+                const isSlotOffline =
+                    typeof navigator !== "undefined" && navigator.onLine === false;
+                if (isSlotOffline) {
+                    const offlineResult = await queueOfflineTransferInSlot();
+                    settledImmediate = true;
+                    resolveBackground();
+                    resolveImmediate(offlineResult);
+                    return;
+                }
+
+                const result = await transactionalUpdateConsult(id, buildTransferPayload, {
+                    awaitRemote: false,
+                    onBackgroundError,
+                });
+                settledImmediate = true;
+                if (!result.applied) {
+                    resolveBackground();
+                    resolveImmediate({
+                        transferred: false,
+                        backgroundPromise: null,
+                        isOfflineQueued: false,
+                    });
+                    return;
+                }
+                resolveImmediate({
+                    transferred: true,
+                    backgroundPromise,
+                    isOfflineQueued: false,
+                });
+                if (result.backgroundPromise) {
+                    await result.backgroundPromise;
+                }
+                resolveBackground();
+            } catch (err) {
+                resolveBackground();
+                if (!settledImmediate) {
+                    rejectImmediate(err);
+                }
+            }
+        });
+    });
 }

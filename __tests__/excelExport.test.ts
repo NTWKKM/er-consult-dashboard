@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { sanitizeExcelCell, buildCompletedExportRows } from "@/lib/excelExport";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import {
+  sanitizeExcelCell,
+  buildCompletedExportRows,
+  exportCompletedRowsToExcel,
+} from "@/lib/excelExport";
 import { makeConsult, makeDepartment } from "./helpers/fixtures";
 
 describe("excelExport", () => {
@@ -43,5 +47,47 @@ describe("excelExport", () => {
     expect(rows[0].ปิดเคส).not.toContain("Ortho:");
     expect(rows[0].ยกเลิก).toContain("Ortho:");
     expect(rows[0].ยกเลิก).not.toContain("Gen Sx:");
+  });
+
+  describe("exportCompletedRowsToExcel cancellation", () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+
+    afterEach(() => {
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+      vi.restoreAllMocks();
+    });
+
+    it("does not trigger file download when aborted before starting or during workbook generation", async () => {
+      const createObjectUrlMock = vi.fn(() => "blob:mock-url");
+      const revokeObjectUrlMock = vi.fn();
+      URL.createObjectURL = createObjectUrlMock;
+      URL.revokeObjectURL = revokeObjectUrlMock;
+
+      const controller = new AbortController();
+      controller.abort();
+      await exportCompletedRowsToExcel([], "aborted-early.xlsx", {
+        signal: controller.signal,
+      });
+      expect(createObjectUrlMock).not.toHaveBeenCalled();
+
+      let checkCount = 0;
+      const sampleRows = buildCompletedExportRows([
+        makeConsult({ status: "completed" }),
+      ]);
+      await exportCompletedRowsToExcel(
+        sampleRows,
+        "aborted-midway.xlsx",
+        {
+          // Aborts after ExcelJS finishes generating buffer, before Blob download
+          shouldAbort: () => {
+            checkCount += 1;
+            return checkCount >= 3;
+          },
+        }
+      );
+      expect(createObjectUrlMock).not.toHaveBeenCalled();
+    });
   });
 });

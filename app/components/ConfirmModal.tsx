@@ -3,6 +3,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useId, useCallback } from "react";
 import { createPortal } from "react-dom";
 
+// Track stacked ConfirmModals so only the topmost open dialog intercepts Tab / Escape.
+const openDialogStack: HTMLElement[] = [];
+
 interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
@@ -73,6 +76,11 @@ export default function ConfirmModal({
     // Focus the cancel button immediately by default (safer UX for destructive actions)
     cancelRef.current?.focus();
 
+    const dialogEl = dialogRef.current;
+    if (dialogEl) {
+      openDialogStack.push(dialogEl);
+    }
+
     // Mark stable app shell (or surrounding sibling containers in isolated tests) inert
     // so existing and newly added background controls remain non-interactive while open.
     const inertApplied: HTMLElement[] = [];
@@ -98,6 +106,12 @@ export default function ConfirmModal({
     }
 
     return () => {
+      if (dialogEl) {
+        const idx = openDialogStack.lastIndexOf(dialogEl);
+        if (idx !== -1) {
+          openDialogStack.splice(idx, 1);
+        }
+      }
       inertApplied.forEach((el) => el.removeAttribute("inert"));
     };
   }, [isOpen]);
@@ -120,6 +134,13 @@ export default function ConfirmModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
+      if (
+        dialogRef.current &&
+        openDialogStack.length > 0 &&
+        openDialogStack[openDialogStack.length - 1] !== dialogRef.current
+      ) {
+        return;
+      }
       if (e.key === "Escape") {
         onCancel();
         return;

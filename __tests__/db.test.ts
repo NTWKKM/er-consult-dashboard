@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock firebase modules BEFORE importing lib/db
@@ -7,6 +7,8 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 // ---------------------------------------------------------------------------
 const {
   mockGetDoc,
+  mockGetDocFromCache,
+  mockGetDocFromServer,
   mockUpdateDoc,
   mockDeleteDoc,
   mockGetDocs,
@@ -20,8 +22,11 @@ const {
   mockOrderBy,
   mockLimit,
   mockStartAfter,
+  mockArrayUnion,
 } = vi.hoisted(() => ({
   mockGetDoc: vi.fn(),
+  mockGetDocFromCache: vi.fn(),
+  mockGetDocFromServer: vi.fn(),
   mockUpdateDoc: vi.fn(),
   mockDeleteDoc: vi.fn(),
   mockGetDocs: vi.fn(),
@@ -35,6 +40,7 @@ const {
   mockOrderBy: vi.fn(() => ({ type: "orderBy" })),
   mockLimit: vi.fn((n?: number) => ({ type: "limit", n })),
   mockStartAfter: vi.fn(() => ({ type: "startAfter" })),
+  mockArrayUnion: vi.fn((...elements: unknown[]) => ({ type: "arrayUnion", elements })),
 }));
 
 vi.mock("@/lib/firebase", () => ({ db: {} }));
@@ -44,6 +50,8 @@ vi.mock("firebase/firestore", () => ({
   doc: mockDoc,
   setDoc: mockSetDoc,
   getDoc: mockGetDoc,
+  getDocFromCache: mockGetDocFromCache,
+  getDocFromServer: mockGetDocFromServer,
   updateDoc: mockUpdateDoc,
   deleteDoc: mockDeleteDoc,
   getDocs: mockGetDocs,
@@ -54,6 +62,7 @@ vi.mock("firebase/firestore", () => ({
   orderBy: mockOrderBy,
   limit: mockLimit,
   startAfter: mockStartAfter,
+  arrayUnion: mockArrayUnion,
 }));
 
 // ---------------------------------------------------------------------------
@@ -69,6 +78,7 @@ import {
   MAX_HN_SEARCH_RESULTS,
   updateConsult,
   transactionalUpdateConsult,
+  transferConsultRoom,
   fetchCompletedConsultsPage,
   searchCompletedConsults,
   fetchAllCompletedConsultsForExport,
@@ -107,6 +117,11 @@ function makeQuerySnapshot(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetDoc.mockReset();
+  mockGetDocFromCache.mockReset();
+  mockGetDocFromCache.mockRejectedValue(new Error("cache miss"));
+  mockGetDocFromServer.mockReset();
+  mockGetDocFromServer.mockImplementation((...args: unknown[]) => mockGetDoc(...args));
 });
 
 // ===========================================================================
@@ -929,7 +944,7 @@ describe("addConsult optimistic draft retention", () => {
     expect(getLatestFailedSubmitDraft()).toBeNull();
   });
 
-  it("persists pending and failed drafts in sessionStorage across simulated page reloads", async () => {
+  it("never persists PHI to sessionStorage and retains drafts in memory only for the active session", async () => {
     window.sessionStorage.clear();
     let resolveOriginalWrite!: () => void;
     mockSetDoc.mockReturnValueOnce(
@@ -944,7 +959,7 @@ describe("addConsult optimistic draft retention", () => {
         firstName: "Reload",
         lastName: "Patient",
         room: "NT",
-        problem: "Reload test",
+        problem: "In-memory only test",
         isUrgent: false,
         status: "pending",
         departments: { "Gen Sx": { status: "pending", completedAt: null } },
@@ -952,231 +967,16 @@ describe("addConsult optimistic draft retention", () => {
       { awaitRemote: false }
     );
 
-    // Simulate page reload by resetting module cache and re-importing lib/db
-    vi.resetModules();
-    const reloadedDb = await import("@/lib/db");
-    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
+    expect(window.sessionStorage.getItem("er_consult_submit_drafts_v1")).toBeNull();
+    expect(getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
 
-    // Reconcile orphaned pending draft when server confirms doc does not exist -> promoted to failed
-    mockGetDoc.mockResolvedValueOnce({
-      ...makeDocSnapshot(pendingConsult.id, null, false),
-      metadata: { fromCache: false, hasPendingWrites: false },
-    });
-    const recovered = await reloadedDb.reconcileReloadedSubmitDrafts();
-    expect(recovered?.id).toBe(pendingConsult.id);
-    expect(recovered?.hn).toBe("998877");
-    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("failed");
-
-    // Settle the original module's pending write so pendingOptimisticWrites is clean for subsequent tests
     resolveOriginalWrite();
     await Promise.resolve();
     await Promise.resolve();
-
-    // If reconciled when doc is already committed on server, draft is cleared cleanly
-    window.sessionStorage.clear();
-    vi.resetModules();
-    const freshDb = await import("@/lib/db");
-    let resolveFreshWrite!: () => void;
-    mockSetDoc.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        resolveFreshWrite = resolve;
-      })
-    );
-    const syncedConsult = await freshDb.addConsult(
-      {
-        hn: "776655",
-        firstName: "Synced",
-        lastName: "Patient",
-        room: "Urgent",
-        problem: "Already synced",
-        isUrgent: false,
-        status: "pending",
-        departments: { Ortho: { status: "pending", completedAt: null } },
-      },
-      { awaitRemote: false }
-    );
-
-    vi.resetModules();
-    const afterReloadDb = await import("@/lib/db");
-    mockGetDoc.mockResolvedValueOnce({
-      ...makeDocSnapshot(syncedConsult.id, { ...syncedConsult }, true),
-      metadata: { hasPendingWrites: false },
-    });
-    const afterReconcile = await afterReloadDb.reconcileReloadedSubmitDrafts();
-    expect(afterReconcile).toBeNull();
-    expect(afterReloadDb.getRetainedSubmitDraft(syncedConsult.id)).toBeUndefined();
-
-    resolveFreshWrite();
-    await Promise.resolve();
-    await Promise.resolve();
-    window.sessionStorage.clear();
-  });
-
-  it("monitors reloaded pending drafts after reload and surfaces failure when a pending write is later rejected", async () => {
-    window.sessionStorage.clear();
-    let resolvePendingWrite!: () => void;
-    mockSetDoc.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        resolvePendingWrite = resolve;
-      })
-    );
-
-    const pendingConsult = await addConsult(
-      {
-        hn: "554433",
-        firstName: "Offline",
-        lastName: "Reload",
-        room: "Resus Team 1",
-        problem: "Chest pain",
-        isUrgent: true,
-        status: "pending",
-        departments: { "Gen Sx": { status: "pending", completedAt: null } },
-      },
-      { awaitRemote: false }
-    );
-
-    // Simulate reload while write is still queued in persistentLocalCache
-    vi.resetModules();
-    const reloadedDb = await import("@/lib/db");
-
-    const unsubMock = vi.fn();
-    let snapshotNext!: (snap: { exists: () => boolean; metadata?: { hasPendingWrites?: boolean } }) => void;
-    let snapshotError!: (err: unknown) => void;
-    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext, onErr) => {
-      snapshotNext = onNext;
-      snapshotError = onErr;
-      return unsubMock;
-    });
-
-    const onFailed = vi.fn();
-    const stopMonitoring = reloadedDb.monitorReloadedPendingSubmitDrafts(onFailed);
-    expect(mockOnSnapshot).toHaveBeenCalledTimes(1);
-
-    // Initial cache snapshot shows hasPendingWrites: true -> stays pending
-    snapshotNext({ exists: () => true, metadata: { hasPendingWrites: true } });
-    expect(onFailed).not.toHaveBeenCalled();
-    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
-
-    // Server later rejects the queued write -> transitions to failed, notifies caller, remains retryable
-    const rulesErr = new Error("permission-denied");
-    snapshotError(rulesErr);
-
-    expect(onFailed).toHaveBeenCalledWith(
-      expect.objectContaining({ id: pendingConsult.id, hn: "554433" }),
-      rulesErr
-    );
-    expect(unsubMock).toHaveBeenCalledTimes(1);
-    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("failed");
-    expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(pendingConsult.id);
-
-    // Also verify rollback snapshot (!exists && !hasPendingWrites) marks draft failed
-    stopMonitoring();
-    window.sessionStorage.clear();
-    vi.resetModules();
-    const reloadedDb2 = await import("@/lib/db");
-    let resolveWrite2!: () => void;
-    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite2 = resolve; }));
-    const rollbackConsult = await reloadedDb2.addConsult(
-      {
-        hn: "665544",
-        firstName: "Rollback",
-        lastName: "Case",
-        room: "NT",
-        problem: "Sync rollback",
-        isUrgent: false,
-        status: "pending",
-        departments: { Ortho: { status: "pending", completedAt: null } },
-      },
-      { awaitRemote: false }
-    );
-
-    vi.resetModules();
-    const afterReload2 = await import("@/lib/db");
-    const unsubMock2 = vi.fn();
-    let snapshotNext2!: (snap: {
-      exists: () => boolean;
-      metadata?: { fromCache?: boolean; hasPendingWrites?: boolean };
-    }) => void;
-    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
-      snapshotNext2 = onNext;
-      return unsubMock2;
-    });
-
-    const onFailed2 = vi.fn();
-    afterReload2.monitorReloadedPendingSubmitDrafts(onFailed2);
-    snapshotNext2({ exists: () => true, metadata: { hasPendingWrites: true } });
-    expect(onFailed2).not.toHaveBeenCalled();
-
-    snapshotNext2({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } });
-    expect(onFailed2).toHaveBeenCalledWith(
-      expect.objectContaining({ id: rollbackConsult.id, hn: "665544" }),
-      undefined
-    );
-    expect(afterReload2.getLatestFailedSubmitDraft()?.id).toBe(rollbackConsult.id);
-
-    resolvePendingWrite();
-    resolveWrite2();
-    await Promise.resolve();
-    await Promise.resolve();
-    window.sessionStorage.clear();
-  });
-
-  it("leaves draft pending on cold-cache miss and clears without failing when server-existing snapshot arrives", async () => {
-    window.sessionStorage.clear();
-    let resolveWrite!: () => void;
-    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite = resolve; }));
-
-    const coldConsult = await addConsult(
-      {
-        hn: "112233",
-        firstName: "Cold",
-        lastName: "Cache",
-        room: "Urgent",
-        problem: "Cold cache reload",
-        isUrgent: false,
-        status: "pending",
-        departments: { "Gen Sx": { status: "pending", completedAt: null } },
-      },
-      { awaitRemote: false }
-    );
-
-    vi.resetModules();
-    const reloadedDb = await import("@/lib/db");
-    const unsubMock = vi.fn();
-    let snapshotNext!: (snap: {
-      exists: () => boolean;
-      metadata?: { fromCache?: boolean; hasPendingWrites?: boolean };
-    }) => void;
-    mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
-      snapshotNext = onNext;
-      return unsubMock;
-    });
-
-    const onFailed = vi.fn();
-    reloadedDb.monitorReloadedPendingSubmitDrafts(onFailed);
-
-    // Cold-cache miss (fromCache: true, hasPendingWrites: false) must NOT fail or unsubscribe
-    snapshotNext({ exists: () => false, metadata: { fromCache: true, hasPendingWrites: false } });
-    expect(onFailed).not.toHaveBeenCalled();
-    expect(unsubMock).not.toHaveBeenCalled();
-    expect(reloadedDb.getRetainedSubmitDraft(coldConsult.id)?.status).toBe("pending");
-    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
-
-    // Server later confirms document exists -> clears draft without failing or retrying
-    snapshotNext({ exists: () => true, metadata: { fromCache: false, hasPendingWrites: false } });
-    expect(onFailed).not.toHaveBeenCalled();
-    expect(unsubMock).toHaveBeenCalledTimes(1);
-    expect(reloadedDb.getRetainedSubmitDraft(coldConsult.id)).toBeUndefined();
-    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
-
-    resolveWrite();
-    await Promise.resolve();
-    await Promise.resolve();
-    window.sessionStorage.clear();
+    expect(getRetainedSubmitDraft(pendingConsult.id)).toBeUndefined();
   });
 
   it("invalidates outstanding producers when clearRetainedSubmitDraft clears drafts", async () => {
-    window.sessionStorage.clear();
     let rejectWrite!: (err: unknown) => void;
     mockSetDoc.mockReturnValueOnce(
       new Promise<void>((_resolve, reject) => {
@@ -1216,80 +1016,9 @@ describe("addConsult optimistic draft retention", () => {
     expect(onBackgroundError).not.toHaveBeenCalled();
     expect(listenerSpy).not.toHaveBeenCalled();
     unsubListener();
-
-    // Also verify reconcileReloadedSubmitDrafts ignores result after clearRetainedSubmitDraft()
-    window.sessionStorage.setItem(
-      "er_consult_submit_drafts_v1",
-      JSON.stringify([{ consult, status: "pending" }])
-    );
-    vi.resetModules();
-    const reloadedDb = await import("@/lib/db");
-    let resolveGetDoc!: (snap: unknown) => void;
-    mockGetDoc.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveGetDoc = resolve;
-      })
-    );
-
-    const reconcilePromise = reloadedDb.reconcileReloadedSubmitDrafts();
-    reloadedDb.clearRetainedSubmitDraft();
-    resolveGetDoc({
-      ...makeDocSnapshot(consult.id, null, false),
-      metadata: { fromCache: false, hasPendingWrites: false },
-    });
-
-    const reconciled = await reconcilePromise;
-    expect(reconciled).toBeNull();
-    expect(reloadedDb.getRetainedSubmitDraft(consult.id)).toBeUndefined();
-    window.sessionStorage.clear();
   });
 
-  it("keeps draft pending when reconcile getDoc rejects with unavailable and clears on subsequent server-confirmed read", async () => {
-    window.sessionStorage.clear();
-    let resolveWrite!: () => void;
-    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveWrite = resolve; }));
-
-    const pendingConsult = await addConsult(
-      {
-        hn: "334455",
-        firstName: "Offline",
-        lastName: "Unavailable",
-        room: "NT",
-        problem: "Unavailable read test",
-        isUrgent: false,
-        status: "pending",
-        departments: { "Gen Sx": { status: "pending", completedAt: null } },
-      },
-      { awaitRemote: false }
-    );
-
-    vi.resetModules();
-    const reloadedDb = await import("@/lib/db");
-
-    // Offline read rejects with unavailable -> must stay pending, not failed
-    mockGetDoc.mockRejectedValueOnce(Object.assign(new Error("Client is offline"), { code: "unavailable" }));
-    const firstReconcile = await reloadedDb.reconcileReloadedSubmitDrafts();
-    expect(firstReconcile).toBeNull();
-    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)?.status).toBe("pending");
-    expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
-
-    // Follow-up read confirms document exists on server -> clears draft cleanly
-    mockGetDoc.mockResolvedValueOnce({
-      ...makeDocSnapshot(pendingConsult.id, { ...pendingConsult }, true),
-      metadata: { fromCache: false, hasPendingWrites: false },
-    });
-    const secondReconcile = await reloadedDb.reconcileReloadedSubmitDrafts();
-    expect(secondReconcile).toBeNull();
-    expect(reloadedDb.getRetainedSubmitDraft(pendingConsult.id)).toBeUndefined();
-
-    resolveWrite();
-    await Promise.resolve();
-    await Promise.resolve();
-    window.sessionStorage.clear();
-  });
-
-  it("persists replacesDraftId across reload and retires superseded failed draft when replacement commits or fails", async () => {
-    window.sessionStorage.clear();
+  it("retires superseded failed draft A in memory when replacement B commits or fails", async () => {
     let rejectFirst!: (err: unknown) => void;
     mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-a" } as never);
     mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
@@ -1313,7 +1042,7 @@ describe("addConsult optimistic draft retention", () => {
     expect(draftA.id).toBe("draft-a");
     expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
 
-    // Retry offline as draft B replacing draft A, then reload before B settles
+    // Retry offline as draft B replacing draft A
     let resolveB!: () => void;
     mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-b" } as never);
     mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveB = resolve; }));
@@ -1332,160 +1061,18 @@ describe("addConsult optimistic draft retention", () => {
     );
     expect(draftB.id).toBe("draft-b");
 
-    try {
-      // A stays retained while B is pending, but is hidden behind pending replacement B
-      expect(getRetainedSubmitDraft(draftA.id)?.status).toBe("failed");
-      expect(getRetainedSubmitDraft(draftB.id)?.replacesDraftId).toBe(draftA.id);
-      expect(getLatestFailedSubmitDraft()).toBeNull();
+    // A stays hidden behind pending replacement B
+    expect(getRetainedSubmitDraft(draftA.id)?.status).toBe("failed");
+    expect(getRetainedSubmitDraft(draftB.id)?.replacesDraftId).toBe(draftA.id);
+    expect(getLatestFailedSubmitDraft()).toBeNull();
 
-      // Simulate reload while B is still pending -> monitor sees B fail -> retires A, retains B
-      vi.resetModules();
-      const reloadedDb = await import("@/lib/db");
-      let snapshotNext!: (snap: { exists: () => boolean; metadata?: { fromCache?: boolean; hasPendingWrites?: boolean } }) => void;
-      mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
-        snapshotNext = onNext;
-        return vi.fn();
-      });
-
-      reloadedDb.monitorReloadedPendingSubmitDrafts();
-      snapshotNext({ exists: () => false, metadata: { fromCache: false, hasPendingWrites: false } });
-
-      expect(reloadedDb.getRetainedSubmitDraft(draftA.id)).toBeUndefined();
-      expect(reloadedDb.getRetainedSubmitDraft(draftB.id)?.status).toBe("failed");
-      expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(draftB.id);
-    } finally {
-      resolveB();
-      await Promise.resolve();
-      await Promise.resolve();
-      window.sessionStorage.clear();
-    }
-  });
-
-  it("retires superseded failed draft A when replacement B commits successfully after reload", async () => {
-    window.sessionStorage.clear();
-    let rejectFirst!: (err: unknown) => void;
-    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-commit-a" } as never);
-    mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
-
-    const draftA = await addConsult(
-      {
-        hn: "232323",
-        firstName: "Commit",
-        lastName: "First",
-        room: "NT",
-        problem: "Draft A before commit",
-        isUrgent: false,
-        status: "pending",
-        departments: { "Gen Sx": { status: "pending", completedAt: null } },
-      },
-      { awaitRemote: false }
-    );
-    rejectFirst(new Error("offline-1"));
+    // B commits -> retires A and clears B
+    resolveB();
     await Promise.resolve();
     await Promise.resolve();
-    expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
-
-    let resolveB!: () => void;
-    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-commit-b" } as never);
-    mockSetDoc.mockReturnValueOnce(new Promise<void>((resolve) => { resolveB = resolve; }));
-    const draftB = await addConsult(
-      {
-        hn: "232323",
-        firstName: "Commit",
-        lastName: "Second",
-        room: "NT",
-        problem: "Draft B replacement",
-        isUrgent: false,
-        status: "pending",
-        departments: { "Gen Sx": { status: "pending", completedAt: null } },
-      },
-      { awaitRemote: false, replacesDraftId: draftA.id }
-    );
-
-    try {
-      // Simulate reload while B is still pending -> monitor sees server commit for B -> retires A and clears B
-      vi.resetModules();
-      const reloadedDb = await import("@/lib/db");
-      let snapshotNext!: (snap: { exists: () => boolean; metadata?: { fromCache?: boolean; hasPendingWrites?: boolean } }) => void;
-      mockOnSnapshot.mockImplementationOnce((_ref, _opts, onNext) => {
-        snapshotNext = onNext;
-        return vi.fn();
-      });
-
-      reloadedDb.monitorReloadedPendingSubmitDrafts();
-      snapshotNext({ exists: () => true, metadata: { fromCache: false, hasPendingWrites: false } });
-
-      expect(reloadedDb.getRetainedSubmitDraft(draftA.id)).toBeUndefined();
-      expect(reloadedDb.getRetainedSubmitDraft(draftB.id)).toBeUndefined();
-      expect(reloadedDb.getLatestFailedSubmitDraft()).toBeNull();
-    } finally {
-      resolveB();
-      await Promise.resolve();
-      await Promise.resolve();
-      window.sessionStorage.clear();
-    }
-  });
-
-  it("prevents replacement retry B from being queued when sessionStorage fails so A cannot duplicate after reload", async () => {
-    window.sessionStorage.clear();
-    let rejectFirst!: (err: unknown) => void;
-    mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-quota-a" } as never);
-    mockSetDoc.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }));
-
-    const draftA = await addConsult(
-      {
-        hn: "454545",
-        firstName: "Quota",
-        lastName: "First",
-        room: "Urgent",
-        problem: "Draft A",
-        isUrgent: false,
-        status: "pending",
-        departments: { Ortho: { status: "pending", completedAt: null } },
-      },
-      { awaitRemote: false }
-    );
-    rejectFirst(new Error("offline-1"));
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
-
-    const setDocCallsBeforeRetry = mockSetDoc.mock.calls.length;
-    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("QuotaExceededError", "QuotaExceededError");
-    });
-
-    try {
-      mockDoc.mockReturnValueOnce({ type: "docRef", id: "draft-quota-b" } as never);
-      await expect(
-        addConsult(
-          {
-            hn: "454545",
-            firstName: "Quota",
-            lastName: "Retry",
-            room: "Urgent",
-            problem: "Draft B blocked",
-            isUrgent: false,
-            status: "pending",
-            departments: { Ortho: { status: "pending", completedAt: null } },
-          },
-          { awaitRemote: false, replacesDraftId: draftA.id }
-        )
-      ).rejects.toThrow();
-
-      // Replacement B must not have been queued in Firestore or retained in memory
-      expect(mockSetDoc).toHaveBeenCalledTimes(setDocCallsBeforeRetry);
-      expect(getRetainedSubmitDraft("draft-quota-b")).toBeUndefined();
-      expect(getRetainedSubmitDraft(draftA.id)?.status).toBe("failed");
-
-      // Reload still retains only draft A with no hidden pending B
-      vi.resetModules();
-      const reloadedDb = await import("@/lib/db");
-      expect(reloadedDb.getLatestFailedSubmitDraft()?.id).toBe(draftA.id);
-    } finally {
-      setItemSpy.mockRestore();
-      window.sessionStorage.clear();
-    }
+    expect(getRetainedSubmitDraft(draftA.id)).toBeUndefined();
+    expect(getRetainedSubmitDraft(draftB.id)).toBeUndefined();
+    expect(getLatestFailedSubmitDraft()).toBeNull();
   });
 });
 
@@ -2120,5 +1707,947 @@ describe("fetchCompletedConsultsPage", () => {
     expect(res.hasMore).toBe(false);
 
     consoleErrorSpy.mockRestore();
+  });
+});
+
+// ===========================================================================
+// Offline/cache vs authoritative server checks (CodeRabbit PR #15 fixes)
+// ===========================================================================
+describe("online authoritative revalidation & offline transfer reconciliation", () => {
+  const originalOnLineDescriptor = Object.getOwnPropertyDescriptor(Navigator.prototype, "onLine");
+
+  const setNavigatorOnLine = (value: boolean) => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      get: () => value,
+    });
+  };
+
+  afterEach(() => {
+    delete (window.navigator as { onLine?: boolean }).onLine;
+    if (originalOnLineDescriptor) {
+      Object.defineProperty(Navigator.prototype, "onLine", originalOnLineDescriptor);
+    }
+  });
+
+  const baseConsult = (overrides: Record<string, unknown> = {}) => ({
+    hn: "123456",
+    firstName: "Somchai",
+    lastName: "Jaidee",
+    room: "NT",
+    problem: "Abdominal pain",
+    createdAt: "2024-01-10T08:00:00.000Z",
+    status: "pending",
+    isUrgent: false,
+    departments: {
+      "Gen Sx": { status: "pending", completedAt: null },
+    },
+    ...overrides,
+  });
+
+  it("updateConsult({ awaitRemote: false }) reads authoritative getDoc when online and skips stale cache", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot("c-online", baseConsult())
+    );
+    mockGetDoc.mockResolvedValueOnce(
+      makeDocSnapshot(
+        "c-online",
+        baseConsult({
+          status: "completed",
+          departments: {
+            "Gen Sx": { status: "completed", completedAt: "2024-01-10T09:00:00.000Z" },
+          },
+        })
+      )
+    );
+
+    const res = await updateConsult(
+      "c-online",
+      (current) => {
+        if (current.departments["Gen Sx"]?.status !== "pending") return null;
+        return { "departments.Gen Sx.admittedAt": "2024-01-10T10:00:00.000Z" };
+      },
+      { awaitRemote: false }
+    );
+
+    expect(mockGetDoc).toHaveBeenCalledTimes(1);
+    expect(mockGetDocFromCache).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(res.applied).toBe(false);
+  });
+
+  it("updateConsult({ awaitRemote: false }) reads local cache when offline", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValueOnce(makeDocSnapshot("c-offline", baseConsult()));
+    mockUpdateDoc.mockResolvedValueOnce(undefined);
+
+    const res = await updateConsult(
+      "c-offline",
+      (current) => ({
+        "departments.Gen Sx.admittedAt":
+          current.departments["Gen Sx"]?.status === "pending" ? "2024-01-10T10:00:00.000Z" : null,
+      }),
+      { awaitRemote: false }
+    );
+
+    expect(mockGetDocFromCache).toHaveBeenCalledTimes(1);
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    expect(res.applied).toBe(true);
+    expect(res.isQueued).toBe(true);
+  });
+
+  it("transactionalUpdateConsult({ awaitRemote: false }) falls back to server getDoc when cache fails precondition online", async () => {
+    setNavigatorOnLine(true);
+    // Stale cache shows case already moved to SSW; server actually shows it still in NT
+    mockGetDocFromCache.mockResolvedValueOnce(
+      makeDocSnapshot("c-stale", baseConsult({ room: "SSW" }))
+    );
+    mockGetDocFromServer.mockResolvedValueOnce(
+      makeDocSnapshot("c-stale", baseConsult({ room: "NT" }))
+    );
+    mockRunTransaction.mockImplementation(async (_db, fn) =>
+      fn({
+        get: vi.fn().mockResolvedValue(makeDocSnapshot("c-stale", baseConsult({ room: "NT" }))),
+        update: vi.fn(),
+      })
+    );
+
+    const res = await transactionalUpdateConsult(
+      "c-stale",
+      (current) => (current.room === "SSW" ? null : { room: "SSW" }),
+      { awaitRemote: false }
+    );
+
+    expect(mockGetDocFromCache).toHaveBeenCalledTimes(1);
+    expect(mockGetDocFromServer).toHaveBeenCalledTimes(1);
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    expect(res.applied).toBe(true);
+    await res.backgroundPromise;
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("transactionalUpdateConsult({ awaitRemote: false }) uses server-only read on cache miss when online", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockRejectedValueOnce(new Error("cache miss"));
+    mockGetDocFromServer.mockRejectedValueOnce(new Error("client is offline"));
+
+    await expect(
+      transactionalUpdateConsult(
+        "c-miss-srv",
+        () => ({ room: "SSW" }),
+        { awaitRemote: false }
+      )
+    ).rejects.toThrow(/offline/);
+
+    expect(mockGetDocFromCache).toHaveBeenCalledTimes(1);
+    expect(mockGetDocFromServer).toHaveBeenCalledTimes(1);
+    expect(mockGetDoc).not.toHaveBeenCalled();
+  });
+
+  it("transferConsultRoom queues transfer intent offline without stale updateDoc and commits transactionally on reconnect", async () => {
+    setNavigatorOnLine(false);
+    // While offline, only Gen Sx is cached as pending; Ortho was completed locally
+    mockGetDocFromCache.mockResolvedValueOnce(
+      makeDocSnapshot(
+        "c-xfer",
+        baseConsult({
+          room: "NT",
+          departments: {
+            "Gen Sx": { status: "pending", completedAt: null },
+            Ortho: { status: "completed", completedAt: "2024-01-10T08:30:00.000Z" },
+          },
+        })
+      )
+    );
+
+    const transactionUpdateSpy = vi.fn();
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      // On reconnect, Ortho was re-consulted remotely so both Gen Sx and Ortho are pending on server
+      const latestServerDoc = makeDocSnapshot(
+        "c-xfer",
+        baseConsult({
+          room: "NT",
+          departments: {
+            "Gen Sx": { status: "pending", completedAt: null },
+            Ortho: { status: "pending", completedAt: null },
+          },
+        })
+      );
+      return fn({
+        get: vi.fn().mockResolvedValue(latestServerDoc),
+        update: transactionUpdateSpy,
+      });
+    });
+
+    const onBackgroundError = vi.fn();
+    const res = await transferConsultRoom("c-xfer", "SSW", onBackgroundError);
+    expect(res.transferred).toBe(true);
+    expect(res.isOfflineQueued).toBe(true);
+    expect(res.backgroundPromise).not.toBeNull();
+    // Offline path must NOT issue a blind fixed-payload updateDoc or runTransaction while still offline
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+
+    // Simulate network reconnection -> online listener fires deferred transaction
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await res.backgroundPromise;
+
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+    expect(transactionUpdateSpy).toHaveBeenCalledTimes(1);
+    const txPayload = transactionUpdateSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(txPayload.room).toBe("SSW");
+    expect(txPayload["departments.Gen Sx.transfers"]).toBeDefined();
+    expect(txPayload["departments.Ortho.transfers"]).toBeDefined();
+    expect(onBackgroundError).not.toHaveBeenCalled();
+  });
+
+  it("transferConsultRoom aborts deferred offline transfer cleanly on reconnect if all departments completed remotely", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValueOnce(
+      makeDocSnapshot(
+        "c-xfer-done",
+        baseConsult({
+          room: "NT",
+          departments: {
+            "Gen Sx": { status: "pending", completedAt: null },
+          },
+        })
+      )
+    );
+
+    const transactionUpdateSpy = vi.fn();
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      // By the time reconnect happens, another client already completed Gen Sx
+      const completedDoc = makeDocSnapshot(
+        "c-xfer-done",
+        baseConsult({
+          room: "NT",
+          status: "completed",
+          departments: {
+            "Gen Sx": { status: "completed", completedAt: "2024-01-10T09:00:00.000Z" },
+          },
+        })
+      );
+      return fn({
+        get: vi.fn().mockResolvedValue(completedDoc),
+        update: transactionUpdateSpy,
+      });
+    });
+
+    const onBackgroundError = vi.fn();
+    const res = await transferConsultRoom("c-xfer-done", "SSW", onBackgroundError);
+    expect(res.isOfflineQueued).toBe(true);
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await res.backgroundPromise;
+
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+    expect(transactionUpdateSpy).not.toHaveBeenCalled();
+    expect(onBackgroundError).toHaveBeenCalledTimes(1);
+    expect((onBackgroundError.mock.calls[0][0] as Error).message).toBe(
+      "TRANSACTION_CONDITION_NOT_MET"
+    );
+  });
+
+  it("updateConsult({ awaitRemote: false }) rejects without queuing when server is unreachable despite online flag", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockResolvedValue(makeDocSnapshot("c-srv-fail", baseConsult()));
+    mockGetDocFromServer.mockRejectedValueOnce(new Error("Failed to get document because the client is offline"));
+
+    await expect(
+      updateConsult(
+        "c-srv-fail",
+        () => ({ "departments.Gen Sx.admittedAt": "2024-01-10T10:00:00.000Z" }),
+        { awaitRemote: false }
+      )
+    ).rejects.toThrow(/offline/);
+
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it("transferConsultRoom supersedes an earlier offline transfer when a newer transfer is queued for the same case", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-supersede",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    mockRunTransaction.mockImplementation(async (_db, fn) =>
+      fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-supersede",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      })
+    );
+
+    const first = await transferConsultRoom("c-supersede", "SSW");
+    const second = await transferConsultRoom("c-supersede", "Urgent");
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await Promise.all([first.backgroundPromise, second.backgroundPromise]);
+
+    expect(committedRooms).toEqual(["Urgent"]);
+  });
+
+  it("transferConsultRoom preserves queued transfer epoch when a replacement request fails preflight", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-keep-epoch",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    mockRunTransaction.mockImplementation(async (_db, fn) =>
+      fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-keep-epoch",
+            baseConsult({
+              room: "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      })
+    );
+
+    const queued = await transferConsultRoom("c-keep-epoch", "SSW");
+    expect(queued.transferred).toBe(true);
+
+    // Replacement fails preflight (same room as current "NT") -> must NOT steal epoch from queued "SSW" transfer
+    const failedReplacement = await transferConsultRoom("c-keep-epoch", "NT");
+    expect(failedReplacement.transferred).toBe(false);
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await queued.backgroundPromise;
+
+    expect(committedRooms).toEqual(["SSW"]);
+  });
+
+  it("transferConsultRoom aborts superseded transaction inside buildTransferPayload when a newer valid transfer takes ownership mid-flight", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-midflight",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    let releaseFirstTxGet!: () => void;
+    let firstTxStarted!: () => void;
+    const firstTxStartedPromise = new Promise<void>((resolve) => {
+      firstTxStarted = resolve;
+    });
+
+    let txCount = 0;
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      const idx = ++txCount;
+      if (idx === 1) {
+        firstTxStarted();
+        await new Promise<void>((resolve) => {
+          releaseFirstTxGet = resolve;
+        });
+      }
+      return fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-midflight",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      });
+    });
+
+    const onFirstErr = vi.fn();
+    const first = await transferConsultRoom("c-midflight", "SSW", onFirstErr);
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await firstTxStartedPromise;
+
+    // Second transfer starts while first transaction is mid-flight -> waits until first settles before claiming ownership
+    const secondPromise = transferConsultRoom("c-midflight", "Urgent");
+
+    // Unblock first transaction -> completes as owner, then second takes ownership and commits Urgent last
+    releaseFirstTxGet();
+    const second = await secondPromise;
+    await Promise.all([first.backgroundPromise, second.backgroundPromise]);
+
+    expect(committedRooms).toEqual(["SSW", "Urgent"]);
+    expect(onFirstErr).not.toHaveBeenCalled();
+  });
+
+  it("transferConsultRoom serializes ownership claim with delayed commits, preserving milestones and handling newer transfer failure", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-serial",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedWrites: Array<Record<string, unknown>> = [];
+    let firstStaged!: () => void;
+    const firstStagedPromise = new Promise<void>((resolve) => {
+      firstStaged = resolve;
+    });
+    let releaseFirstCommit!: () => void;
+    const releaseFirstCommitPromise = new Promise<void>((resolve) => {
+      releaseFirstCommit = resolve;
+    });
+
+    let txCount = 0;
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      const idx = ++txCount;
+      let stagedPayload: Record<string, unknown> | null = null;
+      const result = await fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-serial",
+            baseConsult({
+              room: (committedWrites.at(-1)?.room as string) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          stagedPayload = payload;
+          if (idx === 1) {
+            firstStaged();
+          }
+        },
+      });
+      if (idx === 1) {
+        await releaseFirstCommitPromise;
+      }
+      if (stagedPayload) {
+        committedWrites.push(stagedPayload);
+      }
+      return result;
+    });
+
+    const first = await transferConsultRoom("c-serial", "SSW");
+    await firstStagedPromise;
+
+    // Invoke newer transfer while first's commit is still in flight -> must wait before claiming ownership or staging
+    const secondPromise = transferConsultRoom("c-serial", "Urgent");
+    await Promise.resolve();
+    expect(txCount).toBe(1);
+    expect(committedWrites).toHaveLength(0);
+
+    // Release first commit -> commits SSW + SSW milestone as active owner, then second claims ownership & commits Urgent
+    releaseFirstCommit();
+    const second = await secondPromise;
+    await Promise.all([first.backgroundPromise, second.backgroundPromise]);
+
+    expect(committedWrites).toHaveLength(2);
+    expect(committedWrites[0].room).toBe("SSW");
+    expect(committedWrites[0]["departments.Gen Sx.transfers"]).toEqual(
+      expect.objectContaining({ elements: [expect.objectContaining({ to: "SSW" })] })
+    );
+    expect(committedWrites[1].room).toBe("Urgent");
+    expect(committedWrites[1]["departments.Gen Sx.transfers"]).toEqual(
+      expect.objectContaining({ elements: [expect.objectContaining({ to: "Urgent" })] })
+    );
+
+    // Case 2: If newer transfer fails after waiting for first's delayed commit, first committed validly as owner
+    // and the failed newer transfer writes neither room nor milestone.
+    const committedFailWrites: Array<Record<string, unknown>> = [];
+    let failFirstStaged!: () => void;
+    const failFirstStagedPromise = new Promise<void>((resolve) => {
+      failFirstStaged = resolve;
+    });
+    let releaseFailFirstCommit!: () => void;
+    const releaseFailFirstCommitPromise = new Promise<void>((resolve) => {
+      releaseFailFirstCommit = resolve;
+    });
+    let failTxCount = 0;
+
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-serial-fail",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      const idx = ++failTxCount;
+      let stagedPayload: Record<string, unknown> | null = null;
+      const result = await fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-serial-fail",
+            baseConsult({
+              room: (committedFailWrites.at(-1)?.room as string) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          stagedPayload = payload;
+          if (idx === 1) {
+            failFirstStaged();
+          }
+        },
+      });
+      if (idx === 1) {
+        await releaseFailFirstCommitPromise;
+      } else {
+        throw new Error("newer transfer commit failed");
+      }
+      if (stagedPayload) {
+        committedFailWrites.push(stagedPayload);
+      }
+      return result;
+    });
+
+    const onFirstFailErr = vi.fn();
+    const onSecondFailErr = vi.fn();
+    const firstFailCase = await transferConsultRoom("c-serial-fail", "SSW", onFirstFailErr);
+    await failFirstStagedPromise;
+
+    const secondFailPromise = transferConsultRoom("c-serial-fail", "Urgent", onSecondFailErr);
+    await Promise.resolve();
+    expect(failTxCount).toBe(1);
+
+    releaseFailFirstCommit();
+    const secondFailCase = await secondFailPromise;
+    await Promise.all([firstFailCase.backgroundPromise, secondFailCase.backgroundPromise]);
+
+    expect(committedFailWrites).toHaveLength(1);
+    expect(committedFailWrites[0].room).toBe("SSW");
+    expect(committedFailWrites[0]["departments.Gen Sx.transfers"]).toEqual(
+      expect.objectContaining({ elements: [expect.objectContaining({ to: "SSW" })] })
+    );
+    expect(onFirstFailErr).not.toHaveBeenCalled();
+    expect(onSecondFailErr).toHaveBeenCalledTimes(1);
+  });
+
+  it("transferConsultRoom rechecks connectivity when obtaining its queue slot and routes offline drops via reconnect queue", async () => {
+    setNavigatorOnLine(true);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-drop-midqueue",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    let firstInFlight!: () => void;
+    const firstInFlightPromise = new Promise<void>((resolve) => {
+      firstInFlight = resolve;
+    });
+    let releaseFirst!: () => void;
+    const releaseFirstPromise = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const committedRooms: string[] = [];
+    let txCount = 0;
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      const idx = ++txCount;
+      if (idx === 1) {
+        firstInFlight();
+        await releaseFirstPromise;
+      }
+      return fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-drop-midqueue",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      });
+    });
+
+    const first = await transferConsultRoom("c-drop-midqueue", "SSW");
+    await firstInFlightPromise;
+
+    // Second transfer starts while online, then connectivity drops before it obtains its queue slot
+    const secondPromise = transferConsultRoom("c-drop-midqueue", "Urgent");
+    setNavigatorOnLine(false);
+    releaseFirst();
+
+    const second = await secondPromise;
+    await first.backgroundPromise;
+
+    // Second must detect offline at slot acquisition and queue for reconnect instead of failing online
+    expect(second.transferred).toBe(true);
+    expect(second.isOfflineQueued).toBe(true);
+    expect(committedRooms).toEqual(["SSW"]);
+
+    // On reconnect, second commits Urgent cleanly
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await second.backgroundPromise;
+
+    expect(committedRooms).toEqual(["SSW", "Urgent"]);
+  });
+
+  it("transferConsultRoom retains and retries offline transfer after a retryable connection failure", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValueOnce(
+      makeDocSnapshot(
+        "c-retry",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const updateSpy = vi.fn();
+    let attempt = 0;
+    mockRunTransaction.mockImplementation(async (_db, fn) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const err = new Error("Connection lost");
+        (err as { code?: string }).code = "unavailable";
+        throw err;
+      }
+      return fn({
+        get: vi.fn().mockResolvedValue(makeDocSnapshot("c-retry", baseConsult({ room: "NT" }))),
+        update: updateSpy,
+      });
+    });
+
+    const onBackgroundError = vi.fn();
+    const res = await transferConsultRoom("c-retry", "SSW", onBackgroundError);
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await res.backgroundPromise;
+
+    expect(attempt).toBe(2);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(onBackgroundError).not.toHaveBeenCalled();
+  });
+
+  it("transferConsultRoom releases superseded offline wait immediately without waiting for reconnect event", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-wake-superseded",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    mockRunTransaction.mockImplementation(async (_db, fn) =>
+      fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-wake-superseded",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      })
+    );
+
+    const first = await transferConsultRoom("c-wake-superseded", "SSW");
+    const second = await transferConsultRoom("c-wake-superseded", "Urgent");
+
+    // Still offline: first's backgroundPromise must resolve as soon as second supersedes it
+    const firstSettled = await Promise.race([
+      first.backgroundPromise!.then(() => "settled"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("timed-out"), 50)),
+    ]);
+    expect(firstSettled).toBe("settled");
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await second.backgroundPromise;
+
+    expect(committedRooms).toEqual(["Urgent"]);
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("transferConsultRoom rechecks connectivity inside deferred queue slot and returns to reconnect wait without consuming retries when offline", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-slot-offline",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const onBackgroundError = vi.fn();
+    const deferred = await transferConsultRoom("c-slot-offline", "SSW", onBackgroundError);
+
+    // Block the case queue slot during server pre-check of a same-room transfer (does not claim epoch)
+    let releaseBlockerServerRead!: (snap: ReturnType<typeof makeDocSnapshot>) => void;
+    let markBlockerEntered!: () => void;
+    const blockerEntered = new Promise<void>((resolve) => {
+      markBlockerEntered = resolve;
+    });
+    mockGetDocFromServer.mockImplementationOnce(() => {
+      markBlockerEntered();
+      return new Promise((resolve) => {
+        releaseBlockerServerRead = resolve;
+      });
+    });
+
+    let txCalls = 0;
+    mockRunTransaction.mockImplementationOnce(async (_db, fn) => {
+      txCalls += 1;
+      return fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-slot-offline",
+            baseConsult({
+              room: "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: vi.fn(),
+      });
+    });
+
+    setNavigatorOnLine(true);
+    const blockerPromise = transferConsultRoom("c-slot-offline", "NT", onBackgroundError);
+    await blockerEntered;
+
+    // Fire online so deferred enters enqueueCaseTransfer behind blocker, then drop offline before blocker releases
+    window.dispatchEvent(new Event("online"));
+    await Promise.resolve();
+    setNavigatorOnLine(false);
+
+    let resolveNextOnlineListener!: () => void;
+    const nextOnlineListenerRegistered = new Promise<void>((resolve) => {
+      resolveNextOnlineListener = resolve;
+    });
+    const originalAddEventListener = window.addEventListener.bind(window);
+    const addEventListenerSpy = vi.spyOn(window, "addEventListener").mockImplementation(((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions
+    ) => {
+      if (type === "online") {
+        resolveNextOnlineListener();
+      }
+      return originalAddEventListener(type, listener, options);
+    }) as typeof window.addEventListener);
+
+    try {
+      releaseBlockerServerRead(
+        makeDocSnapshot(
+          "c-slot-offline",
+          baseConsult({
+            room: "NT",
+            departments: { "Gen Sx": { status: "pending", completedAt: null } },
+          })
+        )
+      );
+      const blockerRes = await blockerPromise;
+      expect(blockerRes.transferred).toBe(false);
+
+      // Keep navigator.onLine false until deferred has obtained its slot, hit the offline guard,
+      // and registered its next online reconnect listener
+      await nextOnlineListenerRegistered;
+
+      // Deferred obtained its slot while offline -> returned to reconnect wait without invoking runTransaction or consuming retries
+      expect(txCalls).toBe(0);
+      expect(onBackgroundError).not.toHaveBeenCalled();
+
+      // Even after connectivity flips true, no transaction starts before dispatching the second online event
+      setNavigatorOnLine(true);
+      await Promise.resolve();
+      expect(txCalls).toBe(0);
+
+      // Once the second online event fires, deferred runs cleanly.
+      // Fail the first 3 post-reconnect transactions with retryable errors (exhausting all 3 retries)
+      // and compare against an equivalent transfer that stayed online while waiting for its slot
+      // to verify the slot-time offline bounce itself did not consume any retry budget.
+      const retryableErr = Object.assign(new Error("Connection unavailable"), {
+        code: "unavailable",
+      });
+      let postReconnectTxCalls = 0;
+      const makeRetryableThenSuccessImpl =
+        (caseId: string, onCall: (n: number) => void) =>
+        async (_db: unknown, fn: (tx: { get: () => Promise<unknown>; update: () => void }) => unknown) => {
+          postReconnectTxCalls += 1;
+          onCall(postReconnectTxCalls);
+          if (postReconnectTxCalls <= 3) {
+            throw retryableErr;
+          }
+          return fn({
+            get: vi.fn().mockResolvedValue(
+              makeDocSnapshot(
+                caseId,
+                baseConsult({
+                  room: "NT",
+                  departments: { "Gen Sx": { status: "pending", completedAt: null } },
+                })
+              )
+            ),
+            update: vi.fn(),
+          });
+        };
+
+      let offlineSlotPostReconnectCalls = 0;
+      mockRunTransaction.mockReset();
+      mockRunTransaction.mockImplementation(
+        makeRetryableThenSuccessImpl("c-slot-offline", () => {
+          offlineSlotPostReconnectCalls += 1;
+        })
+      );
+
+      vi.useFakeTimers();
+      try {
+        window.dispatchEvent(new Event("online"));
+        await vi.advanceTimersByTimeAsync(2000);
+        await deferred.backgroundPromise;
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(offlineSlotPostReconnectCalls).toBe(4);
+      expect(onBackgroundError).not.toHaveBeenCalled();
+
+      // Equivalent control transfer that stayed online while waiting for its slot
+      setNavigatorOnLine(false);
+      mockGetDocFromCache.mockResolvedValue(
+        makeDocSnapshot(
+          "c-slot-online-control",
+          baseConsult({
+            room: "NT",
+            departments: { "Gen Sx": { status: "pending", completedAt: null } },
+          })
+        )
+      );
+      const onControlError = vi.fn();
+      const controlDeferred = await transferConsultRoom("c-slot-online-control", "SSW", onControlError);
+
+      let releaseControlBlocker!: (snap: ReturnType<typeof makeDocSnapshot>) => void;
+      let markControlBlockerEntered!: () => void;
+      const controlBlockerEntered = new Promise<void>((resolve) => {
+        markControlBlockerEntered = resolve;
+      });
+      mockGetDocFromServer.mockImplementationOnce(() => {
+        markControlBlockerEntered();
+        return new Promise((resolve) => {
+          releaseControlBlocker = resolve;
+        });
+      });
+
+      setNavigatorOnLine(true);
+      const controlBlocker = transferConsultRoom("c-slot-online-control", "NT", onControlError);
+      await controlBlockerEntered;
+
+      postReconnectTxCalls = 0;
+      let controlPostReconnectCalls = 0;
+      mockRunTransaction.mockImplementation(
+        makeRetryableThenSuccessImpl("c-slot-online-control", () => {
+          controlPostReconnectCalls += 1;
+        })
+      );
+
+      vi.useFakeTimers();
+      try {
+        window.dispatchEvent(new Event("online"));
+        await Promise.resolve();
+        releaseControlBlocker(
+          makeDocSnapshot(
+            "c-slot-online-control",
+            baseConsult({
+              room: "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        );
+        const controlBlockerRes = await controlBlocker;
+        expect(controlBlockerRes.transferred).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(2000);
+        await controlDeferred.backgroundPromise;
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(controlPostReconnectCalls).toBe(4);
+      expect(offlineSlotPostReconnectCalls).toBe(controlPostReconnectCalls);
+      expect(onControlError).not.toHaveBeenCalled();
+    } finally {
+      addEventListenerSpy.mockRestore();
+    }
+  });
+
+  it("clearRetainedSubmitDraft cleans up legacy er_consult_submit_drafts_v1 sessionStorage key", () => {
+    window.sessionStorage.setItem("er_consult_submit_drafts_v1", '{"hn":"999999"}');
+    clearRetainedSubmitDraft();
+    expect(window.sessionStorage.getItem("er_consult_submit_drafts_v1")).toBeNull();
   });
 });

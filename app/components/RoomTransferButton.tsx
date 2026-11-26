@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { createPortal } from "react-dom";
 import { ROOMS, RoomName } from "../../lib/constants";
 import { transferConsultRoom } from "../../lib/db";
+import { acquireCaseLock, releaseCaseLock, useCaseLocked } from "../../lib/caseLock";
 import { useToast } from "../contexts/ToastContext";
 
 interface PortalMenuPosition {
@@ -36,8 +37,10 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     openUpward: false,
   });
   const [isTransferring, setIsTransferring] = useState(false);
+  const isCaseBusy = useCaseLocked(consultId);
+  const effectiveDisabled = disabled || isCaseBusy;
   const [focusedIndex, setFocusedIndex] = useState(-1);
-  if (disabled && (isOpen || focusedIndex !== -1)) {
+  if (effectiveDisabled && (isOpen || focusedIndex !== -1)) {
     setIsOpen(false);
     setFocusedIndex(-1);
   }
@@ -57,10 +60,10 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
     });
   }, []);
 
-  const effectiveOpen = isOpen && !disabled;
+  const effectiveOpen = isOpen && !effectiveDisabled;
 
   const handleTransfer = useCallback(async (newRoom: RoomName) => {
-    if (transferInFlightRef.current || disabled) return;
+    if (transferInFlightRef.current || effectiveDisabled) return;
 
     if (newRoom === currentRoom) {
       setIsOpen(false);
@@ -68,6 +71,9 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       return;
     }
 
+    if (!acquireCaseLock(consultId)) return;
+
+    let holdLockForBackground = false;
     try {
       transferInFlightRef.current = true;
       setIsTransferring(true);
@@ -75,19 +81,53 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       setIsOpen(false);
       setFocusedIndex(-1);
       
-      const { transferred, backgroundPromise } = await transferConsultRoom(
+      let backgroundFailed = false;
+      const { transferred, backgroundPromise, isOfflineQueued } = await transferConsultRoom(
         consultId, 
         newRoom,
         (err) => {
+          backgroundFailed = true;
           console.error("Background transfer error:", err);
-          addToast({ message: "เครือข่ายไม่เสถียร การย้ายห้องอาจล่าช้ากว่าปกติ", type: "error" });
+          const isConditionNotMet =
+            err instanceof Error && err.message === "TRANSACTION_CONDITION_NOT_MET";
+          addToast({
+            message: isConditionNotMet
+              ? "ไม่สามารถย้ายห้องได้: เคสนี้ถูกอัปเดตหรือปิดไปแล้ว"
+              : "เครือข่ายไม่เสถียร การย้ายห้องอาจล่าช้ากว่าปกติ",
+            type: "error",
+          });
         }
       );
       if (transferred) {
-        addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+        if (isOfflineQueued) {
+          addToast({
+            message: `คิวคำขอย้ายเคสไปยัง ${newRoom} ในเซสชันนี้แล้ว (อย่าปิดหน้านี้ก่อนออนไลน์เพื่อซิงค์)`,
+            type: "info",
+          });
+        } else if (!backgroundPromise && !backgroundFailed) {
+          addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+        }
         onTransferEnd?.(true); // success callback
-        if (backgroundPromise) {
-            backgroundPromise.catch(() => {});
+        // Hold the UI/case lock only while an online transaction is settling.
+        // Offline-queued writes settle only upon reconnect, so release immediately after queueing.
+        if (backgroundPromise && !isOfflineQueued) {
+          holdLockForBackground = true;
+          const release = () => {
+            transferInFlightRef.current = false;
+            setIsTransferring(false);
+            releaseCaseLock(consultId);
+          };
+          void backgroundPromise.then(
+            () => {
+              release();
+              if (!backgroundFailed) {
+                addToast({ message: `ย้ายเคสไปยัง ${newRoom} สำเร็จ`, type: "success" });
+              }
+            },
+            () => {
+              release();
+            }
+          );
         }
       } else {
         addToast({ 
@@ -99,10 +139,13 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
       console.error("Transfer error:", error);
       addToast({ message: "ไม่สามารถย้ายห้องได้ กรุณาลองใหม่", type: "error" });
     } finally {
-      transferInFlightRef.current = false;
-      setIsTransferring(false);
+      if (!holdLockForBackground) {
+        transferInFlightRef.current = false;
+        setIsTransferring(false);
+        releaseCaseLock(consultId);
+      }
     }
-  }, [consultId, currentRoom, addToast, onTransferStart, onTransferEnd, disabled]);
+  }, [consultId, currentRoom, addToast, onTransferStart, onTransferEnd, effectiveDisabled]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -257,12 +300,12 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
             type="button"
             ref={(el) => { itemRefs.current[index] = el; }}
             onClick={() => handleTransfer(room)}
-            disabled={isTransferring || disabled}
+            disabled={isTransferring || effectiveDisabled}
             tabIndex={focusedIndex === index ? 0 : -1}
             role="option"
             aria-selected={room === currentRoom}
             className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center justify-between outline-none ${
-              isTransferring || disabled
+              isTransferring || effectiveDisabled
                 ? "opacity-50 cursor-not-allowed"
                 : room === currentRoom
                   ? "bg-cool-soft text-cool"
@@ -289,8 +332,8 @@ export const RoomTransferButton: React.FC<RoomTransferButtonProps> = ({
         ref={triggerRef}
         type="button"
         onClick={handleToggle}
-        disabled={isTransferring || disabled}
-        title={disabled ? "กำลังดำเนินการงานอื่นอยู่…" : "เปลี่ยนห้อง"}
+        disabled={isTransferring || effectiveDisabled}
+        title={disabled || (isCaseBusy && !isTransferring) ? "กำลังดำเนินการงานอื่นอยู่…" : "เปลี่ยนห้อง"}
         aria-label="เปลี่ยนห้อง"
         aria-expanded={effectiveOpen}
         aria-haspopup="listbox"

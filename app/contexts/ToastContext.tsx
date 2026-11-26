@@ -28,6 +28,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [politeAnnouncement, setPoliteAnnouncement] = useState("");
   const pendingAssertiveRef = useRef<string[]>([]);
   const pendingPoliteRef = useRef<string[]>([]);
+  const lastAssertiveRef = useRef("");
+  const lastPoliteRef = useRef("");
   const flushScheduledRef = useRef(false);
   const autoDismissTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -64,12 +66,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         queueMicrotask(() => {
           flushScheduledRef.current = false;
           if (pendingAssertiveRef.current.length > 0) {
-            const batch = pendingAssertiveRef.current.splice(0);
-            setAssertiveAnnouncement(batch.join(" "));
+            const nextText = pendingAssertiveRef.current.splice(0).join(" ");
+            // Alternate trailing zero-width space when identical errors repeat so aria-live re-announces
+            const dedupSafe = nextText === lastAssertiveRef.current ? `${nextText}\u200B` : nextText;
+            lastAssertiveRef.current = dedupSafe;
+            setAssertiveAnnouncement(dedupSafe);
           }
           if (pendingPoliteRef.current.length > 0) {
-            const batch = pendingPoliteRef.current.splice(0);
-            setPoliteAnnouncement(batch.join(" "));
+            const nextText = pendingPoliteRef.current.splice(0).join(" ");
+            const dedupSafe = nextText === lastPoliteRef.current ? `${nextText}\u200B` : nextText;
+            lastPoliteRef.current = dedupSafe;
+            setPoliteAnnouncement(dedupSafe);
           }
         });
       }

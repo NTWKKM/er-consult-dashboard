@@ -420,5 +420,43 @@ describe("ConfirmModal", () => {
         screen.getByRole("button", { name: "Visible Fallback" })
       );
     });
+
+    it("delegates Tab and Escape exclusively to the topmost stacked ConfirmModal", () => {
+      const outerCancel = vi.fn();
+      const innerCancel = vi.fn();
+      render(
+        <>
+          <ConfirmModal
+            {...defaultProps({
+              title: "Outer",
+              confirmText: "OuterConfirm",
+              cancelText: "OuterCancel",
+              onCancel: outerCancel,
+            })}
+          />
+          <ConfirmModal
+            {...defaultProps({
+              title: "Inner",
+              confirmText: "InnerConfirm",
+              cancelText: "InnerCancel",
+              onCancel: innerCancel,
+            })}
+          />
+        </>
+      );
+
+      const innerConfirm = screen.getByRole("button", { name: "InnerConfirm" });
+      const innerCancelBtn = screen.getByRole("button", { name: "InnerCancel" });
+      innerConfirm.focus();
+
+      // Tab stays inside topmost (Inner) dialog rather than being hijacked by Outer dialog
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(document.activeElement).toBe(innerCancelBtn);
+
+      // Escape closes only the topmost (Inner) dialog
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(innerCancel).toHaveBeenCalledTimes(1);
+      expect(outerCancel).not.toHaveBeenCalled();
+    });
   });
 });

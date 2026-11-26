@@ -1,23 +1,34 @@
 "use client";
 
 import { createContext, useContext, useEffect, useCallback, ReactNode, useSyncExternalStore } from "react";
+import type { RoomFilter } from "@/lib/departmentCasesMap";
+
+export type DashboardViewMode = "both" | "surgery" | "ortho";
 
 interface SettingsContextType {
   darkMode: boolean;
   soundEnabled: boolean;
   displayMode: "card" | "table";
+  dashboardView: DashboardViewMode;
+  roomFilter: RoomFilter;
   toggleDarkMode: () => void;
   toggleSound: () => void;
   setDisplayMode: (mode: "card" | "table") => void;
+  setDashboardView: (view: DashboardViewMode) => void;
+  setRoomFilter: (filter: RoomFilter) => void;
 }
 
 const SettingsContext = createContext<SettingsContextType>({
   darkMode: false,
   soundEnabled: false,
   displayMode: "card",
+  dashboardView: "both",
+  roomFilter: "all",
   toggleDarkMode: () => {},
   toggleSound: () => {},
   setDisplayMode: () => {},
+  setDashboardView: () => {},
+  setRoomFilter: () => {},
 });
 
 const memoryFallbackByStorage = new WeakMap<object, Map<string, string>>();
@@ -107,9 +118,21 @@ const getDisplayModeSnapshot = (): "card" | "table" => {
     return saved === "table" ? "table" : "card";
 };
 
+const getDashboardViewSnapshot = (): DashboardViewMode => {
+    const saved = safeGetItem("dashboard_view");
+    return saved === "surgery" || saved === "ortho" ? saved : "both";
+};
+
+const getRoomFilterSnapshot = (): RoomFilter => {
+    const saved = safeGetItem("dashboard_roomFilter");
+    return saved === "resus" || saved === "non-resus" ? saved : "all";
+};
+
 const darkModeServerSnapshot = () => false;
 const soundEnabledServerSnapshot = () => false;
 const displayModeServerSnapshot = (): "card" | "table" => "card";
+const dashboardViewServerSnapshot = (): DashboardViewMode => "both";
+const roomFilterServerSnapshot = (): RoomFilter => "all";
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   // Use modern React store synchronization for safe SSR/Hydration
@@ -129,6 +152,18 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     subscribe,
     getDisplayModeSnapshot,
     displayModeServerSnapshot
+  );
+
+  const dashboardView = useSyncExternalStore(
+    subscribe,
+    getDashboardViewSnapshot,
+    dashboardViewServerSnapshot
+  );
+
+  const roomFilter = useSyncExternalStore(
+    subscribe,
+    getRoomFilterSnapshot,
+    roomFilterServerSnapshot
   );
 
   // Helper to trigger UI updates in the current tab
@@ -158,8 +193,31 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     notifyChange();
   }, [notifyChange]);
 
+  const setDashboardView = useCallback((nextView: DashboardViewMode) => {
+    safeSetItem("dashboard_view", nextView);
+    notifyChange();
+  }, [notifyChange]);
+
+  const setRoomFilter = useCallback((nextFilter: RoomFilter) => {
+    safeSetItem("dashboard_roomFilter", nextFilter);
+    notifyChange();
+  }, [notifyChange]);
+
   return (
-    <SettingsContext.Provider value={{ darkMode, soundEnabled, displayMode, toggleDarkMode, toggleSound, setDisplayMode }}>
+    <SettingsContext.Provider
+      value={{
+        darkMode,
+        soundEnabled,
+        displayMode,
+        dashboardView,
+        roomFilter,
+        toggleDarkMode,
+        toggleSound,
+        setDisplayMode,
+        setDashboardView,
+        setRoomFilter,
+      }}
+    >
       {children}
     </SettingsContext.Provider>
   );
