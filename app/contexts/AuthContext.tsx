@@ -71,8 +71,23 @@ const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 const PENDING_CLEANUP_STORAGE_KEY = "er_consult_pending_cache_cleanup_v1";
 const PENDING_CLEANUP_COOKIE_NAME = "er_consult_pending_cache_cleanup_v1";
 const WINDOW_NAME_CLEANUP_PREFIX = "__er_consult_pending_cleanup__:";
+const DECLINED_HOLD_MARKER_VALUE = "__declined_hold__";
 
-function readWindowNameCleanupMarker(): { requestId: string | null } | null {
+interface PendingCleanupMarker {
+  requestId: string | null;
+  storageError?: boolean;
+  declinedHold?: boolean;
+}
+
+function parseCleanupMarkerValue(raw: string): PendingCleanupMarker {
+  if (!raw || raw === "1") return { requestId: null };
+  if (raw === DECLINED_HOLD_MARKER_VALUE) {
+    return { requestId: null, declinedHold: true };
+  }
+  return { requestId: raw };
+}
+
+function readWindowNameCleanupMarker(): PendingCleanupMarker | null {
   if (typeof window === "undefined") return null;
   try {
     const name = window.name;
@@ -80,7 +95,7 @@ function readWindowNameCleanupMarker(): { requestId: string | null } | null {
       return null;
     }
     const raw = name.slice(WINDOW_NAME_CLEANUP_PREFIX.length);
-    return !raw || raw === "1" ? { requestId: null } : { requestId: raw };
+    return parseCleanupMarkerValue(raw);
   } catch {
     return { requestId: null };
   }
@@ -107,7 +122,7 @@ function clearWindowNameCleanupMarker() {
   }
 }
 
-function readCookieCleanupMarker(): { requestId: string | null } | null {
+function readCookieCleanupMarker(): PendingCleanupMarker | null {
   if (typeof document === "undefined") return null;
   try {
     const cookieStr = document.cookie;
@@ -120,7 +135,7 @@ function readCookieCleanupMarker(): { requestId: string | null } | null {
         if (!raw) return null;
         try {
           const decoded = decodeURIComponent(raw);
-          return !decoded || decoded === "1" ? { requestId: null } : { requestId: decoded };
+          return parseCleanupMarkerValue(decoded);
         } catch {
           return { requestId: null };
         }
@@ -202,12 +217,12 @@ async function hasLeftoverFirestoreIndexedDb(targetDb: Firestore): Promise<boole
   }
 }
 
-function readPendingCleanupMarker(): { requestId: string | null; storageError?: boolean } | null {
+function readPendingCleanupMarker(): PendingCleanupMarker | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
     if (raw) {
-      return raw === "1" ? { requestId: null } : { requestId: raw };
+      return parseCleanupMarkerValue(raw);
     }
   } catch {
     // Fail closed if sessionStorage cannot be read so sign-in cannot bypass an unverified cleanup
@@ -395,19 +410,21 @@ export function AuthProvider({
   const activeLogoutReservationIdRef = useRef<string | null>(null);
   const logoutConsentedRef = useRef(false);
   const holdClearOnConsentTabRef = useRef<string | null>(null);
-  const preserveDraftOnSignOutDeclineRef = useRef(false);
+  const [initialPersistedCleanup] = useState(() => readPendingCleanupMarker());
+  const preserveDraftOnSignOutDeclineRef = useRef(Boolean(initialPersistedCleanup?.declinedHold));
   const helloHandshakeStateRef = useRef<"settled" | "pending" | "unknown">("settled");
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [initialPersistedCleanup] = useState(() => readPendingCleanupMarker());
   const peerDbTerminatedRef = useRef(false);
   const peerTerminateSucceededRef = useRef(false);
   const peerCacheClearedRef = useRef(false);
   const pendingFirestoreCleanupRef = useRef(Boolean(initialPersistedCleanup));
   const activeTerminateRequestIdRef = useRef<string | null>(null);
-  const terminatedDbRef = useRef<Firestore | null>(initialPersistedCleanup ? db : null);
+  const terminatedDbRef = useRef<Firestore | null>(
+    initialPersistedCleanup && !initialPersistedCleanup.declinedHold ? db : null
+  );
   const activeClearPromiseRef = useRef<Promise<void> | null>(null);
   const cleanupRoleRef = useRef<"peer" | "initiator" | null>(
-    initialPersistedCleanup ? "initiator" : null
+    initialPersistedCleanup && !initialPersistedCleanup.declinedHold ? "initiator" : null
   );
   const initiatorTerminateSucceededRef = useRef(false);
   const initiatorTerminateRequestIdRef = useRef<string | null>(
@@ -418,7 +435,7 @@ export function AuthProvider({
   const startupCacheCheckStartedRef = useRef(false);
   const startupCacheCheckInFlightRef = useRef(false);
   const deferredAuthUserRef = useRef<{ user: User; generation: number } | null>(null);
-  const postSignOutDeclinedRef = useRef(false);
+  const postSignOutDeclinedRef = useRef(Boolean(initialPersistedCleanup?.declinedHold));
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initiatorClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -427,7 +444,13 @@ export function AuthProvider({
   const cleanupRetryButtonRef = useRef<HTMLButtonElement>(null);
   const [cleanupPhase, setCleanupPhase] = useState<
     "idle" | "pending" | "manual_retry" | "declined_hold"
-  >(initialPersistedCleanup ? "pending" : "idle");
+  >(
+    initialPersistedCleanup
+      ? initialPersistedCleanup.declinedHold
+        ? "declined_hold"
+        : "pending"
+      : "idle"
+  );
   const [cleanupBlockedByPending, setCleanupBlockedByPending] = useState(false);
   const [cleanupNeedsConnectionReset, setCleanupNeedsConnectionReset] = useState(false);
   const [manualRetryInFlight, setManualRetryInFlight] = useState(false);
@@ -1233,7 +1256,13 @@ export function AuthProvider({
   }, [initialPersistedCleanup, runInitiatorClearWithWatchdog, triggerPeerReloadIfReady]);
 
   useEffect(() => {
-    if (!initialPersistedCleanup || persistedCleanupRanRef.current) return;
+    if (
+      !initialPersistedCleanup ||
+      initialPersistedCleanup.declinedHold ||
+      persistedCleanupRanRef.current
+    ) {
+      return;
+    }
     persistedCleanupRanRef.current = true;
 
     if (!db || typeof window === "undefined") {
@@ -1311,6 +1340,7 @@ export function AuthProvider({
       preserveDraftOnSignOutDeclineRef.current = true;
       postSignOutDeclinedRef.current = true;
       pendingFirestoreCleanupRef.current = true;
+      writePendingCleanupMarker(DECLINED_HOLD_MARKER_VALUE);
       setLogoutCleanupGateActive(false);
       setCleanupPhase("declined_hold");
       try {

@@ -3670,4 +3670,144 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   });
+
+  it("preserves declined_hold across browser reloads without auto-deleting unsynced cache or admitting sign-in", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        databases: vi.fn(async () => [
+          { name: "firestore/[DEFAULT]/er-consult/main", version: 1 },
+        ]),
+      },
+    });
+
+    let peerHasDrafts = true;
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "late-dirty-peer-reload",
+          hasPending: false,
+          hasDrafts: peerHasDrafts,
+        });
+      } else if (msg.type === "LOGOUT_TERMINATE_DB_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_ACK",
+          requestId: msg.requestId,
+          tabId: "late-dirty-peer-reload",
+        });
+      }
+    };
+
+    let resolveSignOut!: () => void;
+    mockSignOut.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSignOut = resolve;
+        })
+    );
+
+    try {
+      const firstRender = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+      });
+
+      peerChannel.postMessage({
+        type: "HELLO",
+        tabId: "late-dirty-peer-reload",
+        hasPending: false,
+        hasDrafts: true,
+      });
+      await new Promise((r) => setTimeout(r, 20));
+
+      await act(async () => {
+        resolveSignOut();
+        await Promise.resolve();
+      });
+      await respondToDiscardDialog(false);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBe(
+        "__declined_hold__"
+      );
+
+      // Simulate browser reload while declined_hold is persisted
+      firstRender.unmount();
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      // Post-reload mount keeps declined_hold, preserves drafts across auth(null), and does NOT auto-delete Firestore IDB
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/รักษาข้อมูลร่าง/);
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Re-register peer after remount and verify sign-in stays blocked
+      peerChannel.postMessage({
+        type: "HELLO",
+        tabId: "late-dirty-peer-reload",
+        hasPending: false,
+        hasDrafts: true,
+      });
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("staff")).toHaveTextContent("false");
+
+      // User resolves drafts in peer tab then clicks recovery -> confirms clean and clears cache
+      peerHasDrafts = false;
+      fireEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: /ตรวจสอบและล้างแคชต่อ/,
+        })
+      );
+
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeNull();
+    } finally {
+      peerChannel.close();
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
 });
