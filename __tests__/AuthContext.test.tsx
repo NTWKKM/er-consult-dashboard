@@ -5661,4 +5661,106 @@ describe("AuthContext", () => {
       }
     }
   });
+
+  it("broadcasts LOGOUT_CACHE_CLEARED on concurrent two-tab fallback clear so a staggered peer cancels its fallback before a new session opens", async () => {
+    // Capture per-tab onAuthStateChanged callbacks across two concurrent AuthProvider instances
+    const authCallbacks: Array<(user: unknown) => void> = [];
+    mockOnAuthStateChanged.mockImplementation((_auth, cb) => {
+      authCallbacks.push(cb);
+      return vi.fn();
+    });
+
+    // Stagger termination between Tab A (resolves immediately) and Tab B (resolves 500ms later)
+    let resolveTabBTerminate!: () => void;
+    let terminateCallIndex = 0;
+    mockTerminate.mockImplementation(() => {
+      terminateCallIndex += 1;
+      if (terminateCallIndex === 1) {
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        resolveTabBTerminate = resolve;
+      });
+    });
+
+    // Keep signOut pending briefly so both tabs broadcast LOGOUT_TERMINATE_DB_REQUEST concurrently
+    mockSignOut.mockResolvedValue(undefined);
+
+    vi.useFakeTimers();
+    try {
+      const tabA = render(
+        <AuthProvider>
+          <div data-testid="tab-a">
+            <AuthProbe />
+          </div>
+        </AuthProvider>
+      );
+      const tabB = render(
+        <AuthProvider>
+          <div data-testid="tab-b">
+            <AuthProbe />
+          </div>
+        </AuthProvider>
+      );
+
+      // Sign in both tabs as staff and allow HELLO/HELLO_ACK peer discovery to settle
+      await act(async () => {
+        for (const cb of authCallbacks) {
+          cb(makeMockStaffUser());
+        }
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      // Both tabs initiate logout concurrently -> each becomes a peer of the other's termination request
+      await act(async () => {
+        fireEvent.click(within(tabA.getByTestId("tab-a")).getByRole("button", { name: "Logout" }));
+        fireEvent.click(within(tabB.getByTestId("tab-b")).getByRole("button", { name: "Logout" }));
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      // Tab A's terminate resolved immediately and started its 2500ms fallback timer;
+      // stagger Tab B's terminate completion by 500ms so Tab B's fallback timer would fire later
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+        resolveTabBTerminate();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Advance to Tab A's fallback clear (2000ms more -> 2500ms total since Tab A terminated).
+      // Tab A clears IndexedDB once, broadcasts LOGOUT_CACHE_CLEARED for its outbound requestId,
+      // and both Tab A and Tab B reload (Tab B cancels its staggered fallback timer).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2100);
+      });
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).toHaveBeenCalledTimes(2);
+
+      // Simulate Tab A reloading into a new authenticated session while Tab B's original fallback window elapses
+      tabA.unmount();
+      const newSessionTab = render(
+        <AuthProvider>
+          <div data-testid="tab-new-session">
+            <AuthProbe />
+          </div>
+        </AuthProvider>
+      );
+      await act(async () => {
+        const newSessionCb = authCallbacks[authCallbacks.length - 1];
+        newSessionCb({ ...makeMockStaffUser(), uid: "staff-next-shift" });
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      // Tab B's staggered fallback clear must never run after the new session opened
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(
+        within(newSessionTab.getByTestId("tab-new-session")).getByTestId("uid")
+      ).toHaveTextContent("staff-next-shift");
+
+      newSessionTab.unmount();
+      tabB.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

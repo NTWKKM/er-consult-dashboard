@@ -549,6 +549,7 @@ export function AuthProvider({
   const peerCacheClearedRef = useRef(false);
   const pendingFirestoreCleanupRef = useRef(Boolean(initialPersistedCleanup));
   const activeTerminateRequestIdRef = useRef<string | null>(null);
+  const sentTerminateRequestIdsRef = useRef<Set<string>>(new Set());
   const terminatedDbRef = useRef<Firestore | null>(
     initialPersistedCleanup && !initialPersistedCleanup.declinedHold ? db : null
   );
@@ -638,6 +639,7 @@ export function AuthProvider({
       peerTerminateSucceededRef.current = false;
       peerCacheClearedRef.current = false;
       activeTerminateRequestIdRef.current = null;
+      sentTerminateRequestIdsRef.current.clear();
       terminatedDbRef.current = null;
       cleanupRoleRef.current = null;
       initiatorTerminateSucceededRef.current = false;
@@ -1013,6 +1015,24 @@ export function AuthProvider({
                               }
                               if (!isCurrentRequest()) return;
                               setCleanupBlockedByPending(false);
+                              if (!peerCacheClearedRef.current) {
+                                const completedIds = new Set<string>(
+                                  sentTerminateRequestIdsRef.current
+                                );
+                                completedIds.add(requestId);
+                                sentTerminateRequestIdsRef.current.clear();
+                                for (const completedId of completedIds) {
+                                  try {
+                                    channel.postMessage({
+                                      type: "LOGOUT_CACHE_CLEARED",
+                                      requestId: completedId,
+                                      senderTabId: myTabId,
+                                    } satisfies AuthSyncMessage);
+                                  } catch {
+                                    // Ignore broadcast errors during teardown
+                                  }
+                                }
+                              }
                               peerCacheClearedRef.current = true;
                               triggerPeerReloadIfReady();
                             },
@@ -1022,7 +1042,7 @@ export function AuthProvider({
                                 clearTimeout(peerClearPendingTimerRef.current);
                                 peerClearPendingTimerRef.current = null;
                               }
-                              if (!isCurrentRequest()) return;
+                              if (!isCurrentRequest() || peerCacheClearedRef.current) return;
                               setCleanupBlockedByPending(false);
                               if (attempt < 5) {
                                 scheduleFallbackCheck(attempt + 1);
@@ -1120,6 +1140,7 @@ export function AuthProvider({
     const pendingSignedOutReservations = pendingSignedOutReservationsRef.current;
     const pendingPeerChecks = pendingPeerChecksRef.current;
     const pendingTerminateAcks = pendingTerminateAcksRef.current;
+    const sentTerminateRequestIds = sentTerminateRequestIdsRef.current;
     return () => {
       window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("pagehide", notifyBye);
@@ -1161,6 +1182,7 @@ export function AuthProvider({
       pendingSignedOutReservations.clear();
       pendingPeerChecks.clear();
       pendingTerminateAcks.clear();
+      sentTerminateRequestIds.clear();
       channel.close();
     };
     }, [activeReservationStore, getOrStartClearPersistence, settleDiscardPrompt, triggerPeerReloadIfReady]);
@@ -1250,6 +1272,7 @@ export function AuthProvider({
       });
 
       try {
+        sentTerminateRequestIdsRef.current.add(requestId);
         channel.postMessage({
           type: "LOGOUT_TERMINATE_DB_REQUEST",
           requestId,
@@ -1322,6 +1345,7 @@ export function AuthProvider({
       const reqId = initiatorTerminateRequestIdRef.current;
       initiatorTerminateRequestIdRef.current = null;
       if (reqId) {
+        sentTerminateRequestIdsRef.current.delete(reqId);
         try {
           channelRef.current?.postMessage({
             type: "LOGOUT_CACHE_CLEARED",
@@ -2066,6 +2090,22 @@ export function AuthProvider({
       } else {
         await getOrStartClearPersistence(targetDb);
         setCleanupBlockedByPending(false);
+        const completedIds = new Set<string>(sentTerminateRequestIdsRef.current);
+        if (activeTerminateRequestIdRef.current) {
+          completedIds.add(activeTerminateRequestIdRef.current);
+        }
+        sentTerminateRequestIdsRef.current.clear();
+        for (const completedId of completedIds) {
+          try {
+            channelRef.current?.postMessage({
+              type: "LOGOUT_CACHE_CLEARED",
+              requestId: completedId,
+              senderTabId: tabIdRef.current,
+            } satisfies AuthSyncMessage);
+          } catch {
+            // Ignore broadcast errors during manual retry
+          }
+        }
         peerCacheClearedRef.current = true;
         peerDbTerminatedRef.current = true;
         triggerPeerReloadIfReady();
