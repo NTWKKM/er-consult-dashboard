@@ -2486,32 +2486,56 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     await Promise.resolve();
     setNavigatorOnLine(false);
 
-    releaseBlockerServerRead(
-      makeDocSnapshot(
-        "c-slot-offline",
-        baseConsult({
-          room: "NT",
-          departments: { "Gen Sx": { status: "pending", completedAt: null } },
-        })
-      )
-    );
-    const blockerRes = await blockerPromise;
-    expect(blockerRes.transferred).toBe(false);
+    let resolveNextOnlineListener!: () => void;
+    const nextOnlineListenerRegistered = new Promise<void>((resolve) => {
+      resolveNextOnlineListener = resolve;
+    });
+    const originalAddEventListener = window.addEventListener.bind(window);
+    const addEventListenerSpy = vi.spyOn(window, "addEventListener").mockImplementation(((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions
+    ) => {
+      if (type === "online") {
+        resolveNextOnlineListener();
+      }
+      return originalAddEventListener(type, listener, options);
+    }) as typeof window.addEventListener);
 
-    // Give deferred's queued callback a microtask turn to run while offline
-    await Promise.resolve();
-    await Promise.resolve();
+    try {
+      releaseBlockerServerRead(
+        makeDocSnapshot(
+          "c-slot-offline",
+          baseConsult({
+            room: "NT",
+            departments: { "Gen Sx": { status: "pending", completedAt: null } },
+          })
+        )
+      );
+      const blockerRes = await blockerPromise;
+      expect(blockerRes.transferred).toBe(false);
 
-    // Deferred obtained its slot while offline -> returned to reconnect wait without invoking runTransaction or consuming retries
-    expect(txCalls).toBe(0);
-    expect(onBackgroundError).not.toHaveBeenCalled();
+      // Keep navigator.onLine false until deferred has obtained its slot, hit the offline guard,
+      // and registered its next online reconnect listener
+      await nextOnlineListenerRegistered;
 
-    // Once back online, deferred runs cleanly (proving retries were preserved and wait resumed)
-    setNavigatorOnLine(true);
-    window.dispatchEvent(new Event("online"));
-    await deferred.backgroundPromise;
-    expect(txCalls).toBe(1);
-    expect(onBackgroundError).not.toHaveBeenCalled();
+      // Deferred obtained its slot while offline -> returned to reconnect wait without invoking runTransaction or consuming retries
+      expect(txCalls).toBe(0);
+      expect(onBackgroundError).not.toHaveBeenCalled();
+
+      // Even after connectivity flips true, no transaction starts before dispatching the second online event
+      setNavigatorOnLine(true);
+      await Promise.resolve();
+      expect(txCalls).toBe(0);
+
+      // Once the second online event fires, deferred runs cleanly (proving retries were preserved and wait resumed)
+      window.dispatchEvent(new Event("online"));
+      await deferred.backgroundPromise;
+      expect(txCalls).toBe(1);
+      expect(onBackgroundError).not.toHaveBeenCalled();
+    } finally {
+      addEventListenerSpy.mockRestore();
+    }
   });
 
   it("clearRetainedSubmitDraft cleans up legacy er_consult_submit_drafts_v1 sessionStorage key", () => {

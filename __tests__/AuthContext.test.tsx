@@ -4402,7 +4402,7 @@ describe("AuthContext", () => {
       firstRender.unmount();
       reloadSpy.mockClear();
 
-      // Case 2: Clean workstation after deletion (no databases() API) -> open fires onupgradeneeded, aborts/deletes probe, allows login
+      // Case 2: Clean workstation after deletion (no databases() API) -> open fires onupgradeneeded, aborts probe transaction without deleteDatabase, allows login
       const secondRender = render(
         <AuthProvider>
           <AuthProbe />
@@ -4420,7 +4420,7 @@ describe("AuthContext", () => {
         expect(screen.getByTestId("cleanup")).toHaveTextContent("false");
       });
       expect(mockAbort).toHaveBeenCalledTimes(1);
-      expect(mockDeleteDatabase).toHaveBeenCalledWith("firestore/[DEFAULT]/er-consult/main");
+      expect(mockDeleteDatabase).not.toHaveBeenCalled();
       expect(mockTerminate).toHaveBeenCalledTimes(1);
       expect(reloadSpy).not.toHaveBeenCalled();
 
@@ -4463,5 +4463,218 @@ describe("AuthContext", () => {
         delete (window as unknown as { indexedDB?: unknown }).indexedDB;
       }
     }
+  });
+
+  it("triggers watchdog when startup indexedDB.open probe stays pending, blocks sign-in, shows close-other-tabs instructions, and avoids duplicate cleanup on late completion", async () => {
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    const mockClose = vi.fn();
+    const mockAbort = vi.fn();
+    const mockDeleteDatabase = vi.fn();
+    let pendingReq: Record<string, unknown> | null = null;
+    let dbCleared = false;
+
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        open: vi.fn(() => {
+          const req: Record<string, unknown> = {
+            result: { close: mockClose },
+            transaction: { abort: mockAbort },
+          };
+          if (!dbCleared) {
+            pendingReq = req;
+          } else {
+            queueMicrotask(() => {
+              if (typeof req.onupgradeneeded === "function") {
+                (req.onupgradeneeded as () => void)();
+              }
+              if (typeof req.onerror === "function") {
+                (req.onerror as () => void)();
+              }
+            });
+          }
+          return req;
+        }),
+        deleteDatabase: mockDeleteDatabase,
+      },
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      // Advance past STARTUP_IDB_PROBE_TIMEOUT_MS (3000ms) while open request remains pending
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/กรุณาปิดแท็บอื่นของระบบที่เปิดค้างไว้/);
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // Sign-in remains blocked while watchdog dialog is displayed
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("staff")).toHaveTextContent("false");
+
+      // User clicks retry before the hung open request resolves -> launches cleanup once
+      let resolveClear!: () => void;
+      mockClearIndexedDbPersistence.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveClear = resolve;
+          })
+      );
+
+      await act(async () => {
+        fireEvent.click(
+          within(screen.getByRole("alertdialog")).getByRole("button", { name: /ลองล้างแคช/ })
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+
+      // Late completion of the probe (simulating another context having opened the DB) closes handle,
+      // does NOT call deleteDatabase, and does NOT launch a second cleanup
+      await act(async () => {
+        (pendingReq!.onsuccess as () => void)();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockClose).toHaveBeenCalledTimes(1);
+      expect(mockDeleteDatabase).not.toHaveBeenCalled();
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+
+      dbCleared = true;
+      await act(async () => {
+        resolveClear();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
+
+  it("blocks sign-in and requires consent when sessionStorage ordinary marker conflicts with window.name declined_hold", async () => {
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        databases: vi.fn(async () => [
+          { name: "firestore/[DEFAULT]/er-consult/main", version: 1 },
+        ]),
+      },
+    });
+
+    window.sessionStorage.setItem("er_consult_pending_cache_cleanup_v1", "term-stale-ordinary");
+    window.name = "__er_consult_pending_cleanup__:__declined_hold__";
+    mockHasPendingOptimisticWrites.mockReturnValue(true);
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Must enter declined_hold rather than auto-deleting IndexedDB
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/รักษาข้อมูลร่าง/);
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Sign-in stays blocked
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+
+      // Clicking continue triggers consent prompt because queued writes exist
+      fireEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: /ตรวจสอบและล้างแคชต่อ/,
+        })
+      );
+      const confirmPrompt = await respondToDiscardDialog(false);
+      expect(confirmPrompt).toContain("รอการซิงค์ขึ้นระบบ");
+      await waitFor(() => {
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+
+      // Confirming consent proceeds with cleanup and clears both conflicting marker stores
+      mockHasPendingOptimisticWrites.mockReturnValue(false);
+      fireEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: /ตรวจสอบและล้างแคชต่อ/,
+        })
+      );
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeNull();
+      expect(window.name).toBe("");
+    } finally {
+      mockHasPendingOptimisticWrites.mockReturnValue(false);
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
+
+  it("runs persisted startup cleanup once across React Strict Mode double-invocation", async () => {
+    window.sessionStorage.setItem("er_consult_pending_cache_cleanup_v1", "term-strict-mode");
+
+    render(
+      <React.StrictMode>
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      </React.StrictMode>
+    );
+
+    await waitFor(() => {
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeNull();
   });
 });

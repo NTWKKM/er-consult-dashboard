@@ -66,6 +66,7 @@ const PEER_LOGOUT_CHECK_TIMEOUT_MS = 120;
 const PEER_TERMINATE_TIMEOUT_MS = 500;
 const PEER_CACHE_CLEAR_FALLBACK_MS = 1500;
 const PEER_CACHE_CLEAR_PENDING_WAIT_MS = 3000;
+const STARTUP_IDB_PROBE_TIMEOUT_MS = PEER_CACHE_CLEAR_PENDING_WAIT_MS;
 const LOGOUT_RESERVATION_TTL_MS = 5000;
 const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 const PENDING_CLEANUP_STORAGE_KEY = "er_consult_pending_cache_cleanup_v1";
@@ -204,7 +205,12 @@ function getTargetFirestoreIndexedDbName(targetDb: Firestore): string | null {
 }
 
 async function checkStartupFirestoreIndexedDb(
-  targetDb: Firestore
+  targetDb: Firestore,
+  options?: {
+    onPending?: () => void;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  }
 ): Promise<"found" | "clean" | "error"> {
   if (typeof window === "undefined") return "clean";
   const targetDbName = getTargetFirestoreIndexedDbName(targetDb);
@@ -224,16 +230,43 @@ async function checkStartupFirestoreIndexedDb(
     return new Promise<"found" | "clean" | "error">((resolve) => {
       let createdNewDb = false;
       let settled = false;
+      let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+      const clearWatchdog = () => {
+        if (watchdogTimer !== null) {
+          clearTimeout(watchdogTimer);
+          watchdogTimer = null;
+        }
+      };
+      const handleAbort = () => {
+        clearWatchdog();
+      };
+      options?.signal?.addEventListener("abort", handleAbort, { once: true });
       const finish = (status: "found" | "clean" | "error") => {
         if (settled) return;
         settled = true;
+        clearWatchdog();
+        options?.signal?.removeEventListener("abort", handleAbort);
         resolve(status);
       };
+      const timeoutMs = options?.timeoutMs ?? STARTUP_IDB_PROBE_TIMEOUT_MS;
+      if (!options?.signal?.aborted) {
+        watchdogTimer = setTimeout(() => {
+          watchdogTimer = null;
+          if (settled || options?.signal?.aborted) return;
+          if (options?.onPending) {
+            options.onPending();
+          } else {
+            finish("error");
+          }
+        }, timeoutMs);
+      }
       try {
         const req = idb.open(targetDbName);
         req.onupgradeneeded = () => {
           createdNewDb = true;
           try {
+            // Abort the versionchange transaction so IndexedDB rolls back creation atomically
+            // without a post-close deleteDatabase race against another context.
             req.transaction?.abort();
           } catch {
             // Ignore abort errors on empty DB probe
@@ -245,30 +278,23 @@ async function checkStartupFirestoreIndexedDb(
           } catch {
             // Ignore close errors
           }
+          if (settled) return;
           if (createdNewDb) {
-            try {
-              idb.deleteDatabase?.(targetDbName);
-            } catch {
-              // Ignore delete errors for empty probe
-            }
             finish("clean");
           } else {
             finish("found");
           }
         };
         req.onerror = () => {
+          if (settled) return;
           if (createdNewDb) {
-            try {
-              idb.deleteDatabase?.(targetDbName);
-            } catch {
-              // Ignore delete errors for aborted probe
-            }
             finish("clean");
           } else {
             finish("error");
           }
         };
         req.onblocked = () => {
+          if (settled) return;
           finish("error");
         };
       } catch {
@@ -282,35 +308,59 @@ async function checkStartupFirestoreIndexedDb(
 function readPendingCleanupMarker(): PendingCleanupMarker | null {
   if (typeof window === "undefined") return null;
   let readError = false;
+  let sessionMarker: PendingCleanupMarker | null = null;
   try {
     const raw = window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
     if (raw) {
-      return parseCleanupMarkerValue(raw);
+      sessionMarker = parseCleanupMarkerValue(raw);
     }
   } catch {
     readError = true;
   }
   const win = readWindowNameCleanupMarker();
-  if (win.marker) {
-    return readError ? { ...win.marker, storageError: true } : win.marker;
-  }
   if (win.error) {
     readError = true;
   }
   const cookieMarker = readCookieCleanupMarker();
-  if (cookieMarker) {
-    return readError ? { ...cookieMarker, storageError: true } : cookieMarker;
+
+  const markers = [sessionMarker, win.marker, cookieMarker].filter(
+    (marker): marker is PendingCleanupMarker => marker !== null
+  );
+  if (markers.length === 0) {
+    // Fail closed if sessionStorage or window.name cannot be read so sign-in cannot bypass an unverified cleanup
+    return readError ? { requestId: null, storageError: true } : null;
   }
-  // Fail closed if sessionStorage or window.name cannot be read so sign-in cannot bypass an unverified cleanup
-  return readError ? { requestId: null, storageError: true } : null;
+
+  const hasDeclinedHold = markers.some((marker) => Boolean(marker.declinedHold));
+  const ordinaryMarker = markers.find((marker) => !marker.declinedHold) ?? null;
+
+  if (hasDeclinedHold && ordinaryMarker) {
+    // Ordinary cleanup marker conflicts with a declined hold whose write order is unknown:
+    // keep sign-in blocked, protect queued writes/drafts, and require explicit consent before clearing.
+    return {
+      requestId: null,
+      declinedHold: true,
+      ...(readError ? { storageError: true } : {}),
+    };
+  }
+
+  if (hasDeclinedHold) {
+    return {
+      requestId: null,
+      declinedHold: true,
+      ...(readError ? { storageError: true } : {}),
+    };
+  }
+
+  return readError ? { ...ordinaryMarker!, storageError: true } : ordinaryMarker!;
 }
 
 function canReadPendingCleanupStorage(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
     const win = readWindowNameCleanupMarker();
-    return !win.error && win.marker === null && readCookieCleanupMarker() === null;
+    return raw === null && !win.error && win.marker === null && readCookieCleanupMarker() === null;
   } catch {
     return false;
   }
@@ -509,6 +559,7 @@ export function AuthProvider({
   const persistedCleanupRanRef = useRef(false);
   const startupCacheCheckStartedRef = useRef(false);
   const startupCacheCheckInFlightRef = useRef(false);
+  const startupCleanupStartedRef = useRef(false);
   const deferredAuthUserRef = useRef<{ user: User; generation: number } | null>(null);
   const postSignOutDeclinedRef = useRef(Boolean(initialPersistedCleanup?.declinedHold));
   const verifyIdbCleanOnFinalizeRef = useRef(false);
@@ -1315,6 +1366,7 @@ export function AuthProvider({
 
     let cancelled = false;
     let authGeneration = 0;
+    const probeAbortController = typeof AbortController !== "undefined" ? new AbortController() : null;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       const generation = ++authGeneration;
       if (!currentUser) {
@@ -1361,18 +1413,48 @@ export function AuthProvider({
             startupCacheCheckStartedRef.current = true;
             startupCacheCheckInFlightRef.current = true;
             setStartupCacheChecking(true);
-            void checkStartupFirestoreIndexedDb(freshDb).then((idbStatus) => {
+            let probeTimedOut = false;
+            void checkStartupFirestoreIndexedDb(freshDb, {
+              signal: probeAbortController?.signal,
+              onPending: () => {
+                if (
+                  cancelled ||
+                  startupCleanupStartedRef.current ||
+                  cleanupRoleRef.current !== null ||
+                  logoutInProgressRef.current
+                ) {
+                  return;
+                }
+                probeTimedOut = true;
+                startupCacheCheckInFlightRef.current = false;
+                deferredAuthUserRef.current = null;
+                pendingFirestoreCleanupRef.current = true;
+                terminatedDbRef.current = freshDb;
+                setStartupCacheChecking(false);
+                setUser(null);
+                setIsAuthorizedStaff(false);
+                setLoading(false);
+                setCleanupBlockedByPending(true);
+                setCleanupNeedsConnectionReset(false);
+                setCleanupPhase("manual_retry");
+              },
+            }).then((idbStatus) => {
               startupCacheCheckInFlightRef.current = false;
               if (cancelled) return;
               if (
-                idbStatus !== "clean" &&
-                !pendingFirestoreCleanupRef.current &&
-                cleanupRoleRef.current === null &&
-                !logoutInProgressRef.current
+                startupCleanupStartedRef.current ||
+                cleanupRoleRef.current !== null ||
+                logoutInProgressRef.current ||
+                postSignOutDeclinedRef.current
               ) {
+                return;
+              }
+              if (idbStatus !== "clean" && (!pendingFirestoreCleanupRef.current || probeTimedOut)) {
+                startupCleanupStartedRef.current = true;
                 verifyIdbCleanOnFinalizeRef.current = idbStatus === "error";
                 deferredAuthUserRef.current = null;
                 pendingFirestoreCleanupRef.current = true;
+                setCleanupBlockedByPending(false);
                 setLogoutCleanupGateActive(true);
                 setStartupCacheChecking(false);
                 setUser(null);
@@ -1383,6 +1465,13 @@ export function AuthProvider({
                   isCancelled: () => cancelled,
                 });
                 return;
+              }
+              if (probeTimedOut && idbStatus === "clean") {
+                pendingFirestoreCleanupRef.current = false;
+                terminatedDbRef.current = null;
+                setCleanupBlockedByPending(false);
+                setCleanupNeedsConnectionReset(false);
+                setCleanupPhase("idle");
               }
               setStartupCacheChecking(false);
               const deferred = deferredAuthUserRef.current;
@@ -1439,6 +1528,7 @@ export function AuthProvider({
 
     return () => {
       cancelled = true;
+      probeAbortController?.abort();
       startupCacheCheckInFlightRef.current = false;
       deferredAuthUserRef.current = null;
       authGeneration += 1;
@@ -1454,9 +1544,9 @@ export function AuthProvider({
     ) {
       return;
     }
-    persistedCleanupRanRef.current = true;
 
     if (!db || typeof window === "undefined") {
+      persistedCleanupRanRef.current = true;
       clearPendingCleanupMarker();
       pendingFirestoreCleanupRef.current = false;
       cleanupRoleRef.current = null;
@@ -1471,7 +1561,9 @@ export function AuthProvider({
     let cancelled = false;
     const freshDb = db;
     void Promise.resolve().then(() => {
-      if (cancelled) return;
+      if (cancelled || persistedCleanupRanRef.current) return;
+      persistedCleanupRanRef.current = true;
+      startupCleanupStartedRef.current = true;
       void runStartupCleanup(freshDb, {
         requireConsentCheck: Boolean(initialPersistedCleanup.storageError),
         initialRequestId: initialPersistedCleanup.requestId,
@@ -1715,6 +1807,15 @@ export function AuthProvider({
     try {
       if (cleanupRoleRef.current === "initiator") {
         await runInitiatorClearWithWatchdog(targetDb);
+      } else if (cleanupRoleRef.current === null && pendingFirestoreCleanupRef.current) {
+        if (!startupCleanupStartedRef.current) {
+          startupCleanupStartedRef.current = true;
+          verifyIdbCleanOnFinalizeRef.current = true;
+          await runStartupCleanup(targetDb, {
+            requireConsentCheck: true,
+            isCancelled: () => false,
+          });
+        }
       } else {
         await getOrStartClearPersistence(targetDb);
         setCleanupBlockedByPending(false);
@@ -1730,11 +1831,16 @@ export function AuthProvider({
     } finally {
       setManualRetryInFlight(false);
     }
-  }, [getOrStartClearPersistence, manualRetryInFlight, runInitiatorClearWithWatchdog, triggerPeerReloadIfReady]);
+  }, [
+    getOrStartClearPersistence,
+    manualRetryInFlight,
+    runInitiatorClearWithWatchdog,
+    runStartupCleanup,
+    triggerPeerReloadIfReady,
+  ]);
 
   const showCleanupDialog =
-    cleanupPhase === "manual_retry" ||
-    (cleanupPhase === "declined_hold" && !logoutDiscardPrompt);
+    !logoutDiscardPrompt && (cleanupPhase === "manual_retry" || cleanupPhase === "declined_hold");
 
   useLayoutEffect(() => {
     if (!showCleanupDialog) return;
