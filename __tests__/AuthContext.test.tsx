@@ -3652,13 +3652,14 @@ describe("AuthContext", () => {
       expect(mockTerminate).not.toHaveBeenCalled();
       expect(reloadSpy).not.toHaveBeenCalled();
 
-      // Once user saves/clears draft in the peer tab and retries recovery, cleanup completes cleanly without double signOut
+      // Once user saves/clears draft in the peer tab and retries recovery, signed-out recovery still requires explicit discard confirmation before wiping cache
       peerHasDrafts = false;
       fireEvent.click(
         within(screen.getByRole("alertdialog")).getByRole("button", {
           name: /ตรวจสอบและล้างแคชต่อ/,
         })
       );
+      await respondToDiscardDialog(true);
 
       await waitFor(() => {
         expect(mockSignOut).toHaveBeenCalledTimes(1);
@@ -3786,13 +3787,14 @@ describe("AuthContext", () => {
       expect(screen.getByTestId("uid")).toHaveTextContent("null");
       expect(screen.getByTestId("staff")).toHaveTextContent("false");
 
-      // User resolves drafts in peer tab then clicks recovery -> confirms clean and clears cache
+      // User resolves drafts in peer tab then clicks recovery -> confirms explicit discard and clears cache
       peerHasDrafts = false;
       fireEvent.click(
         within(screen.getByRole("alertdialog")).getByRole("button", {
           name: /ตรวจสอบและล้างแคชต่อ/,
         })
       );
+      await respondToDiscardDialog(true);
 
       await waitFor(() => {
         expect(mockSignOut).toHaveBeenCalledTimes(1);
@@ -3928,6 +3930,7 @@ describe("AuthContext", () => {
           name: /ตรวจสอบและล้างแคชต่อ/,
         })
       );
+      await respondToDiscardDialog(true);
 
       await waitFor(() => {
         expect(mockTerminate).toHaveBeenCalledTimes(1);
@@ -4087,13 +4090,14 @@ describe("AuthContext", () => {
       expect(screen.getByTestId("uid")).toHaveTextContent("null");
       expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
 
-      // Once drafts are resolved/confirmed, recovery completes cleanup
+      // Once drafts are resolved and explicit discard is confirmed, recovery completes cleanup
       peerHasDrafts = false;
       fireEvent.click(
         within(screen.getByRole("alertdialog")).getByRole("button", {
           name: /ตรวจสอบและล้างแคชต่อ/,
         })
       );
+      await respondToDiscardDialog(true);
 
       await waitFor(() => {
         expect(mockTerminate).toHaveBeenCalledTimes(1);
@@ -4230,7 +4234,7 @@ describe("AuthContext", () => {
       expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
       expect(reloadSpy).not.toHaveBeenCalled();
 
-      // Restore storage + window.name and resolve peer drafts -> recovery cleans cache and clears cookie
+      // Restore storage + window.name and resolve peer drafts -> signed-out recovery requires explicit discard confirmation
       if (originalWindowNameDesc) {
         Object.defineProperty(window, "name", originalWindowNameDesc);
       }
@@ -4241,6 +4245,7 @@ describe("AuthContext", () => {
           name: /ตรวจสอบและล้างแคชต่อ/,
         })
       );
+      await respondToDiscardDialog(true);
 
       await waitFor(() => {
         expect(mockTerminate).toHaveBeenCalledTimes(1);
@@ -4634,13 +4639,15 @@ describe("AuthContext", () => {
       expect(mockTerminate).not.toHaveBeenCalled();
       expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
 
-      // Confirming consent proceeds with cleanup and clears both conflicting marker stores
+      // Even when in-memory hasPendingOptimisticWrites() is false and signed-out waitForPendingWrites resolves,
+      // resumed declined_hold recovery requires explicit discard confirmation before deleting cache
       mockHasPendingOptimisticWrites.mockReturnValue(false);
       fireEvent.click(
         within(screen.getByRole("alertdialog")).getByRole("button", {
           name: /ตรวจสอบและล้างแคชต่อ/,
         })
       );
+      await respondToDiscardDialog(true);
 
       await waitFor(() => {
         expect(mockTerminate).toHaveBeenCalledTimes(1);
@@ -4676,5 +4683,331 @@ describe("AuthContext", () => {
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     });
     expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBeNull();
+  });
+
+  it("retains latest deferred auth user across probe watchdog until clean completion, supersedes on newer sign-out, and blocks on found/error", async () => {
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    let pendingReq: Record<string, unknown> | null = null;
+
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        open: vi.fn(() => {
+          pendingReq = {
+            result: { close: vi.fn() },
+            transaction: { abort: vi.fn() },
+          };
+          return pendingReq;
+        }),
+      },
+    });
+
+    vi.useFakeTimers();
+    try {
+      // Case 1: Sign-in arrives after watchdog fires, then probe resolves clean -> applies retained user
+      const firstMount = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+
+      await act(async () => {
+        (pendingReq!.onupgradeneeded as () => void)();
+        (pendingReq!.onerror as () => void)();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("staff-1");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("false");
+      firstMount.unmount();
+
+      // Case 2: Sign-in arrives after watchdog, then newer sign-out supersedes before clean completion -> stays signed out
+      pendingReq = null;
+      const secondMount = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        (pendingReq!.onupgradeneeded as () => void)();
+        (pendingReq!.onerror as () => void)();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("false");
+      secondMount.unmount();
+
+      // Case 3: Sign-in retained across watchdog, then probe resolves found -> stays blocked and triggers cleanup
+      pendingReq = null;
+      let resolveCase3Clear!: () => void;
+      mockClearIndexedDbPersistence.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveCase3Clear = resolve;
+          })
+      );
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      await act(async () => {
+        (pendingReq!.onsuccess as () => void)();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveCase3Clear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
+
+  it("keeps close-other-tabs instructions visible while retry termination is pending and observes the single in-flight terminate", async () => {
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    let dbCleared = false;
+
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        open: vi.fn(() => {
+          const req: Record<string, unknown> = {
+            result: { close: vi.fn() },
+            transaction: { abort: vi.fn() },
+          };
+          if (dbCleared) {
+            queueMicrotask(() => {
+              (req.onupgradeneeded as () => void)?.();
+              (req.onerror as () => void)?.();
+            });
+          }
+          return req;
+        }),
+      },
+    });
+
+    let resolveTerminate!: () => void;
+    mockTerminate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveTerminate = resolve;
+        })
+    );
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+
+      const retryButton = within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: /ลองล้างแคช/,
+      });
+      await act(async () => {
+        fireEvent.click(retryButton);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Instructions remain visible and sign-in stays blocked while terminate() is pending
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/กรุณาปิดแท็บอื่นของระบบที่เปิดค้างไว้/);
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Resolving the single in-flight termination finishes clear and reloads
+      dbCleared = true;
+      await act(async () => {
+        resolveTerminate();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
+
+  it("defers startup retry cleanup to an active peer termination owner without starting a competing termination request", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      peerMessages.push(msg);
+      if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "peer-owner-tab",
+          hasPending: false,
+          hasDrafts: true,
+        });
+      }
+    };
+
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        open: vi.fn(() => ({
+          result: { close: vi.fn() },
+          transaction: { abort: vi.fn() },
+        })),
+      },
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      // Register peer tab with drafts so Retry's confirmPendingWritesBeforeLogout opens ConfirmModal
+      peerChannel.postMessage({
+        type: "HELLO",
+        tabId: "peer-owner-tab",
+        hasPending: false,
+        hasDrafts: true,
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+
+      // Click Retry -> enters runStartupCleanup -> waits for peer check and shows ConfirmModal
+      await act(async () => {
+        fireEvent.click(
+          within(screen.getByRole("alertdialog")).getByRole("button", { name: /ลองล้างแคช/ })
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      // Advance peer handshake + peer check timeouts so ConfirmModal opens
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // Peer becomes active termination owner while startup Retry prompt is open
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_REQUEST",
+          requestId: "term-peer-owner-1",
+          senderTabId: "peer-owner-tab",
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Peer request owns the cleanup: marker reflects peer's requestId, no competing LOGOUT_TERMINATE_DB_REQUEST sent
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBe(
+        "term-peer-owner-1"
+      );
+      expect(peerMessages.some((m) => m.type === "LOGOUT_TERMINATE_DB_REQUEST")).toBe(false);
+      expect(peerMessages.some((m) => m.type === "LOGOUT_TERMINATE_DB_ACK" && m.requestId === "term-peer-owner-1")).toBe(true);
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+
+      // Peer completes cache clear -> reloads cleanly under the peer owner
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_CACHE_CLEARED",
+          requestId: "term-peer-owner-1",
+          senderTabId: "peer-owner-tab",
+        });
+        await Promise.resolve();
+      });
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      peerChannel.close();
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
   });
 });

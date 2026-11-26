@@ -429,7 +429,8 @@ type AuthSyncMessage =
 async function confirmPendingWritesBeforeLogout(
   firestoreDb: Firestore | null,
   requestDiscardConfirmation: (message: string) => Promise<boolean>,
-  queryPeerTabs?: () => Promise<PeerTabDirtyState>
+  queryPeerTabs?: () => Promise<PeerTabDirtyState>,
+  options?: { signedOutRecovery?: boolean }
 ): Promise<{ canProceed: boolean; confirmedDiscard: boolean }> {
 
   const pendingMessage =
@@ -449,7 +450,11 @@ async function confirmPendingWritesBeforeLogout(
 
   let writesSettled = true;
 
-  if (firestoreDb) {
+  if (options?.signedOutRecovery) {
+    // Already signed out after a prior discard decline: do not infer cleanliness from a signed-out
+    // waitForPendingWrites() check, because the previous user's queued writes cannot be confirmed settled.
+    writesSettled = false;
+  } else if (firestoreDb) {
     // If already offline with local pending writes, treat writes as unsettled without waiting on network.
     if (typeof navigator !== "undefined" && navigator.onLine === false && hasPendingOptimisticWrites()) {
       writesSettled = false;
@@ -548,10 +553,12 @@ export function AuthProvider({
     initialPersistedCleanup && !initialPersistedCleanup.declinedHold ? db : null
   );
   const activeClearPromiseRef = useRef<Promise<void> | null>(null);
+  const activeTerminatePromiseRef = useRef<Promise<void> | null>(null);
   const cleanupRoleRef = useRef<"peer" | "initiator" | null>(
     initialPersistedCleanup && !initialPersistedCleanup.declinedHold ? "initiator" : null
   );
   const initiatorTerminateSucceededRef = useRef(false);
+  const initiatorTerminateRejectedRef = useRef(false);
   const initiatorTerminateRequestIdRef = useRef<string | null>(
     initialPersistedCleanup?.requestId ?? null
   );
@@ -560,12 +567,14 @@ export function AuthProvider({
   const startupCacheCheckStartedRef = useRef(false);
   const startupCacheCheckInFlightRef = useRef(false);
   const startupCleanupStartedRef = useRef(false);
+  const startupDiscardPromptActiveRef = useRef(false);
   const deferredAuthUserRef = useRef<{ user: User; generation: number } | null>(null);
   const postSignOutDeclinedRef = useRef(Boolean(initialPersistedCleanup?.declinedHold));
   const verifyIdbCleanOnFinalizeRef = useRef(false);
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initiatorClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initiatorTerminatePendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cleanupBackdropRef = useRef<HTMLDivElement>(null);
   const cleanupDialogRef = useRef<HTMLDivElement>(null);
   const cleanupRetryButtonRef = useRef<HTMLButtonElement>(null);
@@ -614,6 +623,14 @@ export function AuthProvider({
         clearTimeout(initiatorClearPendingTimerRef.current);
         initiatorClearPendingTimerRef.current = null;
       }
+      if (initiatorTerminatePendingTimerRef.current !== null) {
+        clearTimeout(initiatorTerminatePendingTimerRef.current);
+        initiatorTerminatePendingTimerRef.current = null;
+      }
+      if (initiatorTerminatePendingTimerRef.current !== null) {
+        clearTimeout(initiatorTerminatePendingTimerRef.current);
+        initiatorTerminatePendingTimerRef.current = null;
+      }
       clearPendingCleanupMarker();
       pendingFirestoreCleanupRef.current = false;
       peerDbTerminatedRef.current = false;
@@ -623,6 +640,7 @@ export function AuthProvider({
       terminatedDbRef.current = null;
       cleanupRoleRef.current = null;
       initiatorTerminateSucceededRef.current = false;
+      initiatorTerminateRejectedRef.current = false;
       initiatorTerminateRequestIdRef.current = null;
       setCleanupPhase("idle");
       setCleanupBlockedByPending(false);
@@ -857,6 +875,10 @@ export function AuthProvider({
           break;
         case "LOGOUT_TERMINATE_DB_REQUEST":
           if (msg.senderTabId !== myTabId) {
+            if (startupDiscardPromptActiveRef.current) {
+              startupDiscardPromptActiveRef.current = false;
+              settleDiscardPrompt(false);
+            }
             const requestId = msg.requestId;
             // Reset peer reload-barrier state for each termination request so earlier signals cannot carry over
             activeTerminateRequestIdRef.current = requestId;
@@ -1075,6 +1097,10 @@ export function AuthProvider({
         clearTimeout(initiatorClearPendingTimerRef.current);
         initiatorClearPendingTimerRef.current = null;
       }
+      if (initiatorTerminatePendingTimerRef.current !== null) {
+        clearTimeout(initiatorTerminatePendingTimerRef.current);
+        initiatorTerminatePendingTimerRef.current = null;
+      }
       helloHandshakeStateRef.current = "settled";
       notifyBye();
       channelRef.current = null;
@@ -1091,7 +1117,7 @@ export function AuthProvider({
       pendingTerminateAcks.clear();
       channel.close();
     };
-  }, [activeReservationStore, getOrStartClearPersistence, triggerPeerReloadIfReady]);
+    }, [activeReservationStore, getOrStartClearPersistence, settleDiscardPrompt, triggerPeerReloadIfReady]);
 
   const queryPeerTabsBeforeLogout = useCallback(async (issuedRequestIds?: string[]): Promise<PeerTabDirtyState> => {
     const channel = channelRef.current;
@@ -1272,35 +1298,110 @@ export function AuthProvider({
     [getOrStartClearPersistence]
   );
 
+  const hasActivePeerTermination = useCallback(
+    () => cleanupRoleRef.current === "peer" || activeTerminateRequestIdRef.current !== null,
+    []
+  );
+
+  const runInitiatorTerminateWithWatchdog = useCallback(
+    async (
+      targetDb: Firestore,
+      { keepBlockedDialog = false }: { keepBlockedDialog?: boolean } = {}
+    ) => {
+      if (initiatorTerminatePendingTimerRef.current !== null) {
+        clearTimeout(initiatorTerminatePendingTimerRef.current);
+        initiatorTerminatePendingTimerRef.current = null;
+      }
+      let settled = false;
+      if (!activeTerminatePromiseRef.current) {
+        initiatorTerminateRejectedRef.current = false;
+        const terminatePromise = terminate(targetDb)
+          .then(
+            () => {
+              initiatorTerminateSucceededRef.current = true;
+              initiatorTerminateRejectedRef.current = false;
+            },
+            (err) => {
+              initiatorTerminateRejectedRef.current = true;
+              throw err;
+            }
+          )
+          .finally(() => {
+            if (activeTerminatePromiseRef.current === terminatePromise) {
+              activeTerminatePromiseRef.current = null;
+            }
+          });
+        activeTerminatePromiseRef.current = terminatePromise;
+      }
+
+      if (keepBlockedDialog) {
+        pendingFirestoreCleanupRef.current = true;
+        terminatedDbRef.current = targetDb;
+        setCleanupBlockedByPending(true);
+        setCleanupNeedsConnectionReset(false);
+        setCleanupPhase("manual_retry");
+      } else {
+        initiatorTerminatePendingTimerRef.current = setTimeout(() => {
+          initiatorTerminatePendingTimerRef.current = null;
+          if (settled) return;
+          pendingFirestoreCleanupRef.current = true;
+          terminatedDbRef.current = targetDb;
+          setCleanupBlockedByPending(true);
+          setCleanupNeedsConnectionReset(false);
+          setCleanupPhase("manual_retry");
+        }, PEER_CACHE_CLEAR_PENDING_WAIT_MS);
+      }
+
+      try {
+        await activeTerminatePromiseRef.current;
+      } finally {
+        settled = true;
+        if (initiatorTerminatePendingTimerRef.current !== null) {
+          clearTimeout(initiatorTerminatePendingTimerRef.current);
+          initiatorTerminatePendingTimerRef.current = null;
+        }
+      }
+    },
+    []
+  );
+
   const runStartupCleanup = useCallback(
     async (
       freshDb: Firestore,
       {
         requireConsentCheck,
         initialRequestId = null,
+        keepBlockedDialog = false,
         isCancelled,
       }: {
         requireConsentCheck: boolean;
         initialRequestId?: string | null;
+        keepBlockedDialog?: boolean;
         isCancelled: () => boolean;
       }
     ) => {
       // Defer past synchronous effect execution so React hooks lint rules see async state transitions only
       await Promise.resolve();
-      if (isCancelled()) return;
+      if (isCancelled() || hasActivePeerTermination()) return;
       try {
         let terminateRequestId = initialRequestId;
         if (requireConsentCheck) {
           pendingFirestoreCleanupRef.current = true;
           setLogoutCleanupGateActive(true);
           await waitForHelloHandshake();
-          if (isCancelled()) return;
-          const startupCheck = await confirmPendingWritesBeforeLogout(
-            freshDb,
-            requestDiscardConfirmation,
-            queryPeerTabsBeforeLogout
-          );
-          if (isCancelled()) return;
+          if (isCancelled() || hasActivePeerTermination()) return;
+          startupDiscardPromptActiveRef.current = true;
+          let startupCheck: { canProceed: boolean; confirmedDiscard: boolean };
+          try {
+            startupCheck = await confirmPendingWritesBeforeLogout(
+              freshDb,
+              requestDiscardConfirmation,
+              queryPeerTabsBeforeLogout
+            );
+          } finally {
+            startupDiscardPromptActiveRef.current = false;
+          }
+          if (isCancelled() || hasActivePeerTermination()) return;
           if (!startupCheck.canProceed) {
             enterPostSignOutDeclinedHold();
             return;
@@ -1319,26 +1420,27 @@ export function AuthProvider({
           terminateRequestId =
             (await terminatePeerFirestoreTabs()) ??
             `term-${tabIdRef.current || "local"}-${Date.now()}-${logoutSequenceRef.current}`;
-          if (isCancelled()) return;
+          if (isCancelled() || hasActivePeerTermination()) return;
           const markerPersisted = writePendingCleanupMarker(terminateRequestId);
           setManualRetryError(!markerPersisted);
         } else {
           setManualRetryError(false);
         }
+        if (hasActivePeerTermination()) return;
         cleanupRoleRef.current = "initiator";
         terminatedDbRef.current = freshDb;
         initiatorTerminateSucceededRef.current = false;
+        initiatorTerminateRejectedRef.current = false;
         initiatorTerminateRequestIdRef.current = terminateRequestId;
         initiatorFinalizingRef.current = false;
-        setCleanupBlockedByPending(false);
+        setCleanupBlockedByPending(keepBlockedDialog);
         setCleanupNeedsConnectionReset(false);
-        setCleanupPhase("pending");
+        setCleanupPhase(keepBlockedDialog ? "manual_retry" : "pending");
         setLogoutCleanupGateActive(false);
-        await terminate(freshDb);
-        initiatorTerminateSucceededRef.current = true;
+        await runInitiatorTerminateWithWatchdog(freshDb, { keepBlockedDialog });
         await runInitiatorClearWithWatchdog(freshDb);
       } catch {
-        if (isCancelled()) return;
+        if (isCancelled() || hasActivePeerTermination()) return;
         pendingFirestoreCleanupRef.current = true;
         cleanupRoleRef.current = "initiator";
         terminatedDbRef.current = freshDb;
@@ -1351,9 +1453,11 @@ export function AuthProvider({
     },
     [
       enterPostSignOutDeclinedHold,
+      hasActivePeerTermination,
       queryPeerTabsBeforeLogout,
       requestDiscardConfirmation,
       runInitiatorClearWithWatchdog,
+      runInitiatorTerminateWithWatchdog,
       terminatePeerFirestoreTabs,
       waitForHelloHandshake,
     ]
@@ -1399,7 +1503,10 @@ export function AuthProvider({
           );
           setUser(null);
           setIsAuthorizedStaff(false);
-          setLoading(willRunStartupCacheCheck || startupCacheCheckInFlightRef.current);
+          setLoading(
+            willRunStartupCacheCheck ||
+              (startupCacheCheckInFlightRef.current && !pendingFirestoreCleanupRef.current)
+          );
           for (const reservationId of pendingSignedOutReservationsRef.current) {
             activeReservationStoreRef.current.releaseLogoutReservation(reservationId);
           }
@@ -1426,8 +1533,6 @@ export function AuthProvider({
                   return;
                 }
                 probeTimedOut = true;
-                startupCacheCheckInFlightRef.current = false;
-                deferredAuthUserRef.current = null;
                 pendingFirestoreCleanupRef.current = true;
                 terminatedDbRef.current = freshDb;
                 setStartupCacheChecking(false);
@@ -1447,6 +1552,7 @@ export function AuthProvider({
                 logoutInProgressRef.current ||
                 postSignOutDeclinedRef.current
               ) {
+                deferredAuthUserRef.current = null;
                 return;
               }
               if (idbStatus !== "clean" && (!pendingFirestoreCleanupRef.current || probeTimedOut)) {
@@ -1503,16 +1609,25 @@ export function AuthProvider({
       }
 
       signedOutAppliedRef.current = false;
+      if (
+        startupCacheCheckInFlightRef.current &&
+        !startupCleanupStartedRef.current &&
+        cleanupRoleRef.current === null &&
+        !logoutInProgressRef.current &&
+        !postSignOutDeclinedRef.current
+      ) {
+        deferredAuthUserRef.current = { user: currentUser, generation };
+        setUser(null);
+        setIsAuthorizedStaff(false);
+        setLoading(!pendingFirestoreCleanupRef.current);
+        return;
+      }
       if (pendingFirestoreCleanupRef.current) {
         // Keep sign-in and operational routes blocked until terminated Firestore cache cleanup completes
+        deferredAuthUserRef.current = null;
         setUser(null);
         setIsAuthorizedStaff(false);
         setLoading(false);
-        return;
-      }
-      if (startupCacheCheckInFlightRef.current) {
-        deferredAuthUserRef.current = { user: currentUser, generation };
-        setLoading(true);
         return;
       }
       deferredAuthUserRef.current = null;
@@ -1623,7 +1738,8 @@ export function AuthProvider({
         const initialCheck = await confirmPendingWritesBeforeLogout(
           db,
           requestDiscardConfirmation,
-          queryPeerTabsWithJoinedDirty
+          queryPeerTabsWithJoinedDirty,
+          { signedOutRecovery: postSignOutDeclinedRef.current }
         );
         if (!initialCheck.canProceed) {
           if (postSignOutDeclinedRef.current) {
@@ -1711,6 +1827,7 @@ export function AuthProvider({
         cleanupRoleRef.current = "initiator";
         terminatedDbRef.current = db;
         initiatorTerminateSucceededRef.current = false;
+        initiatorTerminateRejectedRef.current = false;
         initiatorTerminateRequestIdRef.current = terminateRequestId;
         initiatorFinalizingRef.current = false;
         setCleanupBlockedByPending(false);
@@ -1721,8 +1838,7 @@ export function AuthProvider({
         setUser(null);
         setIsAuthorizedStaff(false);
         try {
-          await terminate(db);
-          initiatorTerminateSucceededRef.current = true;
+          await runInitiatorTerminateWithWatchdog(db);
           await runInitiatorClearWithWatchdog(db);
         } catch {
           // Keep access blocked and offer retry; do NOT reload with stale PHI in IndexedDB
@@ -1767,12 +1883,24 @@ export function AuthProvider({
     requestDiscardConfirmation,
     activeReservationStore,
     runInitiatorClearWithWatchdog,
+    runInitiatorTerminateWithWatchdog,
   ]);
 
   const handleManualRetryCleanup = useCallback(async () => {
     if (manualRetryInFlight) return;
     const targetDb = terminatedDbRef.current ?? db;
     if (!targetDb) return;
+
+    if (activeTerminatePromiseRef.current) {
+      // Keep observing the in-flight termination operation without starting a second terminate() or reloading early
+      setManualRetryInFlight(true);
+      try {
+        await activeTerminatePromiseRef.current.catch(() => {});
+      } finally {
+        setManualRetryInFlight(false);
+      }
+      return;
+    }
 
     // Never retry a rejected terminate(targetDb) on the same Firestore instance;
     // persist the non-PHI cleanup marker first and reload only if the gate survived into storage.
@@ -1808,11 +1936,17 @@ export function AuthProvider({
       if (cleanupRoleRef.current === "initiator") {
         await runInitiatorClearWithWatchdog(targetDb);
       } else if (cleanupRoleRef.current === null && pendingFirestoreCleanupRef.current) {
+        if (hasActivePeerTermination()) {
+          return;
+        }
         if (!startupCleanupStartedRef.current) {
           startupCleanupStartedRef.current = true;
+          deferredAuthUserRef.current = null;
+          startupCacheCheckInFlightRef.current = false;
           verifyIdbCleanOnFinalizeRef.current = true;
           await runStartupCleanup(targetDb, {
             requireConsentCheck: true,
+            keepBlockedDialog: cleanupBlockedByPending,
             isCancelled: () => false,
           });
         }
@@ -1832,7 +1966,9 @@ export function AuthProvider({
       setManualRetryInFlight(false);
     }
   }, [
+    cleanupBlockedByPending,
     getOrStartClearPersistence,
+    hasActivePeerTermination,
     manualRetryInFlight,
     runInitiatorClearWithWatchdog,
     runStartupCleanup,

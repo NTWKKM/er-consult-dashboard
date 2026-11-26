@@ -2528,11 +2528,118 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
       await Promise.resolve();
       expect(txCalls).toBe(0);
 
-      // Once the second online event fires, deferred runs cleanly (proving retries were preserved and wait resumed)
-      window.dispatchEvent(new Event("online"));
-      await deferred.backgroundPromise;
-      expect(txCalls).toBe(1);
+      // Once the second online event fires, deferred runs cleanly.
+      // Fail the first 3 post-reconnect transactions with retryable errors (exhausting all 3 retries)
+      // and compare against an equivalent transfer that stayed online while waiting for its slot
+      // to verify the slot-time offline bounce itself did not consume any retry budget.
+      const retryableErr = Object.assign(new Error("Connection unavailable"), {
+        code: "unavailable",
+      });
+      let postReconnectTxCalls = 0;
+      const makeRetryableThenSuccessImpl =
+        (caseId: string, onCall: (n: number) => void) =>
+        async (_db: unknown, fn: (tx: { get: () => Promise<unknown>; update: () => void }) => unknown) => {
+          postReconnectTxCalls += 1;
+          onCall(postReconnectTxCalls);
+          if (postReconnectTxCalls <= 3) {
+            throw retryableErr;
+          }
+          return fn({
+            get: vi.fn().mockResolvedValue(
+              makeDocSnapshot(
+                caseId,
+                baseConsult({
+                  room: "NT",
+                  departments: { "Gen Sx": { status: "pending", completedAt: null } },
+                })
+              )
+            ),
+            update: vi.fn(),
+          });
+        };
+
+      let offlineSlotPostReconnectCalls = 0;
+      mockRunTransaction.mockReset();
+      mockRunTransaction.mockImplementation(
+        makeRetryableThenSuccessImpl("c-slot-offline", () => {
+          offlineSlotPostReconnectCalls += 1;
+        })
+      );
+
+      vi.useFakeTimers();
+      try {
+        window.dispatchEvent(new Event("online"));
+        await vi.advanceTimersByTimeAsync(2000);
+        await deferred.backgroundPromise;
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(offlineSlotPostReconnectCalls).toBe(4);
       expect(onBackgroundError).not.toHaveBeenCalled();
+
+      // Equivalent control transfer that stayed online while waiting for its slot
+      setNavigatorOnLine(false);
+      mockGetDocFromCache.mockResolvedValue(
+        makeDocSnapshot(
+          "c-slot-online-control",
+          baseConsult({
+            room: "NT",
+            departments: { "Gen Sx": { status: "pending", completedAt: null } },
+          })
+        )
+      );
+      const onControlError = vi.fn();
+      const controlDeferred = await transferConsultRoom("c-slot-online-control", "SSW", onControlError);
+
+      let releaseControlBlocker!: (snap: ReturnType<typeof makeDocSnapshot>) => void;
+      let markControlBlockerEntered!: () => void;
+      const controlBlockerEntered = new Promise<void>((resolve) => {
+        markControlBlockerEntered = resolve;
+      });
+      mockGetDocFromServer.mockImplementationOnce(() => {
+        markControlBlockerEntered();
+        return new Promise((resolve) => {
+          releaseControlBlocker = resolve;
+        });
+      });
+
+      setNavigatorOnLine(true);
+      const controlBlocker = transferConsultRoom("c-slot-online-control", "NT", onControlError);
+      await controlBlockerEntered;
+
+      postReconnectTxCalls = 0;
+      let controlPostReconnectCalls = 0;
+      mockRunTransaction.mockImplementation(
+        makeRetryableThenSuccessImpl("c-slot-online-control", () => {
+          controlPostReconnectCalls += 1;
+        })
+      );
+
+      vi.useFakeTimers();
+      try {
+        window.dispatchEvent(new Event("online"));
+        await Promise.resolve();
+        releaseControlBlocker(
+          makeDocSnapshot(
+            "c-slot-online-control",
+            baseConsult({
+              room: "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        );
+        const controlBlockerRes = await controlBlocker;
+        expect(controlBlockerRes.transferred).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(2000);
+        await controlDeferred.backgroundPromise;
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(controlPostReconnectCalls).toBe(4);
+      expect(offlineSlotPostReconnectCalls).toBe(controlPostReconnectCalls);
+      expect(onControlError).not.toHaveBeenCalled();
     } finally {
       addEventListenerSpy.mockRestore();
     }
