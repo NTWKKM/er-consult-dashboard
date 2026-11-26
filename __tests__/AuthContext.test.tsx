@@ -4117,4 +4117,209 @@ describe("AuthContext", () => {
       }
     }
   });
+
+  it("reads declined_hold from cookie fallback on reload even when sessionStorage.setItem fails and window.name getter throws", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const originalWindowNameDesc = Object.getOwnPropertyDescriptor(window, "name");
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage-write-blocked");
+    });
+
+    Object.defineProperty(window, "name", {
+      configurable: true,
+      get: () => {
+        throw new Error("window-name-read-blocked");
+      },
+      set: () => {
+        throw new Error("window-name-write-blocked");
+      },
+    });
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        databases: vi.fn(async () => [
+          { name: "firestore/[DEFAULT]/er-consult/main", version: 1 },
+        ]),
+      },
+    });
+
+    let peerHasDrafts = true;
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "late-dirty-peer-cookie",
+          hasPending: false,
+          hasDrafts: peerHasDrafts,
+        });
+      } else if (msg.type === "LOGOUT_TERMINATE_DB_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_ACK",
+          requestId: msg.requestId,
+          tabId: "late-dirty-peer-cookie",
+        });
+      }
+    };
+
+    let resolveSignOut!: () => void;
+    mockSignOut.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSignOut = resolve;
+        })
+    );
+
+    try {
+      const firstRender = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+      });
+
+      peerChannel.postMessage({
+        type: "HELLO",
+        tabId: "late-dirty-peer-cookie",
+        hasPending: false,
+        hasDrafts: true,
+      });
+      await new Promise((r) => setTimeout(r, 20));
+
+      await act(async () => {
+        resolveSignOut();
+        await Promise.resolve();
+      });
+      await respondToDiscardDialog(false);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+      expect(document.cookie).toContain(
+        "er_consult_pending_cache_cleanup_v1=__declined_hold__"
+      );
+      firstRender.unmount();
+
+      // Reload while sessionStorage.getItem returns null and window.name getter throws -> MUST read cookie declined_hold
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/รักษาข้อมูลร่าง/);
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Restore storage + window.name and resolve peer drafts -> recovery cleans cache and clears cookie
+      if (originalWindowNameDesc) {
+        Object.defineProperty(window, "name", originalWindowNameDesc);
+      }
+      setItemSpy.mockRestore();
+      peerHasDrafts = false;
+      fireEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: /ตรวจสอบและล้างแคชต่อ/,
+        })
+      );
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(document.cookie).not.toContain("er_consult_pending_cache_cleanup_v1=");
+    } finally {
+      setItemSpy.mockRestore();
+      peerChannel.close();
+      if (originalWindowNameDesc) {
+        Object.defineProperty(window, "name", originalWindowNameDesc);
+      }
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
+
+  it("fails closed when indexedDB.databases() rejects on signed-out startup, keeping sign-in blocked without an infinite reload loop", async () => {
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    let idbFailing = true;
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        databases: vi.fn(async () => {
+          if (idbFailing) {
+            throw new Error("idb-enumeration-blocked");
+          }
+          return [];
+        }),
+      },
+    });
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // Sign-in stays blocked while IDB check cannot verify clean state
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+
+      // Once indexedDB.databases() recovers cleanly, Retry completes and reloads
+      idbFailing = false;
+      fireEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", { name: /ลองล้างแคช/ })
+      );
+
+      await waitFor(() => {
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
 });

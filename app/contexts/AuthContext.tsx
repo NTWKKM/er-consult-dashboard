@@ -87,17 +87,17 @@ function parseCleanupMarkerValue(raw: string): PendingCleanupMarker {
   return { requestId: raw };
 }
 
-function readWindowNameCleanupMarker(): PendingCleanupMarker | null {
-  if (typeof window === "undefined") return null;
+function readWindowNameCleanupMarker(): { marker: PendingCleanupMarker | null; error?: boolean } {
+  if (typeof window === "undefined") return { marker: null };
   try {
     const name = window.name;
     if (typeof name !== "string" || !name.startsWith(WINDOW_NAME_CLEANUP_PREFIX)) {
-      return null;
+      return { marker: null };
     }
     const raw = name.slice(WINDOW_NAME_CLEANUP_PREFIX.length);
-    return parseCleanupMarkerValue(raw);
+    return { marker: parseCleanupMarkerValue(raw) };
   } catch {
-    return { requestId: null };
+    return { marker: null, error: true };
   }
 }
 
@@ -203,44 +203,54 @@ function getTargetFirestoreIndexedDbName(targetDb: Firestore): string | null {
   return `firestore/${persistenceKey}/${dbSegment}/main`;
 }
 
-async function hasLeftoverFirestoreIndexedDb(targetDb: Firestore): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+async function checkStartupFirestoreIndexedDb(
+  targetDb: Firestore
+): Promise<"found" | "clean" | "error"> {
+  if (typeof window === "undefined") return "clean";
   const targetDbName = getTargetFirestoreIndexedDbName(targetDb);
-  if (!targetDbName) return false;
+  if (!targetDbName) return "clean";
   const idb = window.indexedDB;
-  if (!idb || typeof idb.databases !== "function") return false;
+  if (!idb || typeof idb.databases !== "function") return "clean";
   try {
     const databases = await idb.databases();
-    return databases.some((entry) => entry?.name === targetDbName);
+    return databases.some((entry) => entry?.name === targetDbName) ? "found" : "clean";
   } catch {
-    return false;
+    return "error";
   }
 }
 
 function readPendingCleanupMarker(): PendingCleanupMarker | null {
   if (typeof window === "undefined") return null;
-  let storageError = false;
+  let readError = false;
   try {
     const raw = window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
     if (raw) {
       return parseCleanupMarkerValue(raw);
     }
   } catch {
-    storageError = true;
+    readError = true;
   }
-  const fallback = readWindowNameCleanupMarker() ?? readCookieCleanupMarker();
-  if (fallback) {
-    return storageError ? { ...fallback, storageError: true } : fallback;
+  const win = readWindowNameCleanupMarker();
+  if (win.marker) {
+    return readError ? { ...win.marker, storageError: true } : win.marker;
   }
-  // Fail closed if sessionStorage cannot be read so sign-in cannot bypass an unverified cleanup
-  return storageError ? { requestId: null, storageError: true } : null;
+  if (win.error) {
+    readError = true;
+  }
+  const cookieMarker = readCookieCleanupMarker();
+  if (cookieMarker) {
+    return readError ? { ...cookieMarker, storageError: true } : cookieMarker;
+  }
+  // Fail closed if sessionStorage or window.name cannot be read so sign-in cannot bypass an unverified cleanup
+  return readError ? { requestId: null, storageError: true } : null;
 }
 
 function canReadPendingCleanupStorage(): boolean {
   if (typeof window === "undefined") return false;
   try {
     window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
-    return readWindowNameCleanupMarker() === null && readCookieCleanupMarker() === null;
+    const win = readWindowNameCleanupMarker();
+    return !win.error && win.marker === null && readCookieCleanupMarker() === null;
   } catch {
     return false;
   }
@@ -441,6 +451,7 @@ export function AuthProvider({
   const startupCacheCheckInFlightRef = useRef(false);
   const deferredAuthUserRef = useRef<{ user: User; generation: number } | null>(null);
   const postSignOutDeclinedRef = useRef(Boolean(initialPersistedCleanup?.declinedHold));
+  const verifyIdbCleanOnFinalizeRef = useRef(false);
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initiatorClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1122,6 +1133,21 @@ export function AuthProvider({
         setCleanupPhase("manual_retry");
         return;
       }
+      if (verifyIdbCleanOnFinalizeRef.current) {
+        const idbStatus = await checkStartupFirestoreIndexedDb(targetDb);
+        if (idbStatus === "error") {
+          // IndexedDB enumeration still rejects: hold cleanup gate rather than reloading into an unverified loop
+          initiatorFinalizingRef.current = false;
+          pendingFirestoreCleanupRef.current = true;
+          terminatedDbRef.current = targetDb;
+          setCleanupBlockedByPending(false);
+          setCleanupNeedsConnectionReset(false);
+          setManualRetryError(true);
+          setCleanupPhase("manual_retry");
+          return;
+        }
+        verifyIdbCleanOnFinalizeRef.current = false;
+      }
       pendingFirestoreCleanupRef.current = false;
       cleanupRoleRef.current = null;
       terminatedDbRef.current = null;
@@ -1275,15 +1301,16 @@ export function AuthProvider({
             startupCacheCheckStartedRef.current = true;
             startupCacheCheckInFlightRef.current = true;
             setStartupCacheChecking(true);
-            void hasLeftoverFirestoreIndexedDb(freshDb).then((hasLeftover) => {
+            void checkStartupFirestoreIndexedDb(freshDb).then((idbStatus) => {
               startupCacheCheckInFlightRef.current = false;
               if (cancelled) return;
               if (
-                hasLeftover &&
+                idbStatus !== "clean" &&
                 !pendingFirestoreCleanupRef.current &&
                 cleanupRoleRef.current === null &&
                 !logoutInProgressRef.current
               ) {
+                verifyIdbCleanOnFinalizeRef.current = idbStatus === "error";
                 deferredAuthUserRef.current = null;
                 pendingFirestoreCleanupRef.current = true;
                 setLogoutCleanupGateActive(true);
