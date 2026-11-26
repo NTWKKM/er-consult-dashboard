@@ -219,16 +219,21 @@ async function hasLeftoverFirestoreIndexedDb(targetDb: Firestore): Promise<boole
 
 function readPendingCleanupMarker(): PendingCleanupMarker | null {
   if (typeof window === "undefined") return null;
+  let storageError = false;
   try {
     const raw = window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
     if (raw) {
       return parseCleanupMarkerValue(raw);
     }
   } catch {
-    // Fail closed if sessionStorage cannot be read so sign-in cannot bypass an unverified cleanup
-    return { requestId: null, storageError: true };
+    storageError = true;
   }
-  return readWindowNameCleanupMarker() ?? readCookieCleanupMarker();
+  const fallback = readWindowNameCleanupMarker() ?? readCookieCleanupMarker();
+  if (fallback) {
+    return storageError ? { ...fallback, storageError: true } : fallback;
+  }
+  // Fail closed if sessionStorage cannot be read so sign-in cannot bypass an unverified cleanup
+  return storageError ? { requestId: null, storageError: true } : null;
 }
 
 function canReadPendingCleanupStorage(): boolean {
@@ -543,6 +548,36 @@ export function AuthProvider({
     logoutDiscardPromptRef.current = null;
     setLogoutDiscardPrompt(null);
     activePrompt?.resolve(confirmed);
+  }, []);
+
+  const waitForHelloHandshake = useCallback(async () => {
+    if (
+      typeof BroadcastChannel === "undefined" ||
+      helloHandshakeStateRef.current !== "pending"
+    ) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, PEER_LOGOUT_CHECK_TIMEOUT_MS);
+    });
+  }, []);
+
+  const enterPostSignOutDeclinedHold = useCallback(() => {
+    preserveDraftOnSignOutDeclineRef.current = true;
+    postSignOutDeclinedRef.current = true;
+    pendingFirestoreCleanupRef.current = true;
+    const markerPersisted = writePendingCleanupMarker(DECLINED_HOLD_MARKER_VALUE);
+    setManualRetryError(!markerPersisted);
+    setLogoutCleanupGateActive(false);
+    setCleanupPhase("declined_hold");
+    try {
+      channelRef.current?.postMessage({
+        type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
+        senderTabId: tabIdRef.current,
+      } satisfies AuthSyncMessage);
+    } catch {
+      // Ignore broadcast errors during decline
+    }
   }, []);
 
   useEffect(() => {
@@ -1100,6 +1135,93 @@ export function AuthProvider({
     [getOrStartClearPersistence]
   );
 
+  const runStartupCleanup = useCallback(
+    async (
+      freshDb: Firestore,
+      {
+        requireConsentCheck,
+        initialRequestId = null,
+        isCancelled,
+      }: {
+        requireConsentCheck: boolean;
+        initialRequestId?: string | null;
+        isCancelled: () => boolean;
+      }
+    ) => {
+      // Defer past synchronous effect execution so React hooks lint rules see async state transitions only
+      await Promise.resolve();
+      if (isCancelled()) return;
+      try {
+        let terminateRequestId = initialRequestId;
+        if (requireConsentCheck) {
+          pendingFirestoreCleanupRef.current = true;
+          setLogoutCleanupGateActive(true);
+          await waitForHelloHandshake();
+          if (isCancelled()) return;
+          const startupCheck = await confirmPendingWritesBeforeLogout(
+            freshDb,
+            requestDiscardConfirmation,
+            queryPeerTabsBeforeLogout
+          );
+          if (isCancelled()) return;
+          if (!startupCheck.canProceed) {
+            enterPostSignOutDeclinedHold();
+            return;
+          }
+          preserveDraftOnSignOutDeclineRef.current = false;
+          postSignOutDeclinedRef.current = false;
+          clearRetainedSubmitDraft();
+          try {
+            channelRef.current?.postMessage({
+              type: "LOGOUT_CLEAR_DRAFTS",
+              senderTabId: tabIdRef.current,
+            } satisfies AuthSyncMessage);
+          } catch {
+            // Ignore broadcast errors during startup cleanup
+          }
+          terminateRequestId =
+            (await terminatePeerFirestoreTabs()) ??
+            `term-${tabIdRef.current || "local"}-${Date.now()}-${logoutSequenceRef.current}`;
+          if (isCancelled()) return;
+          const markerPersisted = writePendingCleanupMarker(terminateRequestId);
+          setManualRetryError(!markerPersisted);
+        } else {
+          setManualRetryError(false);
+        }
+        cleanupRoleRef.current = "initiator";
+        terminatedDbRef.current = freshDb;
+        initiatorTerminateSucceededRef.current = false;
+        initiatorTerminateRequestIdRef.current = terminateRequestId;
+        initiatorFinalizingRef.current = false;
+        setCleanupBlockedByPending(false);
+        setCleanupNeedsConnectionReset(false);
+        setCleanupPhase("pending");
+        setLogoutCleanupGateActive(false);
+        await terminate(freshDb);
+        initiatorTerminateSucceededRef.current = true;
+        await runInitiatorClearWithWatchdog(freshDb);
+      } catch {
+        if (isCancelled()) return;
+        pendingFirestoreCleanupRef.current = true;
+        cleanupRoleRef.current = "initiator";
+        terminatedDbRef.current = freshDb;
+        setLogoutCleanupGateActive(false);
+        setCleanupBlockedByPending(false);
+        setCleanupNeedsConnectionReset(!initiatorTerminateSucceededRef.current);
+        setManualRetryError(true);
+        setCleanupPhase("manual_retry");
+      }
+    },
+    [
+      enterPostSignOutDeclinedHold,
+      queryPeerTabsBeforeLogout,
+      requestDiscardConfirmation,
+      runInitiatorClearWithWatchdog,
+      terminatePeerFirestoreTabs,
+      waitForHelloHandshake,
+    ]
+  );
+
   useEffect(() => {
     if (!auth) {
       return;
@@ -1164,33 +1286,15 @@ export function AuthProvider({
               ) {
                 deferredAuthUserRef.current = null;
                 pendingFirestoreCleanupRef.current = true;
-                cleanupRoleRef.current = "initiator";
-                terminatedDbRef.current = freshDb;
-                initiatorTerminateSucceededRef.current = false;
-                initiatorTerminateRequestIdRef.current = null;
-                initiatorFinalizingRef.current = false;
-                setCleanupBlockedByPending(false);
-                setCleanupNeedsConnectionReset(false);
-                setManualRetryError(false);
-                setCleanupPhase("pending");
+                setLogoutCleanupGateActive(true);
                 setStartupCacheChecking(false);
                 setUser(null);
                 setIsAuthorizedStaff(false);
                 setLoading(false);
-                void (async () => {
-                  try {
-                    await terminate(freshDb);
-                    initiatorTerminateSucceededRef.current = true;
-                    await runInitiatorClearWithWatchdog(freshDb);
-                  } catch {
-                    pendingFirestoreCleanupRef.current = true;
-                    terminatedDbRef.current = freshDb;
-                    setCleanupBlockedByPending(false);
-                    setCleanupNeedsConnectionReset(!initiatorTerminateSucceededRef.current);
-                    setManualRetryError(true);
-                    setCleanupPhase("manual_retry");
-                  }
-                })();
+                void runStartupCleanup(freshDb, {
+                  requireConsentCheck: true,
+                  isCancelled: () => cancelled,
+                });
                 return;
               }
               setStartupCacheChecking(false);
@@ -1253,7 +1357,7 @@ export function AuthProvider({
       authGeneration += 1;
       unsubscribe();
     };
-  }, [initialPersistedCleanup, runInitiatorClearWithWatchdog, triggerPeerReloadIfReady]);
+  }, [initialPersistedCleanup, runStartupCleanup, triggerPeerReloadIfReady]);
 
   useEffect(() => {
     if (
@@ -1277,22 +1381,20 @@ export function AuthProvider({
       return;
     }
 
+    let cancelled = false;
     const freshDb = db;
-    void (async () => {
-      try {
-        await terminate(freshDb);
-        initiatorTerminateSucceededRef.current = true;
-        await runInitiatorClearWithWatchdog(freshDb);
-      } catch {
-        pendingFirestoreCleanupRef.current = true;
-        terminatedDbRef.current = freshDb;
-        setCleanupBlockedByPending(false);
-        setCleanupNeedsConnectionReset(!initiatorTerminateSucceededRef.current);
-        setManualRetryError(true);
-        setCleanupPhase("manual_retry");
-      }
-    })();
-  }, [initialPersistedCleanup, runInitiatorClearWithWatchdog]);
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      void runStartupCleanup(freshDb, {
+        requireConsentCheck: Boolean(initialPersistedCleanup.storageError),
+        initialRequestId: initialPersistedCleanup.requestId,
+        isCancelled: () => cancelled,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialPersistedCleanup, runStartupCleanup]);
 
   const logout = useCallback(async () => {
     if (logoutInProgressRef.current) return;
@@ -1334,23 +1436,6 @@ export function AuthProvider({
         hasDrafts: peerState.hasDrafts || joinedDirtyDuringLogoutRef.current.hasDrafts,
         hasUnknownPeer: peerState.hasUnknownPeer,
       };
-    };
-
-    const enterPostSignOutDeclinedHold = () => {
-      preserveDraftOnSignOutDeclineRef.current = true;
-      postSignOutDeclinedRef.current = true;
-      pendingFirestoreCleanupRef.current = true;
-      writePendingCleanupMarker(DECLINED_HOLD_MARKER_VALUE);
-      setLogoutCleanupGateActive(false);
-      setCleanupPhase("declined_hold");
-      try {
-        channelRef.current?.postMessage({
-          type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
-          senderTabId: tabIdRef.current,
-        } satisfies AuthSyncMessage);
-      } catch {
-        // Ignore broadcast errors during decline
-      }
     };
 
     try {
@@ -1496,7 +1581,14 @@ export function AuthProvider({
       }
       logoutInProgressRef.current = false;
     }
-  }, [queryPeerTabsBeforeLogout, terminatePeerFirestoreTabs, requestDiscardConfirmation, activeReservationStore, runInitiatorClearWithWatchdog]);
+  }, [
+    enterPostSignOutDeclinedHold,
+    queryPeerTabsBeforeLogout,
+    terminatePeerFirestoreTabs,
+    requestDiscardConfirmation,
+    activeReservationStore,
+    runInitiatorClearWithWatchdog,
+  ]);
 
   const handleManualRetryCleanup = useCallback(async () => {
     if (manualRetryInFlight) return;
@@ -1685,9 +1777,11 @@ export function AuthProvider({
                     ? "ไม่สามารถปิดการเชื่อมต่อฐานข้อมูลเดิมได้อัตโนมัติ กรุณากดปุ่มด้านล่างเพื่อรีโหลดหน้า ปลดการเชื่อมต่อเดิม และยืนยันการล้างแคชให้สมบูรณ์ก่อนเข้าสู่ระบบ"
                     : "ระบบยังไม่สามารถล้างข้อมูลผู้ป่วยในเบราว์เซอร์ได้อัตโนมัติ (อาจมีแท็บอื่นเปิดค้างอยู่) กรุณาปิดแท็บอื่นของระบบแล้วกดลองล้างแคชอีกครั้งเพื่อความปลอดภัย"}
             </p>
-            {cleanupPhase === "manual_retry" && manualRetryError && (
+            {manualRetryError && (
               <p role="alert" className="text-xs font-medium text-bad bg-bad-soft border border-bad/35 rounded-[6px] px-3 py-2 mb-4">
-                การล้างแคชยังไม่สำเร็จ กรุณาปิดแท็บอื่นที่เปิดค้างอยู่แล้วลองใหม่อีกครั้ง
+                {cleanupPhase === "declined_hold"
+                  ? "ไม่สามารถบันทึกสถานะพักการออกจากระบบลงในเบราว์เซอร์ได้ กรุณาตรวจสอบแท็บอื่นและยืนยันการล้างแคชให้เรียบร้อยก่อนรีเฟรชหน้า"
+                  : "การล้างแคชยังไม่สำเร็จ กรุณาปิดแท็บอื่นที่เปิดค้างอยู่แล้วลองใหม่อีกครั้ง"}
               </p>
             )}
             <button
