@@ -595,22 +595,12 @@ export function AuthProvider({
   const [manualRetryError, setManualRetryError] = useState(false);
   const [startupCacheChecking, setStartupCacheChecking] = useState(false);
   const [logoutCleanupGateActive, setLogoutCleanupGateActive] = useState(false);
-  const getOrStartClearPersistence = useCallback((targetDb: Firestore): Promise<void> => {
-    if (!activeClearPromiseRef.current) {
-      const clearPromise = clearIndexedDbPersistence(targetDb).finally(() => {
-        if (activeClearPromiseRef.current === clearPromise) {
-          activeClearPromiseRef.current = null;
-        }
-      });
-      activeClearPromiseRef.current = clearPromise;
-    }
-    return activeClearPromiseRef.current;
-  }, []);
   const triggerPeerReloadIfReady = useCallback(() => {
     if (
       (signedOutAppliedRef.current || pendingFirestoreCleanupRef.current) &&
       peerDbTerminatedRef.current &&
       peerCacheClearedRef.current &&
+      !activeClearPromiseRef.current &&
       typeof window !== "undefined"
     ) {
       if (peerReloadFallbackTimerRef.current !== null) {
@@ -653,6 +643,23 @@ export function AuthProvider({
       window.location.reload();
     }
   }, []);
+  const getOrStartClearPersistence = useCallback(
+    (targetDb: Firestore): Promise<void> => {
+      if (!activeClearPromiseRef.current) {
+        const clearPromise = clearIndexedDbPersistence(targetDb).finally(() => {
+          if (activeClearPromiseRef.current === clearPromise) {
+            activeClearPromiseRef.current = null;
+            if (peerCacheClearedRef.current && peerDbTerminatedRef.current) {
+              triggerPeerReloadIfReady();
+            }
+          }
+        });
+        activeClearPromiseRef.current = clearPromise;
+      }
+      return activeClearPromiseRef.current;
+    },
+    [triggerPeerReloadIfReady]
+  );
   const [logoutDiscardPrompt, setLogoutDiscardPrompt] = useState<{
     message: string;
     resolve: (confirmed: boolean) => void;

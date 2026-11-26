@@ -5763,4 +5763,81 @@ describe("AuthContext", () => {
       vi.useRealTimers();
     }
   });
+
+  it("defers peer reload until an already-started fallback clearIndexedDbPersistence settles when LOGOUT_CACHE_CLEARED arrives mid-clear", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    let resolveAck!: () => void;
+    const ackReceived = new Promise<void>((resolve) => {
+      resolveAck = resolve;
+    });
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      if (msg.type === "LOGOUT_TERMINATE_DB_ACK" && msg.requestId === "term-overlap-clear") {
+        resolveAck();
+      }
+    };
+
+    let resolveInFlightClear!: () => void;
+    mockClearIndexedDbPersistence.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInFlightClear = resolve;
+        })
+    );
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      // Peer receives termination request and ACKs
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_REQUEST",
+          requestId: "term-overlap-clear",
+          senderTabId: "peer-initiator-tab",
+        });
+        await ackReceived;
+      });
+
+      // Fallback timer fires -> peer starts clearIndexedDbPersistence which remains pending
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Matching LOGOUT_CACHE_CLEARED arrives while peer's own clearIndexedDbPersistence is still pending:
+      // must NOT reload until the in-flight clear settles
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_CACHE_CLEARED",
+          requestId: "term-overlap-clear",
+          senderTabId: "peer-initiator-tab",
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Once the in-flight clear settles, peer reloads exactly once
+      await act(async () => {
+        resolveInFlightClear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      peerChannel.close();
+    }
+  });
 });
