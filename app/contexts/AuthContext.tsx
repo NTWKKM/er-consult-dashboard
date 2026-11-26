@@ -549,6 +549,7 @@ export function AuthProvider({
   const peerCacheClearedRef = useRef(false);
   const pendingFirestoreCleanupRef = useRef(Boolean(initialPersistedCleanup));
   const activeTerminateRequestIdRef = useRef<string | null>(null);
+  const pendingPeerTerminateRequestIdsRef = useRef<Set<string>>(new Set());
   const sentTerminateRequestIdsRef = useRef<Set<string>>(new Set());
   const terminatedDbRef = useRef<Firestore | null>(
     initialPersistedCleanup && !initialPersistedCleanup.declinedHold ? db : null
@@ -629,6 +630,7 @@ export function AuthProvider({
       peerTerminateSucceededRef.current = false;
       peerCacheClearedRef.current = false;
       activeTerminateRequestIdRef.current = null;
+      pendingPeerTerminateRequestIdsRef.current.clear();
       sentTerminateRequestIdsRef.current.clear();
       terminatedDbRef.current = null;
       cleanupRoleRef.current = null;
@@ -892,6 +894,7 @@ export function AuthProvider({
             const requestId = msg.requestId;
             // Reset peer reload-barrier state for each termination request so earlier signals cannot carry over
             activeTerminateRequestIdRef.current = requestId;
+            pendingPeerTerminateRequestIdsRef.current.add(requestId);
             cleanupRoleRef.current = "peer";
             peerDbTerminatedRef.current = false;
             peerTerminateSucceededRef.current = false;
@@ -1023,11 +1026,13 @@ export function AuthProvider({
                               if (!isCurrentRequest()) return;
                               setCleanupBlockedByPending(false);
                               if (!peerCacheClearedRef.current) {
-                                const completedIds = new Set<string>(
-                                  sentTerminateRequestIdsRef.current
-                                );
+                                const completedIds = new Set<string>([
+                                  ...sentTerminateRequestIdsRef.current,
+                                  ...pendingPeerTerminateRequestIdsRef.current,
+                                ]);
                                 completedIds.add(requestId);
                                 sentTerminateRequestIdsRef.current.clear();
+                                pendingPeerTerminateRequestIdsRef.current.clear();
                                 for (const completedId of completedIds) {
                                   try {
                                     channel.postMessage({
@@ -1080,10 +1085,13 @@ export function AuthProvider({
         }
         case "LOGOUT_CACHE_CLEARED":
           if (msg.senderTabId !== myTabId) {
-            if (
-              !activeTerminateRequestIdRef.current ||
-              msg.requestId !== activeTerminateRequestIdRef.current
-            ) {
+            const matchesActivePeerWait =
+              activeTerminateRequestIdRef.current !== null &&
+              Boolean(msg.requestId) &&
+              (msg.requestId === activeTerminateRequestIdRef.current ||
+                pendingPeerTerminateRequestIdsRef.current.has(msg.requestId) ||
+                sentTerminateRequestIdsRef.current.has(msg.requestId));
+            if (!matchesActivePeerWait) {
               break;
             }
             if (peerReloadFallbackTimerRef.current !== null) {
@@ -1147,6 +1155,7 @@ export function AuthProvider({
     const pendingSignedOutReservations = pendingSignedOutReservationsRef.current;
     const pendingPeerChecks = pendingPeerChecksRef.current;
     const pendingTerminateAcks = pendingTerminateAcksRef.current;
+    const pendingPeerTerminateRequestIds = pendingPeerTerminateRequestIdsRef.current;
     const sentTerminateRequestIds = sentTerminateRequestIdsRef.current;
     return () => {
       window.removeEventListener("pageshow", handlePageShow);
@@ -1189,6 +1198,7 @@ export function AuthProvider({
       pendingSignedOutReservations.clear();
       pendingPeerChecks.clear();
       pendingTerminateAcks.clear();
+      pendingPeerTerminateRequestIds.clear();
       sentTerminateRequestIds.clear();
       channel.close();
     };
@@ -1340,8 +1350,17 @@ export function AuthProvider({
       if (!isActiveInitiatorOwner()) {
         if (hasActivePeerTermination()) {
           initiatorTerminateRequestIdRef.current = null;
-          peerCacheClearedRef.current = true;
-          triggerPeerReloadIfReady();
+          if (!verifyIdbCleanOnFinalizeRef.current) {
+            peerCacheClearedRef.current = true;
+            triggerPeerReloadIfReady();
+          } else {
+            const idbStatus = await checkStartupFirestoreIndexedDb(targetDb);
+            if (hasActivePeerTermination() && idbStatus === "clean") {
+              verifyIdbCleanOnFinalizeRef.current = false;
+              peerCacheClearedRef.current = true;
+              triggerPeerReloadIfReady();
+            }
+          }
         }
         return;
       }
@@ -2107,11 +2126,15 @@ export function AuthProvider({
           return;
         }
         setCleanupBlockedByPending(false);
-        const completedIds = new Set<string>(sentTerminateRequestIdsRef.current);
+        const completedIds = new Set<string>([
+          ...sentTerminateRequestIdsRef.current,
+          ...pendingPeerTerminateRequestIdsRef.current,
+        ]);
         if (peerRetryRequestId) {
           completedIds.add(peerRetryRequestId);
         }
         sentTerminateRequestIdsRef.current.clear();
+        pendingPeerTerminateRequestIdsRef.current.clear();
         for (const completedId of completedIds) {
           try {
             channelRef.current?.postMessage({

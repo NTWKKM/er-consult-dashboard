@@ -5887,9 +5887,9 @@ describe("AuthContext", () => {
         await ackReceived;
       });
 
-      // Fallback timer fires -> peer starts clearIndexedDbPersistence which remains pending
+      // Fallback timer fires (PEER_CACHE_CLEAR_FALLBACK_MS = 1500ms) -> peer starts clearIndexedDbPersistence which remains pending
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(2500);
+        await vi.advanceTimersByTimeAsync(1500);
       });
       expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
       expect(reloadSpy).not.toHaveBeenCalled();
@@ -5910,6 +5910,16 @@ describe("AuthContext", () => {
         });
         await deliveryBarrierReached;
       });
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Keep the clear pending past the 3,000 ms watchdog deadline -> close-other-tabs instructions
+      // must appear while reload still has not run
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(
+        /กรุณาปิดแท็บอื่นของระบบที่เปิดค้างไว้/
+      );
       expect(reloadSpy).not.toHaveBeenCalled();
 
       // Once the in-flight clear settles, peer reloads exactly once
