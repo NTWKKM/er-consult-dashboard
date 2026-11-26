@@ -418,15 +418,16 @@ export function AuthProvider({
   const startupCacheCheckStartedRef = useRef(false);
   const startupCacheCheckInFlightRef = useRef(false);
   const deferredAuthUserRef = useRef<{ user: User; generation: number } | null>(null);
+  const postSignOutDeclinedRef = useRef(false);
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initiatorClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cleanupBackdropRef = useRef<HTMLDivElement>(null);
   const cleanupDialogRef = useRef<HTMLDivElement>(null);
   const cleanupRetryButtonRef = useRef<HTMLButtonElement>(null);
-  const [cleanupPhase, setCleanupPhase] = useState<"idle" | "pending" | "manual_retry">(
-    initialPersistedCleanup ? "pending" : "idle"
-  );
+  const [cleanupPhase, setCleanupPhase] = useState<
+    "idle" | "pending" | "manual_retry" | "declined_hold"
+  >(initialPersistedCleanup ? "pending" : "idle");
   const [cleanupBlockedByPending, setCleanupBlockedByPending] = useState(false);
   const [cleanupNeedsConnectionReset, setCleanupNeedsConnectionReset] = useState(false);
   const [manualRetryInFlight, setManualRetryInFlight] = useState(false);
@@ -1306,6 +1307,22 @@ export function AuthProvider({
       };
     };
 
+    const enterPostSignOutDeclinedHold = () => {
+      preserveDraftOnSignOutDeclineRef.current = true;
+      postSignOutDeclinedRef.current = true;
+      pendingFirestoreCleanupRef.current = true;
+      setLogoutCleanupGateActive(false);
+      setCleanupPhase("declined_hold");
+      try {
+        channelRef.current?.postMessage({
+          type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
+          senderTabId: tabIdRef.current,
+        } satisfies AuthSyncMessage);
+      } catch {
+        // Ignore broadcast errors during decline
+      }
+    };
+
     try {
       let confirmedDiscard = false;
       if (typeof window !== "undefined") {
@@ -1315,6 +1332,9 @@ export function AuthProvider({
           queryPeerTabsWithJoinedDirty
         );
         if (!initialCheck.canProceed) {
+          if (postSignOutDeclinedRef.current) {
+            enterPostSignOutDeclinedHold();
+          }
           return;
         }
         confirmedDiscard = initialCheck.confirmedDiscard;
@@ -1336,6 +1356,9 @@ export function AuthProvider({
               queryPeerTabsWithJoinedDirty
             );
             if (!lateCheck.canProceed) {
+              if (postSignOutDeclinedRef.current) {
+                enterPostSignOutDeclinedHold();
+              }
               return;
             }
             confirmedDiscard = lateCheck.confirmedDiscard;
@@ -1344,7 +1367,7 @@ export function AuthProvider({
         }
       }
 
-      if (auth) {
+      if (auth && !postSignOutDeclinedRef.current) {
         pendingFirestoreCleanupRef.current = true;
         setLogoutCleanupGateActive(true);
         await signOut(auth);
@@ -1363,19 +1386,12 @@ export function AuthProvider({
           queryPeerTabsWithJoinedDirty
         );
         if (!postSignOutCheck.canProceed) {
-          preserveDraftOnSignOutDeclineRef.current = true;
-          try {
-            channelRef.current?.postMessage({
-              type: "LOGOUT_DECLINED_PRESERVE_DRAFTS",
-              senderTabId: tabIdRef.current,
-            } satisfies AuthSyncMessage);
-          } catch {
-            // Ignore broadcast errors during decline
-          }
+          enterPostSignOutDeclinedHold();
           return;
         }
         logoutConsentedRef.current = postSignOutCheck.confirmedDiscard;
       }
+      postSignOutDeclinedRef.current = false;
       logoutCommitted = true;
 
       preserveDraftOnSignOutDeclineRef.current = false;
@@ -1424,7 +1440,7 @@ export function AuthProvider({
         }
       }
     } finally {
-      if (!terminationStarted) {
+      if (!terminationStarted && !postSignOutDeclinedRef.current) {
         pendingFirestoreCleanupRef.current = false;
         setLogoutCleanupGateActive(false);
       }
@@ -1507,8 +1523,12 @@ export function AuthProvider({
     }
   }, [getOrStartClearPersistence, manualRetryInFlight, runInitiatorClearWithWatchdog, triggerPeerReloadIfReady]);
 
+  const showCleanupDialog =
+    cleanupPhase === "manual_retry" ||
+    (cleanupPhase === "declined_hold" && !logoutDiscardPrompt);
+
   useLayoutEffect(() => {
-    if (cleanupPhase !== "manual_retry") return;
+    if (!showCleanupDialog) return;
 
     // Move keyboard focus into the cleanup gate dialog immediately when it appears
     if (cleanupRetryButtonRef.current && !cleanupRetryButtonRef.current.disabled) {
@@ -1540,10 +1560,10 @@ export function AuthProvider({
     return () => {
       inertApplied.forEach((el) => el.removeAttribute("inert"));
     };
-  }, [cleanupPhase]);
+  }, [showCleanupDialog]);
 
   useEffect(() => {
-    if (cleanupPhase !== "manual_retry") return;
+    if (!showCleanupDialog) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -1599,7 +1619,7 @@ export function AuthProvider({
       document.removeEventListener("keydown", handleKeyDown, true);
       document.removeEventListener("focusin", handleFocusIn, true);
     };
-  }, [cleanupPhase]);
+  }, [showCleanupDialog]);
 
   const isPendingCleanup =
     cleanupPhase !== "idle" || startupCacheChecking || logoutCleanupGateActive;
@@ -1607,7 +1627,7 @@ export function AuthProvider({
   return (
     <AuthContext.Provider value={{ user, loading, isAuthorizedStaff, isPendingCleanup, logout }}>
       {children}
-      {cleanupPhase === "manual_retry" && (
+      {showCleanupDialog && (
         <div
           ref={cleanupBackdropRef}
           className="fixed inset-0 z-[130] bg-paper-3/90 flex items-center justify-center p-4"
@@ -1622,16 +1642,20 @@ export function AuthProvider({
             className="w-full max-w-md rounded-[10px] border border-rule bg-paper-2 p-6 focus:outline-none"
           >
             <h2 id="cleanup-retry-title" className="text-lg font-medium text-ink mb-2">
-              จำเป็นต้องล้างข้อมูลแคชก่อนใช้งานต่อ
+              {cleanupPhase === "declined_hold"
+                ? "ออกจากระบบค้างไว้เพื่อรักษาข้อมูลร่าง"
+                : "จำเป็นต้องล้างข้อมูลแคชก่อนใช้งานต่อ"}
             </h2>
             <p id="cleanup-retry-desc" className="text-sm text-ink-2 mb-4">
-              {cleanupBlockedByPending
-                ? "การล้างข้อมูลแคชในเบราว์เซอร์ยังรอดำเนินการอยู่ กรุณาปิดแท็บอื่นของระบบที่เปิดค้างไว้ แล้วระบบจะล้างแคชและโหลดหน้าใหม่อัตโนมัติ"
-                : cleanupNeedsConnectionReset
-                  ? "ไม่สามารถปิดการเชื่อมต่อฐานข้อมูลเดิมได้อัตโนมัติ กรุณากดปุ่มด้านล่างเพื่อรีโหลดหน้า ปลดการเชื่อมต่อเดิม และยืนยันการล้างแคชให้สมบูรณ์ก่อนเข้าสู่ระบบ"
-                  : "ระบบยังไม่สามารถล้างข้อมูลผู้ป่วยในเบราว์เซอร์ได้อัตโนมัติ (อาจมีแท็บอื่นเปิดค้างอยู่) กรุณาปิดแท็บอื่นของระบบแล้วกดลองล้างแคชอีกครั้งเพื่อความปลอดภัย"}
+              {cleanupPhase === "declined_hold"
+                ? "ระบบได้ออกจากระบบบัญชีเดิมแล้ว แต่ยังไม่ล้างข้อมูลแคชเพื่อรักษาข้อมูลร่างในแท็บอื่น กรุณาตรวจสอบหรือบันทึกข้อมูลในแท็บนั้นให้เรียบร้อย แล้วกดปุ่มด้านล่างเพื่อล้างแคชก่อนเข้าสู่ระบบบัญชีใหม่"
+                : cleanupBlockedByPending
+                  ? "การล้างข้อมูลแคชในเบราว์เซอร์ยังรอดำเนินการอยู่ กรุณาปิดแท็บอื่นของระบบที่เปิดค้างไว้ แล้วระบบจะล้างแคชและโหลดหน้าใหม่อัตโนมัติ"
+                  : cleanupNeedsConnectionReset
+                    ? "ไม่สามารถปิดการเชื่อมต่อฐานข้อมูลเดิมได้อัตโนมัติ กรุณากดปุ่มด้านล่างเพื่อรีโหลดหน้า ปลดการเชื่อมต่อเดิม และยืนยันการล้างแคชให้สมบูรณ์ก่อนเข้าสู่ระบบ"
+                    : "ระบบยังไม่สามารถล้างข้อมูลผู้ป่วยในเบราว์เซอร์ได้อัตโนมัติ (อาจมีแท็บอื่นเปิดค้างอยู่) กรุณาปิดแท็บอื่นของระบบแล้วกดลองล้างแคชอีกครั้งเพื่อความปลอดภัย"}
             </p>
-            {manualRetryError && (
+            {cleanupPhase === "manual_retry" && manualRetryError && (
               <p role="alert" className="text-xs font-medium text-bad bg-bad-soft border border-bad/35 rounded-[6px] px-3 py-2 mb-4">
                 การล้างแคชยังไม่สำเร็จ กรุณาปิดแท็บอื่นที่เปิดค้างอยู่แล้วลองใหม่อีกครั้ง
               </p>
@@ -1639,11 +1663,17 @@ export function AuthProvider({
             <button
               ref={cleanupRetryButtonRef}
               type="button"
-              onClick={() => void handleManualRetryCleanup()}
-              disabled={manualRetryInFlight}
+              onClick={() =>
+                void (cleanupPhase === "declined_hold" ? logout() : handleManualRetryCleanup())
+              }
+              disabled={cleanupPhase === "manual_retry" && manualRetryInFlight}
               className="w-full px-4 py-2.5 rounded-[6px] bg-accent text-accent-ink font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed tap-feedback"
             >
-              {manualRetryInFlight ? "กำลังล้างแคช…" : "ลองล้างแคชและโหลดหน้าใหม่"}
+              {cleanupPhase === "declined_hold"
+                ? "ตรวจสอบและล้างแคชต่อ"
+                : manualRetryInFlight
+                  ? "กำลังล้างแคช…"
+                  : "ลองล้างแคชและโหลดหน้าใหม่"}
             </button>
           </div>
         </div>

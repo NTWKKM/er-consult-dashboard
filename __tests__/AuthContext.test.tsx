@@ -3543,4 +3543,131 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   });
+
+  it("keeps sign-in gated and provides draft-preserving recovery when null-user arrives and user declines post-signOut discard prompt", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    let peerHasDrafts = true;
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      peerMessages.push(msg);
+      if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "late-dirty-peer",
+          hasPending: false,
+          hasDrafts: peerHasDrafts,
+        });
+      } else if (msg.type === "LOGOUT_TERMINATE_DB_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_ACK",
+          requestId: msg.requestId,
+          tabId: "late-dirty-peer",
+        });
+      }
+    };
+
+    let resolveSignOut!: () => void;
+    mockSignOut.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSignOut = resolve;
+        })
+    );
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+      });
+
+      // Late dirty peer joins while signOut is in flight
+      peerChannel.postMessage({
+        type: "HELLO",
+        tabId: "late-dirty-peer",
+        hasPending: false,
+        hasDrafts: true,
+      });
+      await new Promise((r) => setTimeout(r, 20));
+
+      // Firebase delivers null-user callback while signOut/consent is pending
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+
+      // signOut resolves -> post-signOut discard prompt appears -> user declines to protect drafts
+      await act(async () => {
+        resolveSignOut();
+        await Promise.resolve();
+      });
+      await respondToDiscardDialog(false);
+
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "LOGOUT_DECLINED_PRESERVE_DRAFTS")).toBe(true);
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/รักษาข้อมูลร่าง/);
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // Attempting sign-in while declined hold is active MUST remain blocked
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("staff")).toHaveTextContent("false");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // Clicking recovery while peer is still dirty re-prompts discard; declining again preserves drafts and gate
+      fireEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: /ตรวจสอบและล้างแคชต่อ/,
+        })
+      );
+      await respondToDiscardDialog(false);
+      await waitFor(() => {
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+      expect(mockClearRetainedSubmitDraft).not.toHaveBeenCalled();
+      expect(mockTerminate).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Once user saves/clears draft in the peer tab and retries recovery, cleanup completes cleanly without double signOut
+      peerHasDrafts = false;
+      fireEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: /ตรวจสอบและล้างแคชต่อ/,
+        })
+      );
+
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
 });
