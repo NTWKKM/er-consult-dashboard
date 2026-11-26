@@ -3343,4 +3343,112 @@ describe("AuthContext", () => {
       peerChannel.close();
     }
   });
+
+  it("keeps loading=true and isPendingCleanup=true while signed-out startup IndexedDB check is in flight so login cannot start early", async () => {
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    let resolveDatabases!: (dbs: Array<{ name: string; version: number }>) => void;
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        databases: vi.fn(
+          () =>
+            new Promise<Array<{ name: string; version: number }>>((resolve) => {
+              resolveDatabases = resolve;
+            })
+        ),
+      },
+    });
+
+    try {
+      let resolveClear!: () => void;
+      mockClearIndexedDbPersistence.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveClear = resolve;
+          })
+      );
+
+      const firstRender = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      // While startup IndexedDB check is pending, both loading and cleanup gates stay active (login form stays hidden/blocked)
+      expect(screen.getByTestId("loading")).toHaveTextContent("true");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(mockTerminate).not.toHaveBeenCalled();
+
+      // Resolving with leftover target DB transitions seamlessly to cleanupPhase="pending"
+      await act(async () => {
+        resolveDatabases([{ name: "firestore/[DEFAULT]/er-consult/main", version: 1 }]);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(screen.getByTestId("loading")).toHaveTextContent("false");
+
+      await act(async () => {
+        resolveClear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+      firstRender.unmount();
+
+      // Clean startup check returning [] releases both loading and cleanup gates once resolved
+      let resolveCleanDatabases!: (dbs: Array<{ name: string; version: number }>) => void;
+      Object.defineProperty(window, "indexedDB", {
+        configurable: true,
+        value: {
+          databases: vi.fn(
+            () =>
+              new Promise<Array<{ name: string; version: number }>>((resolve) => {
+                resolveCleanDatabases = resolve;
+              })
+          ),
+        },
+      });
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("loading")).toHaveTextContent("true");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      await act(async () => {
+        resolveCleanDatabases([]);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("loading")).toHaveTextContent("false");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("false");
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
 });

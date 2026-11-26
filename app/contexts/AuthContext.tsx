@@ -431,6 +431,7 @@ export function AuthProvider({
   const [cleanupNeedsConnectionReset, setCleanupNeedsConnectionReset] = useState(false);
   const [manualRetryInFlight, setManualRetryInFlight] = useState(false);
   const [manualRetryError, setManualRetryError] = useState(false);
+  const [startupCacheChecking, setStartupCacheChecking] = useState(false);
   const getOrStartClearPersistence = useCallback((targetDb: Firestore): Promise<void> => {
     if (!activeClearPromiseRef.current) {
       const clearPromise = clearIndexedDbPersistence(targetDb).finally(() => {
@@ -1101,9 +1102,19 @@ export function AuthProvider({
         }
         if (!cancelled && generation === authGeneration) {
           signedOutAppliedRef.current = true;
+          const willRunStartupCacheCheck = Boolean(
+            db &&
+              typeof window !== "undefined" &&
+              !initialPersistedCleanup &&
+              !startupCacheCheckStartedRef.current &&
+              !pendingFirestoreCleanupRef.current &&
+              cleanupRoleRef.current === null &&
+              !logoutInProgressRef.current &&
+              typeof window.indexedDB?.databases === "function"
+          );
           setUser(null);
           setIsAuthorizedStaff(false);
-          setLoading(false);
+          setLoading(willRunStartupCacheCheck || startupCacheCheckInFlightRef.current);
           for (const reservationId of pendingSignedOutReservationsRef.current) {
             activeReservationStoreRef.current.releaseLogoutReservation(reservationId);
           }
@@ -1112,19 +1123,11 @@ export function AuthProvider({
 
           // Startup fallback when all synchronous cleanup markers failed or were unavailable before refresh:
           // if signed out with leftover Firestore IndexedDB persistence on disk, purge it before any sign-in resumes.
-          if (
-            db &&
-            typeof window !== "undefined" &&
-            !initialPersistedCleanup &&
-            !startupCacheCheckStartedRef.current &&
-            !pendingFirestoreCleanupRef.current &&
-            cleanupRoleRef.current === null &&
-            !logoutInProgressRef.current &&
-            typeof window.indexedDB?.databases === "function"
-          ) {
+          if (willRunStartupCacheCheck && db) {
             const freshDb = db;
             startupCacheCheckStartedRef.current = true;
             startupCacheCheckInFlightRef.current = true;
+            setStartupCacheChecking(true);
             void hasLeftoverFirestoreIndexedDb(freshDb).then((hasLeftover) => {
               startupCacheCheckInFlightRef.current = false;
               if (cancelled) return;
@@ -1145,6 +1148,7 @@ export function AuthProvider({
                 setCleanupNeedsConnectionReset(false);
                 setManualRetryError(false);
                 setCleanupPhase("pending");
+                setStartupCacheChecking(false);
                 setUser(null);
                 setIsAuthorizedStaff(false);
                 setLoading(false);
@@ -1164,6 +1168,7 @@ export function AuthProvider({
                 })();
                 return;
               }
+              setStartupCacheChecking(false);
               const deferred = deferredAuthUserRef.current;
               deferredAuthUserRef.current = null;
               if (
@@ -1183,6 +1188,8 @@ export function AuthProvider({
                     setLoading(false);
                   }
                 });
+              } else {
+                setLoading(false);
               }
             });
           }
@@ -1589,7 +1596,7 @@ export function AuthProvider({
     };
   }, [cleanupPhase]);
 
-  const isPendingCleanup = cleanupPhase !== "idle";
+  const isPendingCleanup = cleanupPhase !== "idle" || startupCacheChecking;
 
   return (
     <AuthContext.Provider value={{ user, loading, isAuthorizedStaff, isPendingCleanup, logout }}>
