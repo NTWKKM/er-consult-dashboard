@@ -1059,6 +1059,14 @@ export function AuthProvider({
             ) {
               break;
             }
+            if (peerReloadFallbackTimerRef.current !== null) {
+              clearTimeout(peerReloadFallbackTimerRef.current);
+              peerReloadFallbackTimerRef.current = null;
+            }
+            if (peerClearPendingTimerRef.current !== null) {
+              clearTimeout(peerClearPendingTimerRef.current);
+              peerClearPendingTimerRef.current = null;
+            }
             peerCacheClearedRef.current = true;
             triggerPeerReloadIfReady();
           }
@@ -1344,7 +1352,7 @@ export function AuthProvider({
         const idbStatus = await checkStartupFirestoreIndexedDb(targetDb);
         if (hasActivePeerTermination()) {
           initiatorFinalizingRef.current = false;
-          if (idbStatus !== "error") {
+          if (idbStatus === "clean") {
             verifyIdbCleanOnFinalizeRef.current = false;
             peerCacheClearedRef.current = true;
             triggerPeerReloadIfReady();
@@ -1355,8 +1363,8 @@ export function AuthProvider({
           initiatorFinalizingRef.current = false;
           return;
         }
-        if (idbStatus === "error") {
-          // IndexedDB enumeration still rejects: hold cleanup gate rather than reloading into an unverified loop
+        if (idbStatus !== "clean") {
+          // IndexedDB verification failed or cache still exists: hold cleanup gate rather than reloading into an unverified loop
           initiatorFinalizingRef.current = false;
           pendingFirestoreCleanupRef.current = true;
           terminatedDbRef.current = targetDb;
