@@ -1090,7 +1090,7 @@ export function AuthProvider({
               clearTimeout(peerReloadFallbackTimerRef.current);
               peerReloadFallbackTimerRef.current = null;
             }
-            if (peerClearPendingTimerRef.current !== null) {
+            if (!activeClearPromiseRef.current && peerClearPendingTimerRef.current !== null) {
               clearTimeout(peerClearPendingTimerRef.current);
               peerClearPendingTimerRef.current = null;
             }
@@ -1348,6 +1348,34 @@ export function AuthProvider({
 
       if (initiatorFinalizingRef.current) return;
       initiatorFinalizingRef.current = true;
+      if (verifyIdbCleanOnFinalizeRef.current) {
+        const idbStatus = await checkStartupFirestoreIndexedDb(targetDb);
+        if (hasActivePeerTermination()) {
+          initiatorFinalizingRef.current = false;
+          if (idbStatus === "clean") {
+            verifyIdbCleanOnFinalizeRef.current = false;
+            peerCacheClearedRef.current = true;
+            triggerPeerReloadIfReady();
+          }
+          return;
+        }
+        if (cleanupRoleRef.current !== "initiator") {
+          initiatorFinalizingRef.current = false;
+          return;
+        }
+        if (idbStatus !== "clean") {
+          // IndexedDB verification failed or cache still exists: hold cleanup gate rather than reloading into an unverified loop
+          initiatorFinalizingRef.current = false;
+          pendingFirestoreCleanupRef.current = true;
+          terminatedDbRef.current = targetDb;
+          setCleanupBlockedByPending(false);
+          setCleanupNeedsConnectionReset(false);
+          setManualRetryError(true);
+          setCleanupPhase("manual_retry");
+          return;
+        }
+        verifyIdbCleanOnFinalizeRef.current = false;
+      }
       clearPendingCleanupMarker();
       const reqId = initiatorTerminateRequestIdRef.current;
       initiatorTerminateRequestIdRef.current = null;
@@ -1378,34 +1406,6 @@ export function AuthProvider({
         setManualRetryError(true);
         setCleanupPhase("manual_retry");
         return;
-      }
-      if (verifyIdbCleanOnFinalizeRef.current) {
-        const idbStatus = await checkStartupFirestoreIndexedDb(targetDb);
-        if (hasActivePeerTermination()) {
-          initiatorFinalizingRef.current = false;
-          if (idbStatus === "clean") {
-            verifyIdbCleanOnFinalizeRef.current = false;
-            peerCacheClearedRef.current = true;
-            triggerPeerReloadIfReady();
-          }
-          return;
-        }
-        if (cleanupRoleRef.current !== "initiator") {
-          initiatorFinalizingRef.current = false;
-          return;
-        }
-        if (idbStatus !== "clean") {
-          // IndexedDB verification failed or cache still exists: hold cleanup gate rather than reloading into an unverified loop
-          initiatorFinalizingRef.current = false;
-          pendingFirestoreCleanupRef.current = true;
-          terminatedDbRef.current = targetDb;
-          setCleanupBlockedByPending(false);
-          setCleanupNeedsConnectionReset(false);
-          setManualRetryError(true);
-          setCleanupPhase("manual_retry");
-          return;
-        }
-        verifyIdbCleanOnFinalizeRef.current = false;
       }
       if (hasActivePeerTermination()) {
         initiatorFinalizingRef.current = false;
@@ -2076,6 +2076,8 @@ export function AuthProvider({
 
     setManualRetryInFlight(true);
     setManualRetryError(false);
+    let startedPeerRetry = false;
+    let peerRetryRequestId: string | null = null;
     try {
       if (cleanupRoleRef.current === "initiator") {
         await runInitiatorClearWithWatchdog(targetDb);
@@ -2095,11 +2097,19 @@ export function AuthProvider({
           });
         }
       } else {
+        startedPeerRetry = true;
+        peerRetryRequestId = activeTerminateRequestIdRef.current;
+        const isStillPeerRetryOwner = () =>
+          cleanupRoleRef.current === "peer" &&
+          activeTerminateRequestIdRef.current === peerRetryRequestId;
         await getOrStartClearPersistence(targetDb);
+        if (!isStillPeerRetryOwner()) {
+          return;
+        }
         setCleanupBlockedByPending(false);
         const completedIds = new Set<string>(sentTerminateRequestIdsRef.current);
-        if (activeTerminateRequestIdRef.current) {
-          completedIds.add(activeTerminateRequestIdRef.current);
+        if (peerRetryRequestId) {
+          completedIds.add(peerRetryRequestId);
         }
         sentTerminateRequestIdsRef.current.clear();
         for (const completedId of completedIds) {
@@ -2118,6 +2128,13 @@ export function AuthProvider({
         triggerPeerReloadIfReady();
       }
     } catch {
+      if (
+        startedPeerRetry &&
+        (cleanupRoleRef.current !== "peer" ||
+          activeTerminateRequestIdRef.current !== peerRetryRequestId)
+      ) {
+        return;
+      }
       pendingFirestoreCleanupRef.current = true;
       setCleanupBlockedByPending(false);
       setCleanupPhase("manual_retry");

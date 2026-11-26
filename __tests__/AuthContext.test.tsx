@@ -5664,6 +5664,7 @@ describe("AuthContext", () => {
 
   it("broadcasts LOGOUT_CACHE_CLEARED on concurrent two-tab fallback clear so a staggered peer cancels its fallback before a new session opens", async () => {
     // Capture per-tab onAuthStateChanged callbacks across two concurrent AuthProvider instances
+    const prevOnAuthStateChangedImpl = mockOnAuthStateChanged.getMockImplementation();
     const authCallbacks: Array<(user: unknown) => void> = [];
     mockOnAuthStateChanged.mockImplementation((_auth, cb) => {
       authCallbacks.push(cb);
@@ -5672,15 +5673,34 @@ describe("AuthContext", () => {
 
     // Stagger termination between Tab A (resolves immediately) and Tab B (resolves 500ms later)
     let resolveTabBTerminate!: () => void;
+    let resolveBothTerminatesStarted!: () => void;
+    const bothTerminatesStarted = new Promise<void>((resolve) => {
+      resolveBothTerminatesStarted = resolve;
+    });
     let terminateCallIndex = 0;
     mockTerminate.mockImplementation(() => {
       terminateCallIndex += 1;
       if (terminateCallIndex === 1) {
         return Promise.resolve();
       }
+      if (terminateCallIndex === 2) {
+        resolveBothTerminatesStarted();
+      }
       return new Promise<void>((resolve) => {
         resolveTabBTerminate = resolve;
       });
+    });
+
+    let reloadCount = 0;
+    let resolveBothReloads!: () => void;
+    const bothReloadsCalled = new Promise<void>((resolve) => {
+      resolveBothReloads = resolve;
+    });
+    reloadSpy.mockImplementation(() => {
+      reloadCount += 1;
+      if (reloadCount === 2) {
+        resolveBothReloads();
+      }
     });
 
     // Keep signOut pending briefly so both tabs broadcast LOGOUT_TERMINATE_DB_REQUEST concurrently
@@ -5708,18 +5728,21 @@ describe("AuthContext", () => {
         for (const cb of authCallbacks) {
           cb(makeMockStaffUser());
         }
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(250);
       });
 
-      // Both tabs initiate logout concurrently -> each becomes a peer of the other's termination request
+      // Both tabs initiate logout concurrently -> wait until both tabs have processed
+      // the termination requests and started both termination flows before advancing timers
       await act(async () => {
         fireEvent.click(within(tabA.getByTestId("tab-a")).getByRole("button", { name: "Logout" }));
         fireEvent.click(within(tabB.getByTestId("tab-b")).getByRole("button", { name: "Logout" }));
-        await vi.advanceTimersByTimeAsync(300);
+        await bothTerminatesStarted;
+        await Promise.resolve();
+        await Promise.resolve();
       });
 
       // Tab A's terminate resolved immediately and started its 2500ms fallback timer;
-      // stagger Tab B's terminate completion by 500ms so Tab B's fallback timer would fire later
+      // stagger Tab B's terminate completion by 500ms so Tab B's fallback deadline is 500ms later
       await act(async () => {
         await vi.advanceTimersByTimeAsync(500);
         resolveTabBTerminate();
@@ -5727,11 +5750,11 @@ describe("AuthContext", () => {
         await Promise.resolve();
       });
 
-      // Advance to Tab A's fallback clear (2000ms more -> 2500ms total since Tab A terminated).
-      // Tab A clears IndexedDB once, broadcasts LOGOUT_CACHE_CLEARED for its outbound requestId,
-      // and both Tab A and Tab B reload (Tab B cancels its staggered fallback timer).
+      // Advance ONLY to Tab A's fallback deadline (2000ms more -> 2500ms since Tab A terminated;
+      // Tab B's deadline is still 500ms away) and wait for both tabs to reload
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(2100);
+        await vi.advanceTimersByTimeAsync(2000);
+        await bothReloadsCalled;
       });
       expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
       expect(reloadSpy).toHaveBeenCalledTimes(2);
@@ -5760,6 +5783,9 @@ describe("AuthContext", () => {
       newSessionTab.unmount();
       tabB.unmount();
     } finally {
+      if (prevOnAuthStateChangedImpl) {
+        mockOnAuthStateChanged.mockImplementation(prevOnAuthStateChangedImpl);
+      }
       vi.useRealTimers();
     }
   });
@@ -5770,10 +5796,23 @@ describe("AuthContext", () => {
     const ackReceived = new Promise<void>((resolve) => {
       resolveAck = resolve;
     });
+    let resolveDeliveryBarrier!: () => void;
+    const deliveryBarrierReached = new Promise<void>((resolve) => {
+      resolveDeliveryBarrier = resolve;
+    });
+    let resolveReload!: () => void;
+    const reloadCalled = new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    });
+    reloadSpy.mockImplementationOnce(() => {
+      resolveReload();
+    });
     peerChannel.onmessage = (event) => {
       const msg = event.data as { type: string; requestId?: string };
       if (msg.type === "LOGOUT_TERMINATE_DB_ACK" && msg.requestId === "term-overlap-clear") {
         resolveAck();
+      } else if (msg.type === "HELLO_ACK") {
+        resolveDeliveryBarrier();
       }
     };
 
@@ -5815,24 +5854,28 @@ describe("AuthContext", () => {
       expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
       expect(reloadSpy).not.toHaveBeenCalled();
 
-      // Matching LOGOUT_CACHE_CLEARED arrives while peer's own clearIndexedDbPersistence is still pending:
-      // must NOT reload until the in-flight clear settles
+      // Matching LOGOUT_CACHE_CLEARED arrives while peer's own clearIndexedDbPersistence is still pending;
+      // await a receiver-side FIFO delivery barrier (HELLO -> HELLO_ACK) to confirm delivery before asserting
       await act(async () => {
         peerChannel.postMessage({
           type: "LOGOUT_CACHE_CLEARED",
           requestId: "term-overlap-clear",
           senderTabId: "peer-initiator-tab",
         });
-        await Promise.resolve();
-        await Promise.resolve();
+        peerChannel.postMessage({
+          type: "HELLO",
+          tabId: "delivery-barrier-tab",
+          hasPending: false,
+          hasDrafts: false,
+        });
+        await deliveryBarrierReached;
       });
       expect(reloadSpy).not.toHaveBeenCalled();
 
       // Once the in-flight clear settles, peer reloads exactly once
       await act(async () => {
         resolveInFlightClear();
-        await Promise.resolve();
-        await Promise.resolve();
+        await reloadCalled;
       });
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     } finally {
