@@ -69,6 +69,7 @@ const PEER_CACHE_CLEAR_PENDING_WAIT_MS = 3000;
 const LOGOUT_RESERVATION_TTL_MS = 5000;
 const LOGOUT_RESERVATION_RENEW_INTERVAL_MS = 2000;
 const PENDING_CLEANUP_STORAGE_KEY = "er_consult_pending_cache_cleanup_v1";
+const PENDING_CLEANUP_COOKIE_NAME = "er_consult_pending_cache_cleanup_v1";
 const WINDOW_NAME_CLEANUP_PREFIX = "__er_consult_pending_cleanup__:";
 
 function readWindowNameCleanupMarker(): { requestId: string | null } | null {
@@ -106,6 +107,67 @@ function clearWindowNameCleanupMarker() {
   }
 }
 
+function readCookieCleanupMarker(): { requestId: string | null } | null {
+  if (typeof document === "undefined") return null;
+  try {
+    const cookieStr = document.cookie;
+    if (typeof cookieStr !== "string" || !cookieStr) return null;
+    const prefix = `${PENDING_CLEANUP_COOKIE_NAME}=`;
+    for (const part of cookieStr.split(";")) {
+      const trimmed = part.trim();
+      if (trimmed.startsWith(prefix)) {
+        const raw = trimmed.slice(prefix.length);
+        if (!raw) return null;
+        try {
+          const decoded = decodeURIComponent(raw);
+          return !decoded || decoded === "1" ? { requestId: null } : { requestId: decoded };
+        } catch {
+          return { requestId: null };
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCookieCleanupMarker(requestId: string | null): boolean {
+  if (typeof document === "undefined") return false;
+  try {
+    const value = encodeURIComponent(requestId || "1");
+    document.cookie = `${PENDING_CLEANUP_COOKIE_NAME}=${value}; path=/; SameSite=Lax`;
+    return readCookieCleanupMarker() !== null;
+  } catch {
+    return false;
+  }
+}
+
+function clearCookieCleanupMarker() {
+  if (typeof document === "undefined") return;
+  try {
+    if (readCookieCleanupMarker() !== null) {
+      document.cookie = `${PENDING_CLEANUP_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
+    }
+  } catch {
+    // Ignore restricted cookie errors
+  }
+}
+
+async function hasLeftoverFirestoreIndexedDb(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const idb = window.indexedDB;
+  if (!idb || typeof idb.databases !== "function") return false;
+  try {
+    const databases = await idb.databases();
+    return databases.some(
+      (entry) => typeof entry?.name === "string" && entry.name.startsWith("firestore/")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function readPendingCleanupMarker(): { requestId: string | null; storageError?: boolean } | null {
   if (typeof window === "undefined") return null;
   try {
@@ -117,14 +179,14 @@ function readPendingCleanupMarker(): { requestId: string | null; storageError?: 
     // Fail closed if sessionStorage cannot be read so sign-in cannot bypass an unverified cleanup
     return { requestId: null, storageError: true };
   }
-  return readWindowNameCleanupMarker();
+  return readWindowNameCleanupMarker() ?? readCookieCleanupMarker();
 }
 
 function canReadPendingCleanupStorage(): boolean {
   if (typeof window === "undefined") return false;
   try {
     window.sessionStorage.getItem(PENDING_CLEANUP_STORAGE_KEY);
-    return readWindowNameCleanupMarker() === null;
+    return readWindowNameCleanupMarker() === null && readCookieCleanupMarker() === null;
   } catch {
     return false;
   }
@@ -136,10 +198,15 @@ function writePendingCleanupMarker(requestId: string | null): boolean {
   try {
     window.sessionStorage.setItem(PENDING_CLEANUP_STORAGE_KEY, value);
     clearWindowNameCleanupMarker();
+    clearCookieCleanupMarker();
     return true;
   } catch {
-    // Fall back to tab-scoped window.name when sessionStorage.setItem fails (e.g. quota or write lock)
-    return writeWindowNameCleanupMarker(requestId);
+    // Fall back to tab-scoped window.name, then same-origin cookie when sessionStorage.setItem fails
+    if (writeWindowNameCleanupMarker(requestId)) {
+      clearCookieCleanupMarker();
+      return true;
+    }
+    return writeCookieCleanupMarker(requestId);
   }
 }
 
@@ -151,6 +218,7 @@ function clearPendingCleanupMarker() {
     // Ignore restricted storage errors
   }
   clearWindowNameCleanupMarker();
+  clearCookieCleanupMarker();
 }
 
 interface PeerTabDirtyState {
@@ -314,6 +382,9 @@ export function AuthProvider({
   );
   const initiatorFinalizingRef = useRef(false);
   const persistedCleanupRanRef = useRef(false);
+  const startupCacheCheckStartedRef = useRef(false);
+  const startupCacheCheckInFlightRef = useRef(false);
+  const deferredAuthUserRef = useRef<{ user: User; generation: number } | null>(null);
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initiatorClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -882,69 +953,6 @@ export function AuthProvider({
     return requestId;
   }, []);
 
-  useEffect(() => {
-    if (!auth) {
-      return;
-    }
-
-    let cancelled = false;
-    let authGeneration = 0;
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      const generation = ++authGeneration;
-      if (!currentUser) {
-        // Defer draft invalidation while handshake, unknown dirty outcome, consent flow, or decline hold is active
-        const hasLocalDirtyState = hasPendingOptimisticWrites() || hasRetainedSubmitDrafts();
-        if (
-          logoutInProgressRef.current ||
-          holdClearOnConsentTabRef.current ||
-          preserveDraftOnSignOutDeclineRef.current ||
-          (hasLocalDirtyState &&
-            (helloHandshakeStateRef.current === "pending" ||
-              helloHandshakeStateRef.current === "unknown"))
-        ) {
-          // Preserve dirty draft until consent resolves or explicit LOGOUT_CLEAR_DRAFTS arrives
-        } else {
-          clearRetainedSubmitDraft();
-        }
-        if (!cancelled && generation === authGeneration) {
-          signedOutAppliedRef.current = true;
-          setUser(null);
-          setIsAuthorizedStaff(false);
-          setLoading(false);
-          for (const reservationId of pendingSignedOutReservationsRef.current) {
-            activeReservationStoreRef.current.releaseLogoutReservation(reservationId);
-          }
-          pendingSignedOutReservationsRef.current.clear();
-          triggerPeerReloadIfReady();
-        }
-        return;
-      }
-
-      signedOutAppliedRef.current = false;
-      if (pendingFirestoreCleanupRef.current) {
-        // Keep sign-in and operational routes blocked until terminated Firestore cache cleanup completes
-        setUser(null);
-        setIsAuthorizedStaff(false);
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      void checkIsAuthorizedStaff(currentUser).then((authorized) => {
-        if (!cancelled && generation === authGeneration && !pendingFirestoreCleanupRef.current) {
-          setUser(currentUser);
-          setIsAuthorizedStaff(authorized);
-          setLoading(false);
-        }
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      authGeneration += 1;
-      unsubscribe();
-    };
-  }, [triggerPeerReloadIfReady]);
-
   const runInitiatorClearWithWatchdog = useCallback(
     async (targetDb: Firestore) => {
       if (initiatorClearPendingTimerRef.current !== null) {
@@ -1010,6 +1018,155 @@ export function AuthProvider({
     },
     [getOrStartClearPersistence]
   );
+
+  useEffect(() => {
+    if (!auth) {
+      return;
+    }
+
+    let cancelled = false;
+    let authGeneration = 0;
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      const generation = ++authGeneration;
+      if (!currentUser) {
+        deferredAuthUserRef.current = null;
+        // Defer draft invalidation while handshake, unknown dirty outcome, consent flow, or decline hold is active
+        const hasLocalDirtyState = hasPendingOptimisticWrites() || hasRetainedSubmitDrafts();
+        if (
+          logoutInProgressRef.current ||
+          holdClearOnConsentTabRef.current ||
+          preserveDraftOnSignOutDeclineRef.current ||
+          (hasLocalDirtyState &&
+            (helloHandshakeStateRef.current === "pending" ||
+              helloHandshakeStateRef.current === "unknown"))
+        ) {
+          // Preserve dirty draft until consent resolves or explicit LOGOUT_CLEAR_DRAFTS arrives
+        } else {
+          clearRetainedSubmitDraft();
+        }
+        if (!cancelled && generation === authGeneration) {
+          signedOutAppliedRef.current = true;
+          setUser(null);
+          setIsAuthorizedStaff(false);
+          setLoading(false);
+          for (const reservationId of pendingSignedOutReservationsRef.current) {
+            activeReservationStoreRef.current.releaseLogoutReservation(reservationId);
+          }
+          pendingSignedOutReservationsRef.current.clear();
+          triggerPeerReloadIfReady();
+
+          // Startup fallback when all synchronous cleanup markers failed or were unavailable before refresh:
+          // if signed out with leftover Firestore IndexedDB persistence on disk, purge it before any sign-in resumes.
+          if (
+            db &&
+            typeof window !== "undefined" &&
+            !initialPersistedCleanup &&
+            !startupCacheCheckStartedRef.current &&
+            !pendingFirestoreCleanupRef.current &&
+            cleanupRoleRef.current === null &&
+            !logoutInProgressRef.current &&
+            typeof window.indexedDB?.databases === "function"
+          ) {
+            const freshDb = db;
+            startupCacheCheckStartedRef.current = true;
+            startupCacheCheckInFlightRef.current = true;
+            void hasLeftoverFirestoreIndexedDb().then((hasLeftover) => {
+              startupCacheCheckInFlightRef.current = false;
+              if (cancelled) return;
+              if (
+                hasLeftover &&
+                !pendingFirestoreCleanupRef.current &&
+                cleanupRoleRef.current === null &&
+                !logoutInProgressRef.current
+              ) {
+                deferredAuthUserRef.current = null;
+                pendingFirestoreCleanupRef.current = true;
+                cleanupRoleRef.current = "initiator";
+                terminatedDbRef.current = freshDb;
+                initiatorTerminateSucceededRef.current = false;
+                initiatorTerminateRequestIdRef.current = null;
+                initiatorFinalizingRef.current = false;
+                setCleanupBlockedByPending(false);
+                setCleanupNeedsConnectionReset(false);
+                setManualRetryError(false);
+                setCleanupPhase("pending");
+                setUser(null);
+                setIsAuthorizedStaff(false);
+                setLoading(false);
+                void (async () => {
+                  try {
+                    await terminate(freshDb);
+                    initiatorTerminateSucceededRef.current = true;
+                    await runInitiatorClearWithWatchdog(freshDb);
+                  } catch {
+                    pendingFirestoreCleanupRef.current = true;
+                    terminatedDbRef.current = freshDb;
+                    setCleanupBlockedByPending(false);
+                    setCleanupNeedsConnectionReset(!initiatorTerminateSucceededRef.current);
+                    setManualRetryError(true);
+                    setCleanupPhase("manual_retry");
+                  }
+                })();
+                return;
+              }
+              const deferred = deferredAuthUserRef.current;
+              deferredAuthUserRef.current = null;
+              if (
+                deferred &&
+                deferred.generation === authGeneration &&
+                !pendingFirestoreCleanupRef.current
+              ) {
+                setLoading(true);
+                void checkIsAuthorizedStaff(deferred.user).then((authorized) => {
+                  if (
+                    !cancelled &&
+                    deferred.generation === authGeneration &&
+                    !pendingFirestoreCleanupRef.current
+                  ) {
+                    setUser(deferred.user);
+                    setIsAuthorizedStaff(authorized);
+                    setLoading(false);
+                  }
+                });
+              }
+            });
+          }
+        }
+        return;
+      }
+
+      signedOutAppliedRef.current = false;
+      if (pendingFirestoreCleanupRef.current) {
+        // Keep sign-in and operational routes blocked until terminated Firestore cache cleanup completes
+        setUser(null);
+        setIsAuthorizedStaff(false);
+        setLoading(false);
+        return;
+      }
+      if (startupCacheCheckInFlightRef.current) {
+        deferredAuthUserRef.current = { user: currentUser, generation };
+        setLoading(true);
+        return;
+      }
+      deferredAuthUserRef.current = null;
+      setLoading(true);
+      void checkIsAuthorizedStaff(currentUser).then((authorized) => {
+        if (!cancelled && generation === authGeneration && !pendingFirestoreCleanupRef.current) {
+          setUser(currentUser);
+          setIsAuthorizedStaff(authorized);
+          setLoading(false);
+        }
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      startupCacheCheckInFlightRef.current = false;
+      deferredAuthUserRef.current = null;
+      authGeneration += 1;
+      unsubscribe();
+    };
+  }, [initialPersistedCleanup, runInitiatorClearWithWatchdog, triggerPeerReloadIfReady]);
 
   useEffect(() => {
     if (!initialPersistedCleanup || persistedCleanupRanRef.current) return;

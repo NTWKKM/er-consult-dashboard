@@ -119,6 +119,7 @@ describe("AuthContext", () => {
     clearAllLogoutReservationsForTests();
     window.sessionStorage.removeItem("er_consult_pending_cache_cleanup_v1");
     window.name = "";
+    document.cookie = "er_consult_pending_cache_cleanup_v1=; path=/; max-age=0; SameSite=Lax";
     vi.restoreAllMocks();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -2355,7 +2356,7 @@ describe("AuthContext", () => {
     });
   });
 
-  it("keeps cleanup gated across early reload when sessionStorage.setItem fails but getItem works, and blocks reload if both storage and window.name fail", async () => {
+  it("keeps cleanup gated across early reload via window.name and cookie fallbacks, runs startup IndexedDB cleanup when all marker writes fail, and fails closed on storage read errors", async () => {
     const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("storage-write-blocked");
     });
@@ -2424,7 +2425,7 @@ describe("AuthContext", () => {
     secondMount.unmount();
     reloadSpy.mockClear();
 
-    // Case 2: Both sessionStorage.setItem AND window.name write fail -> Retry must NOT reload without a persisted gate
+    // Case 2: Both sessionStorage.setItem AND window.name write fail -> cookie fallback keeps reload gated
     const originalWindowNameDesc = Object.getOwnPropertyDescriptor(window, "name");
     Object.defineProperty(window, "name", {
       configurable: true,
@@ -2436,7 +2437,7 @@ describe("AuthContext", () => {
 
     try {
       mockTerminate.mockRejectedValueOnce(new Error("terminate-failed"));
-      const thirdMount = render(
+      const cookieMount = render(
         <AuthProvider>
           <AuthProbe />
         </AuthProvider>
@@ -2453,18 +2454,184 @@ describe("AuthContext", () => {
         expect(mockTerminate).toHaveBeenCalledTimes(3);
         expect(screen.getByRole("alertdialog")).toBeInTheDocument();
       });
+      expect(document.cookie).toContain("er_consult_pending_cache_cleanup_v1=");
+      cookieMount.unmount();
 
-      const retryBtn = within(screen.getByRole("alertdialog")).getByRole("button", {
-        name: /ลองล้างแคช/,
+      let resolveCookieReloadClear!: () => void;
+      mockClearIndexedDbPersistence.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveCookieReloadClear = resolve;
+          })
+      );
+
+      const cookieRemount = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(4);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(2);
       });
-      fireEvent.click(retryBtn);
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
       await act(async () => {
+        authCallback!(makeMockStaffUser());
         await Promise.resolve();
       });
-      expect(reloadSpy).not.toHaveBeenCalled();
-      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
-      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-      thirdMount.unmount();
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("staff")).toHaveTextContent("false");
+
+      await act(async () => {
+        resolveCookieReloadClear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(document.cookie).not.toContain("er_consult_pending_cache_cleanup_v1=");
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+      cookieRemount.unmount();
+      reloadSpy.mockClear();
+
+      // Case 3: All synchronous marker writes fail (sessionStorage, window.name, AND document.cookie):
+      // Retry blocks reload, and a manual browser refresh before deletion runs startup IndexedDB cleanup
+      const originalCookieDesc = Object.getOwnPropertyDescriptor(Document.prototype, "cookie");
+      const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+      let leftoverFirestoreDatabases: Array<{ name: string; version: number }> = [
+        { name: "firestore/[DEFAULT]/er-consult/main", version: 1 },
+      ];
+      Object.defineProperty(document, "cookie", {
+        configurable: true,
+        get: () => "",
+        set: () => {
+          throw new Error("cookie-blocked");
+        },
+      });
+      Object.defineProperty(window, "indexedDB", {
+        configurable: true,
+        value: {
+          databases: vi.fn(async () => leftoverFirestoreDatabases),
+        },
+      });
+
+      try {
+        mockTerminate.mockRejectedValueOnce(new Error("terminate-failed"));
+        const dualFailMount = render(
+          <AuthProvider>
+            <AuthProbe />
+          </AuthProvider>
+        );
+
+        await act(async () => {
+          authCallback!(makeMockStaffUser());
+          await Promise.resolve();
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+        await waitFor(() => {
+          expect(mockTerminate).toHaveBeenCalledTimes(5);
+          expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+        });
+
+        const retryBtn = within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: /ลองล้างแคช/,
+        });
+        fireEvent.click(retryBtn);
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(reloadSpy).not.toHaveBeenCalled();
+        expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+        dualFailMount.unmount();
+
+        // Simulate browser refresh before cache deletion under those same marker-write failures:
+        // sessionStorage.getItem returns null, window.name returns "", document.cookie returns ""
+        let resolveStartupClear!: () => void;
+        mockClearIndexedDbPersistence.mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              resolveStartupClear = resolve;
+            })
+        );
+
+        const refreshedMount = render(
+          <AuthProvider>
+            <AuthProbe />
+          </AuthProvider>
+        );
+
+        // signOut() already finished before refresh, so Firebase delivers null on mount
+        await act(async () => {
+          authCallback!(null);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+
+        await waitFor(() => {
+          expect(mockTerminate).toHaveBeenCalledTimes(6);
+          expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(3);
+        });
+        expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+        // Attempting sign-in before startup cache deletion resolves MUST remain blocked
+        await act(async () => {
+          authCallback!(makeMockStaffUser());
+          await Promise.resolve();
+        });
+        expect(screen.getByTestId("uid")).toHaveTextContent("null");
+        expect(screen.getByTestId("staff")).toHaveTextContent("false");
+
+        // Once cache deletion confirms (removing the Firestore IndexedDB), page reloads
+        leftoverFirestoreDatabases = [];
+        await act(async () => {
+          resolveStartupClear();
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        await waitFor(() => {
+          expect(reloadSpy).toHaveBeenCalledTimes(1);
+        });
+        refreshedMount.unmount();
+        reloadSpy.mockClear();
+
+        // Post-reload mount sees no leftover Firestore IndexedDB -> no loop, normal sign-in works
+        const postReloadMount = render(
+          <AuthProvider>
+            <AuthProbe />
+          </AuthProvider>
+        );
+        await act(async () => {
+          authCallback!(null);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(mockTerminate).toHaveBeenCalledTimes(6);
+        expect(reloadSpy).not.toHaveBeenCalled();
+
+        await act(async () => {
+          authCallback!(makeMockStaffUser());
+          await Promise.resolve();
+        });
+        expect(screen.getByTestId("uid")).toHaveTextContent("staff-1");
+        expect(screen.getByTestId("staff")).toHaveTextContent("true");
+        postReloadMount.unmount();
+      } finally {
+        if (originalCookieDesc) {
+          Object.defineProperty(Document.prototype, "cookie", originalCookieDesc);
+        }
+        delete (document as unknown as Record<string, unknown>).cookie;
+        if (originalIndexedDbDesc) {
+          Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+        } else {
+          delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+        }
+      }
     } finally {
       if (originalWindowNameDesc) {
         Object.defineProperty(window, "name", originalWindowNameDesc);
@@ -2472,7 +2639,7 @@ describe("AuthContext", () => {
       setItemSpy.mockRestore();
     }
 
-    // Case 3: When sessionStorage.getItem throws on mount, fail closed: keep sign-in blocked and confirm cache deletion
+    // Case 4: When sessionStorage.getItem throws on mount, fail closed: keep sign-in blocked and confirm cache deletion
     const getItemSpy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("storage-read-blocked");
     });
@@ -2491,8 +2658,8 @@ describe("AuthContext", () => {
     );
 
     await waitFor(() => {
-      expect(mockTerminate).toHaveBeenCalledTimes(4);
-      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(2);
+      expect(mockTerminate).toHaveBeenCalledTimes(7);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(4);
     });
     expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
 
@@ -2519,7 +2686,7 @@ describe("AuthContext", () => {
       within(screen.getByRole("alertdialog")).getByRole("button", { name: /ลองล้างแคช/ })
     );
     await waitFor(() => {
-      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(3);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(5);
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     });
   });
