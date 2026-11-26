@@ -432,6 +432,7 @@ export function AuthProvider({
   const [manualRetryInFlight, setManualRetryInFlight] = useState(false);
   const [manualRetryError, setManualRetryError] = useState(false);
   const [startupCacheChecking, setStartupCacheChecking] = useState(false);
+  const [logoutCleanupGateActive, setLogoutCleanupGateActive] = useState(false);
   const getOrStartClearPersistence = useCallback((targetDb: Firestore): Promise<void> => {
     if (!activeClearPromiseRef.current) {
       const clearPromise = clearIndexedDbPersistence(targetDb).finally(() => {
@@ -1345,6 +1346,7 @@ export function AuthProvider({
 
       if (auth) {
         pendingFirestoreCleanupRef.current = true;
+        setLogoutCleanupGateActive(true);
         await signOut(auth);
       }
 
@@ -1389,6 +1391,7 @@ export function AuthProvider({
 
       // Clear local IndexedDB cache on shared ER workstations so patient PHI does not persist across shifts
       if (db && typeof window !== "undefined") {
+        setLogoutCleanupGateActive(true);
         const terminateRequestId =
           (await terminatePeerFirestoreTabs()) ??
           `term-${ownerTabId}-${Date.now()}-${logoutSequenceRef.current}`;
@@ -1404,6 +1407,7 @@ export function AuthProvider({
         setCleanupNeedsConnectionReset(false);
         setManualRetryError(!markerPersisted);
         setCleanupPhase("pending");
+        setLogoutCleanupGateActive(false);
         setUser(null);
         setIsAuthorizedStaff(false);
         try {
@@ -1422,6 +1426,7 @@ export function AuthProvider({
     } finally {
       if (!terminationStarted) {
         pendingFirestoreCleanupRef.current = false;
+        setLogoutCleanupGateActive(false);
       }
       if (renewIntervalId !== null) {
         clearInterval(renewIntervalId);
@@ -1596,7 +1601,8 @@ export function AuthProvider({
     };
   }, [cleanupPhase]);
 
-  const isPendingCleanup = cleanupPhase !== "idle" || startupCacheChecking;
+  const isPendingCleanup =
+    cleanupPhase !== "idle" || startupCacheChecking || logoutCleanupGateActive;
 
   return (
     <AuthContext.Provider value={{ user, loading, isAuthorizedStaff, isPendingCleanup, logout }}>

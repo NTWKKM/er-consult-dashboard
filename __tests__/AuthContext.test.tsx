@@ -3451,4 +3451,96 @@ describe("AuthContext", () => {
       }
     }
   });
+
+  it("keeps isPendingCleanup gate active across signOut and delayed peer termination and blocks sign-in attempts during that interval", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const terminateRequests: string[] = [];
+
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string; tabId?: string };
+      if (msg.type === "HELLO") {
+        peerChannel.postMessage({
+          type: "HELLO_ACK",
+          tabId: "delayed-peer-tab",
+          hasPending: false,
+          hasDrafts: false,
+        });
+      } else if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "delayed-peer-tab",
+          hasPending: false,
+          hasDrafts: false,
+        });
+      } else if (msg.type === "LOGOUT_TERMINATE_DB_REQUEST" && msg.requestId) {
+        terminateRequests.push(msg.requestId);
+        // Intentionally delay LOGOUT_TERMINATE_DB_ACK so terminatePeerFirestoreTabs() waits
+      }
+    };
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      // Register delayed-peer-tab via BroadcastChannel HELLO handshake
+      peerChannel.postMessage({
+        type: "HELLO",
+        tabId: "delayed-peer-tab",
+        hasPending: false,
+        hasDrafts: false,
+      });
+      await new Promise((r) => setTimeout(r, 20));
+
+      fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+      // Wait for signOut() to run and LOGOUT_TERMINATE_DB_REQUEST to be sent (peer ACK still delayed)
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+        expect(terminateRequests.length).toBe(1);
+      });
+
+      // Deliver null-user auth notification while terminatePeerFirestoreTabs() is STILL awaiting peer ACK
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      // Cleanup gate MUST already be active even before peer termination resolves and sets cleanupPhase="pending"
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(mockTerminate).not.toHaveBeenCalled();
+
+      // Attempting a new sign-in while peer termination is still delayed MUST stay blocked
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("staff")).toHaveTextContent("false");
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // Ack peer termination -> initiator proceeds with terminate + clearIndexedDbPersistence + reload
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_ACK",
+        requestId: terminateRequests[0],
+        tabId: "delayed-peer-tab",
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
 });
