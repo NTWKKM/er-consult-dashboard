@@ -2381,6 +2381,139 @@ describe("online authoritative revalidation & offline transfer reconciliation", 
     expect(onBackgroundError).not.toHaveBeenCalled();
   });
 
+  it("transferConsultRoom releases superseded offline wait immediately without waiting for reconnect event", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-wake-superseded",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const committedRooms: string[] = [];
+    mockRunTransaction.mockImplementation(async (_db, fn) =>
+      fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-wake-superseded",
+            baseConsult({
+              room: committedRooms.at(-1) ?? "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: (_ref: unknown, payload: Record<string, unknown>) => {
+          if (typeof payload.room === "string") {
+            committedRooms.push(payload.room);
+          }
+        },
+      })
+    );
+
+    const first = await transferConsultRoom("c-wake-superseded", "SSW");
+    const second = await transferConsultRoom("c-wake-superseded", "Urgent");
+
+    // Still offline: first's backgroundPromise must resolve as soon as second supersedes it
+    const firstSettled = await Promise.race([
+      first.backgroundPromise!.then(() => "settled"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("timed-out"), 50)),
+    ]);
+    expect(firstSettled).toBe("settled");
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await second.backgroundPromise;
+
+    expect(committedRooms).toEqual(["Urgent"]);
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("transferConsultRoom rechecks connectivity inside deferred queue slot and returns to reconnect wait without consuming retries when offline", async () => {
+    setNavigatorOnLine(false);
+    mockGetDocFromCache.mockResolvedValue(
+      makeDocSnapshot(
+        "c-slot-offline",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+
+    const onBackgroundError = vi.fn();
+    const deferred = await transferConsultRoom("c-slot-offline", "SSW", onBackgroundError);
+
+    // Block the case queue slot during server pre-check of a same-room transfer (does not claim epoch)
+    let releaseBlockerServerRead!: (snap: ReturnType<typeof makeDocSnapshot>) => void;
+    let markBlockerEntered!: () => void;
+    const blockerEntered = new Promise<void>((resolve) => {
+      markBlockerEntered = resolve;
+    });
+    mockGetDocFromServer.mockImplementationOnce(() => {
+      markBlockerEntered();
+      return new Promise((resolve) => {
+        releaseBlockerServerRead = resolve;
+      });
+    });
+
+    let txCalls = 0;
+    mockRunTransaction.mockImplementationOnce(async (_db, fn) => {
+      txCalls += 1;
+      return fn({
+        get: vi.fn().mockResolvedValue(
+          makeDocSnapshot(
+            "c-slot-offline",
+            baseConsult({
+              room: "NT",
+              departments: { "Gen Sx": { status: "pending", completedAt: null } },
+            })
+          )
+        ),
+        update: vi.fn(),
+      });
+    });
+
+    setNavigatorOnLine(true);
+    const blockerPromise = transferConsultRoom("c-slot-offline", "NT", onBackgroundError);
+    await blockerEntered;
+
+    // Fire online so deferred enters enqueueCaseTransfer behind blocker, then drop offline before blocker releases
+    window.dispatchEvent(new Event("online"));
+    await Promise.resolve();
+    setNavigatorOnLine(false);
+
+    releaseBlockerServerRead(
+      makeDocSnapshot(
+        "c-slot-offline",
+        baseConsult({
+          room: "NT",
+          departments: { "Gen Sx": { status: "pending", completedAt: null } },
+        })
+      )
+    );
+    const blockerRes = await blockerPromise;
+    expect(blockerRes.transferred).toBe(false);
+
+    // Give deferred's queued callback a microtask turn to run while offline
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Deferred obtained its slot while offline -> returned to reconnect wait without invoking runTransaction or consuming retries
+    expect(txCalls).toBe(0);
+    expect(onBackgroundError).not.toHaveBeenCalled();
+
+    // Once back online, deferred runs cleanly (proving retries were preserved and wait resumed)
+    setNavigatorOnLine(true);
+    window.dispatchEvent(new Event("online"));
+    await deferred.backgroundPromise;
+    expect(txCalls).toBe(1);
+    expect(onBackgroundError).not.toHaveBeenCalled();
+  });
+
   it("clearRetainedSubmitDraft cleans up legacy er_consult_submit_drafts_v1 sessionStorage key", () => {
     window.sessionStorage.setItem("er_consult_submit_drafts_v1", '{"hn":"999999"}');
     clearRetainedSubmitDraft();

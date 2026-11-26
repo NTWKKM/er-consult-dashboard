@@ -154,15 +154,49 @@ function clearCookieCleanupMarker() {
   }
 }
 
-async function hasLeftoverFirestoreIndexedDb(): Promise<boolean> {
+function getTargetFirestoreIndexedDbName(targetDb: Firestore): string | null {
+  const candidate = targetDb as unknown as {
+    toJSON?: () => {
+      app?: { options?: { projectId?: unknown } };
+      databaseId?: { projectId?: unknown; database?: unknown; isDefaultDatabase?: unknown };
+    };
+    app?: { options?: { projectId?: unknown } };
+    _databaseId?: { projectId?: unknown; database?: unknown; isDefaultDatabase?: unknown };
+    _persistenceKey?: unknown;
+  };
+  const json = typeof candidate.toJSON === "function" ? candidate.toJSON() : undefined;
+  const dbId = candidate._databaseId ?? json?.databaseId;
+  const projectId =
+    (typeof dbId?.projectId === "string" && dbId.projectId) ||
+    (typeof candidate.app?.options?.projectId === "string" && candidate.app.options.projectId) ||
+    (typeof json?.app?.options?.projectId === "string" && json.app.options.projectId) ||
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() ||
+    "";
+  if (!projectId) return null;
+
+  const database =
+    typeof dbId?.database === "string" && dbId.database ? dbId.database : "(default)";
+  const isDefaultDatabase =
+    typeof dbId?.isDefaultDatabase === "boolean"
+      ? dbId.isDefaultDatabase
+      : database === "(default)";
+  const persistenceKey =
+    typeof candidate._persistenceKey === "string" && candidate._persistenceKey
+      ? candidate._persistenceKey
+      : "[DEFAULT]";
+  const dbSegment = isDefaultDatabase ? projectId : `${projectId}.${database}`;
+  return `firestore/${persistenceKey}/${dbSegment}/main`;
+}
+
+async function hasLeftoverFirestoreIndexedDb(targetDb: Firestore): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  const targetDbName = getTargetFirestoreIndexedDbName(targetDb);
+  if (!targetDbName) return false;
   const idb = window.indexedDB;
   if (!idb || typeof idb.databases !== "function") return false;
   try {
     const databases = await idb.databases();
-    return databases.some(
-      (entry) => typeof entry?.name === "string" && entry.name.startsWith("firestore/")
-    );
+    return databases.some((entry) => entry?.name === targetDbName);
   } catch {
     return false;
   }
@@ -198,12 +232,10 @@ function writePendingCleanupMarker(requestId: string | null): boolean {
   try {
     window.sessionStorage.setItem(PENDING_CLEANUP_STORAGE_KEY, value);
     clearWindowNameCleanupMarker();
-    clearCookieCleanupMarker();
     return true;
   } catch {
     // Fall back to tab-scoped window.name, then same-origin cookie when sessionStorage.setItem fails
     if (writeWindowNameCleanupMarker(requestId)) {
-      clearCookieCleanupMarker();
       return true;
     }
     return writeCookieCleanupMarker(requestId);
@@ -368,6 +400,7 @@ export function AuthProvider({
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [initialPersistedCleanup] = useState(() => readPendingCleanupMarker());
   const peerDbTerminatedRef = useRef(false);
+  const peerTerminateSucceededRef = useRef(false);
   const peerCacheClearedRef = useRef(false);
   const pendingFirestoreCleanupRef = useRef(Boolean(initialPersistedCleanup));
   const activeTerminateRequestIdRef = useRef<string | null>(null);
@@ -431,6 +464,7 @@ export function AuthProvider({
       clearPendingCleanupMarker();
       pendingFirestoreCleanupRef.current = false;
       peerDbTerminatedRef.current = false;
+      peerTerminateSucceededRef.current = false;
       peerCacheClearedRef.current = false;
       activeTerminateRequestIdRef.current = null;
       terminatedDbRef.current = null;
@@ -645,8 +679,10 @@ export function AuthProvider({
             activeTerminateRequestIdRef.current = requestId;
             cleanupRoleRef.current = "peer";
             peerDbTerminatedRef.current = false;
+            peerTerminateSucceededRef.current = false;
             peerCacheClearedRef.current = false;
             setCleanupBlockedByPending(false);
+            setCleanupNeedsConnectionReset(false);
             if (peerReloadFallbackTimerRef.current !== null) {
               clearTimeout(peerReloadFallbackTimerRef.current);
               peerReloadFallbackTimerRef.current = null;
@@ -678,13 +714,32 @@ export function AuthProvider({
               setUser(null);
               setIsAuthorizedStaff(false);
               void terminate(activeDb)
-                .catch(() => {})
+                .then(
+                  () => {
+                    if (isCurrentRequest()) {
+                      peerTerminateSucceededRef.current = true;
+                    }
+                  },
+                  () => {
+                    if (isCurrentRequest()) {
+                      peerTerminateSucceededRef.current = false;
+                    }
+                  }
+                )
                 .finally(() => {
                   sendAck();
                   if (!isCurrentRequest()) return;
                   peerDbTerminatedRef.current = true;
                   if (peerCacheClearedRef.current) {
                     triggerPeerReloadIfReady();
+                  } else if (!peerTerminateSucceededRef.current) {
+                    // Never clear IndexedDB on a peer whose terminate() rejected; require a marker-verified reload
+                    pendingFirestoreCleanupRef.current = true;
+                    terminatedDbRef.current = activeDb;
+                    setCleanupBlockedByPending(false);
+                    setCleanupNeedsConnectionReset(true);
+                    setManualRetryError(true);
+                    setCleanupPhase("manual_retry");
                   } else if (peerReloadFallbackTimerRef.current === null) {
                     // Safety fallback if initiating tab closed/crashed: clear persistence locally
                     // before reloading; if initiating tab is still clearing, retry up to 6 times,
@@ -1070,7 +1125,7 @@ export function AuthProvider({
             const freshDb = db;
             startupCacheCheckStartedRef.current = true;
             startupCacheCheckInFlightRef.current = true;
-            void hasLeftoverFirestoreIndexedDb().then((hasLeftover) => {
+            void hasLeftoverFirestoreIndexedDb(freshDb).then((hasLeftover) => {
               startupCacheCheckInFlightRef.current = false;
               if (cancelled) return;
               if (
@@ -1392,8 +1447,18 @@ export function AuthProvider({
 
     // Never retry a rejected terminate(targetDb) on the same Firestore instance;
     // persist the non-PHI cleanup marker first and reload only if the gate survived into storage.
-    if (cleanupRoleRef.current === "initiator" && !initiatorTerminateSucceededRef.current) {
-      const markerPersisted = writePendingCleanupMarker(initiatorTerminateRequestIdRef.current);
+    const roleTerminationSucceeded =
+      cleanupRoleRef.current === "initiator"
+        ? initiatorTerminateSucceededRef.current
+        : cleanupRoleRef.current === "peer"
+          ? peerTerminateSucceededRef.current
+          : true;
+    if (cleanupRoleRef.current !== null && !roleTerminationSucceeded) {
+      const requestId =
+        cleanupRoleRef.current === "initiator"
+          ? initiatorTerminateRequestIdRef.current
+          : activeTerminateRequestIdRef.current;
+      const markerPersisted = writePendingCleanupMarker(requestId);
       if (!markerPersisted) {
         pendingFirestoreCleanupRef.current = true;
         setCleanupBlockedByPending(false);

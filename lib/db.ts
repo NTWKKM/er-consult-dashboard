@@ -1044,7 +1044,23 @@ function isRetryableTransferError(err: unknown): boolean {
     );
 }
 
-function waitForOnlineReconnect(): Promise<void> {
+const pendingTransferWaitReleasesByCaseId = new Map<string, Set<() => void>>();
+
+function releaseSupersededTransferWaits(caseId: string) {
+    const wakers = pendingTransferWaitReleasesByCaseId.get(caseId);
+    if (!wakers) return;
+    pendingTransferWaitReleasesByCaseId.delete(caseId);
+    wakers.forEach((wake) => wake());
+}
+
+function waitForOnlineReconnect(caseId?: string, expectedEpoch?: number): Promise<void> {
+    if (
+        caseId !== undefined &&
+        expectedEpoch !== undefined &&
+        latestTransferEpochByCaseId.get(caseId) !== expectedEpoch
+    ) {
+        return Promise.resolve();
+    }
     if (
         typeof window === "undefined" ||
         typeof navigator === "undefined" ||
@@ -1053,14 +1069,40 @@ function waitForOnlineReconnect(): Promise<void> {
         return Promise.resolve();
     }
     return new Promise<void>((resolve) => {
-        const handleOnline = () => {
-            window.removeEventListener("online", handleOnline);
+        let settled = false;
+        let wakers: Set<() => void> | undefined;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            window.removeEventListener("online", finish);
+            if (wakers) {
+                wakers.delete(finish);
+                if (
+                    wakers.size === 0 &&
+                    caseId !== undefined &&
+                    pendingTransferWaitReleasesByCaseId.get(caseId) === wakers
+                ) {
+                    pendingTransferWaitReleasesByCaseId.delete(caseId);
+                }
+            }
             resolve();
         };
-        window.addEventListener("online", handleOnline);
+        window.addEventListener("online", finish);
+        if (caseId !== undefined && expectedEpoch !== undefined) {
+            let set = pendingTransferWaitReleasesByCaseId.get(caseId);
+            if (!set) {
+                set = new Set();
+                pendingTransferWaitReleasesByCaseId.set(caseId, set);
+            }
+            wakers = set;
+            set.add(finish);
+            if (latestTransferEpochByCaseId.get(caseId) !== expectedEpoch) {
+                finish();
+                return;
+            }
+        }
         if (navigator.onLine !== false) {
-            window.removeEventListener("online", handleOnline);
-            resolve();
+            finish();
         }
     });
 }
@@ -1096,6 +1138,7 @@ export async function transferConsultRoom(
             }
             ownershipClaimed = true;
             latestTransferEpochByCaseId.set(id, requestEpoch);
+            releaseSupersededTransferWaits(id);
         }
 
         const payload: ConsultUpdate = {
@@ -1138,22 +1181,30 @@ export async function transferConsultRoom(
             const maxRetryAttempts = 3;
             let retryCount = 0;
             while (latestTransferEpochByCaseId.get(id) === requestEpoch) {
-                await waitForOnlineReconnect();
+                await waitForOnlineReconnect(id, requestEpoch);
                 if (latestTransferEpochByCaseId.get(id) !== requestEpoch) return;
                 try {
                     const txResult = await enqueueCaseTransfer(id, async () => {
                         if (latestTransferEpochByCaseId.get(id) !== requestEpoch) {
                             return {
+                                deferredOffline: false as const,
                                 consult: null,
                                 isQueued: false,
                                 backgroundPromise: null,
                                 applied: false,
                             };
                         }
-                        return transactionalUpdateConsult(id, buildTransferPayload, {
+                        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+                            return { deferredOffline: true as const };
+                        }
+                        const res = await transactionalUpdateConsult(id, buildTransferPayload, {
                             awaitRemote: true,
                         });
+                        return { deferredOffline: false as const, ...res };
                     });
+                    if (txResult.deferredOffline) {
+                        continue;
+                    }
                     if (!txResult.applied && latestTransferEpochByCaseId.get(id) === requestEpoch) {
                         onBackgroundError?.(new Error("TRANSACTION_CONDITION_NOT_MET"));
                     }

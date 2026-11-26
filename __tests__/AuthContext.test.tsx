@@ -24,7 +24,10 @@ const {
 
 vi.mock("@/lib/firebase", () => ({
   auth: { name: "mock-auth" },
-  db: { name: "mock-db" },
+  db: {
+    name: "mock-db",
+    app: { options: { projectId: "er-consult" } },
+  },
 }));
 
 vi.mock("firebase/auth", () => ({
@@ -2503,6 +2506,7 @@ describe("AuthContext", () => {
       const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
       let leftoverFirestoreDatabases: Array<{ name: string; version: number }> = [
         { name: "firestore/[DEFAULT]/er-consult/main", version: 1 },
+        { name: "firestore/[DEFAULT]/other-project/main", version: 1 },
       ];
       Object.defineProperty(document, "cookie", {
         configurable: true,
@@ -2587,8 +2591,10 @@ describe("AuthContext", () => {
         expect(screen.getByTestId("uid")).toHaveTextContent("null");
         expect(screen.getByTestId("staff")).toHaveTextContent("false");
 
-        // Once cache deletion confirms (removing the Firestore IndexedDB), page reloads
-        leftoverFirestoreDatabases = [];
+        // Once cache deletion confirms (removing the target Firestore IndexedDB, leaving unrelated project DB untouched), page reloads
+        leftoverFirestoreDatabases = [
+          { name: "firestore/[DEFAULT]/other-project/main", version: 1 },
+        ];
         await act(async () => {
           resolveStartupClear();
           await Promise.resolve();
@@ -2597,6 +2603,9 @@ describe("AuthContext", () => {
         await waitFor(() => {
           expect(reloadSpy).toHaveBeenCalledTimes(1);
         });
+        expect(leftoverFirestoreDatabases.map((entry) => entry.name)).toEqual([
+          "firestore/[DEFAULT]/other-project/main",
+        ]);
         refreshedMount.unmount();
         reloadSpy.mockClear();
 
@@ -2760,7 +2769,10 @@ describe("AuthContext", () => {
       });
 
       expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
-      expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(true);
+      vi.useRealTimers();
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "LOGOUT_CACHE_CLEARED")).toBe(true);
+      });
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
@@ -3188,6 +3200,146 @@ describe("AuthContext", () => {
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
+      peerChannel.close();
+    }
+  });
+
+  it("tracks peer termination failure separately from ACK, offers marker-verified reload instead of clear-only retry, and keeps sign-in blocked until startup deletion completes", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    peerChannel.onmessage = (event) => {
+      peerMessages.push(event.data as { type: string; requestId?: string });
+    };
+
+    try {
+      mockTerminate.mockRejectedValueOnce(new Error("peer-terminate-failed"));
+
+      const peerMount = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-peer-fail-1",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(peerMessages.some((m) => m.type === "LOGOUT_TERMINATE_DB_ACK" && m.requestId === "term-peer-fail-1")).toBe(true);
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/ปลดการเชื่อมต่อเดิม/);
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBe("term-peer-fail-1");
+
+      // Sign-in remains blocked while peer recovery gate is active
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+      expect(screen.getByTestId("staff")).toHaveTextContent("false");
+
+      // Retry reloads with the verified marker rather than calling clearIndexedDbPersistence on the un-terminated peer db
+      fireEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", { name: /ลองล้างแคช/ })
+      );
+      await Promise.resolve();
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+      peerMount.unmount();
+
+      // After reload, startup recovery runs terminate + clearIndexedDbPersistence and gates sign-in until deletion confirms
+      let resolveStartupPeerClear!: () => void;
+      mockClearIndexedDbPersistence.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveStartupPeerClear = resolve;
+          })
+      );
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(2);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+
+      await act(async () => {
+        resolveStartupPeerClear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(reloadSpy).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      peerChannel.close();
+    }
+  });
+
+  it("preserves shared cookie cleanup marker across tab-local sessionStorage writes until cleanup completes", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      // Another tab fell back to the shared cookie before broadcasting LOGOUT_TERMINATE_DB_REQUEST
+      document.cookie = "er_consult_pending_cache_cleanup_v1=term-cookie-shared; path=/; SameSite=Lax";
+
+      // Second tab receives LOGOUT_TERMINATE_DB_REQUEST and writes to its own sessionStorage; shared cookie must remain
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-peer-storage-ok",
+        senderTabId: "initiating-tab",
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+      });
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBe("term-peer-storage-ok");
+      expect(document.cookie).toContain("er_consult_pending_cache_cleanup_v1=term-cookie-shared");
+
+      // Once cleanup completes via initiator broadcast, clearPendingCleanupMarker clears all marker stores including cookie
+      peerChannel.postMessage({
+        type: "LOGOUT_CACHE_CLEARED",
+        requestId: "term-peer-storage-ok",
+        senderTabId: "initiating-tab",
+      });
+      await waitFor(() => {
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(document.cookie).not.toContain("er_consult_pending_cache_cleanup_v1=");
+    } finally {
       peerChannel.close();
     }
   });
