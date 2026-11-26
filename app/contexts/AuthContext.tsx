@@ -210,13 +210,73 @@ async function checkStartupFirestoreIndexedDb(
   const targetDbName = getTargetFirestoreIndexedDbName(targetDb);
   if (!targetDbName) return "clean";
   const idb = window.indexedDB;
-  if (!idb || typeof idb.databases !== "function") return "clean";
-  try {
-    const databases = await idb.databases();
-    return databases.some((entry) => entry?.name === targetDbName) ? "found" : "clean";
-  } catch {
-    return "error";
+  if (!idb) return "clean";
+  if (typeof idb.databases === "function") {
+    try {
+      const databases = await idb.databases();
+      return databases.some((entry) => entry?.name === targetDbName) ? "found" : "clean";
+    } catch {
+      return "error";
+    }
   }
+  if (typeof idb.open === "function") {
+    // Fallback for browsers without indexedDB.databases(): probe targetDbName without mutating state
+    return new Promise<"found" | "clean" | "error">((resolve) => {
+      let createdNewDb = false;
+      let settled = false;
+      const finish = (status: "found" | "clean" | "error") => {
+        if (settled) return;
+        settled = true;
+        resolve(status);
+      };
+      try {
+        const req = idb.open(targetDbName);
+        req.onupgradeneeded = () => {
+          createdNewDb = true;
+          try {
+            req.transaction?.abort();
+          } catch {
+            // Ignore abort errors on empty DB probe
+          }
+        };
+        req.onsuccess = () => {
+          try {
+            req.result?.close();
+          } catch {
+            // Ignore close errors
+          }
+          if (createdNewDb) {
+            try {
+              idb.deleteDatabase?.(targetDbName);
+            } catch {
+              // Ignore delete errors for empty probe
+            }
+            finish("clean");
+          } else {
+            finish("found");
+          }
+        };
+        req.onerror = () => {
+          if (createdNewDb) {
+            try {
+              idb.deleteDatabase?.(targetDbName);
+            } catch {
+              // Ignore delete errors for aborted probe
+            }
+            finish("clean");
+          } else {
+            finish("error");
+          }
+        };
+        req.onblocked = () => {
+          finish("error");
+        };
+      } catch {
+        finish("error");
+      }
+    });
+  }
+  return "error";
 }
 
 function readPendingCleanupMarker(): PendingCleanupMarker | null {
@@ -1283,7 +1343,7 @@ export function AuthProvider({
               !pendingFirestoreCleanupRef.current &&
               cleanupRoleRef.current === null &&
               !logoutInProgressRef.current &&
-              typeof window.indexedDB?.databases === "function"
+              window.indexedDB
           );
           setUser(null);
           setIsAuthorizedStaff(false);

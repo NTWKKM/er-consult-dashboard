@@ -4322,4 +4322,146 @@ describe("AuthContext", () => {
       }
     }
   });
+
+  it("probes via indexedDB.open when indexedDB.databases() is unavailable and distinguishes existing cache from clean startup", async () => {
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    const mockClose = vi.fn();
+    const mockAbort = vi.fn();
+    const mockDeleteDatabase = vi.fn();
+    let dbExistsOnDisk = true;
+
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        open: vi.fn((name: string) => {
+          expect(name).toBe("firestore/[DEFAULT]/er-consult/main");
+          const req: Record<string, unknown> = {
+            result: { close: mockClose },
+            transaction: { abort: mockAbort },
+          };
+          queueMicrotask(() => {
+            if (!dbExistsOnDisk && typeof req.onupgradeneeded === "function") {
+              (req.onupgradeneeded as () => void)();
+            }
+            if (!dbExistsOnDisk && typeof req.onerror === "function") {
+              (req.onerror as () => void)();
+            } else if (typeof req.onsuccess === "function") {
+              (req.onsuccess as () => void)();
+            }
+          });
+          return req;
+        }),
+        deleteDatabase: mockDeleteDatabase,
+      },
+    });
+
+    try {
+      // Case 1: Leftover DB exists when databases() is missing -> probe finds it, gates sign-in, clears, reloads
+      let resolveClear!: () => void;
+      mockClearIndexedDbPersistence.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveClear = resolve;
+          })
+      );
+
+      const firstRender = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(1);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      });
+      expect(mockClose).toHaveBeenCalledTimes(1);
+      expect(mockDeleteDatabase).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("null");
+
+      dbExistsOnDisk = false;
+      await act(async () => {
+        resolveClear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      });
+      firstRender.unmount();
+      reloadSpy.mockClear();
+
+      // Case 2: Clean workstation after deletion (no databases() API) -> open fires onupgradeneeded, aborts/deletes probe, allows login
+      const secondRender = render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("loading")).toHaveTextContent("false");
+        expect(screen.getByTestId("cleanup")).toHaveTextContent("false");
+      });
+      expect(mockAbort).toHaveBeenCalledTimes(1);
+      expect(mockDeleteDatabase).toHaveBeenCalledWith("firestore/[DEFAULT]/er-consult/main");
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("uid")).toHaveTextContent("staff-1");
+      secondRender.unmount();
+
+      // Case 3: window.indexedDB exists with neither databases() nor open() -> fails closed without reload loop
+      Object.defineProperty(window, "indexedDB", {
+        configurable: true,
+        value: {},
+      });
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(2);
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(2);
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+    } finally {
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
+    }
+  });
 });
