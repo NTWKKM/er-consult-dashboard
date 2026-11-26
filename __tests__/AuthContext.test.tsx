@@ -5741,8 +5741,8 @@ describe("AuthContext", () => {
         await Promise.resolve();
       });
 
-      // Tab A's terminate resolved immediately and started its 2500ms fallback timer;
-      // stagger Tab B's terminate completion by 500ms so Tab B's fallback deadline is 500ms later
+      // Tab A's terminate resolved immediately and started its 1500ms fallback timer (PEER_CACHE_CLEAR_FALLBACK_MS);
+      // stagger Tab B's terminate completion by 500ms so Tab B's fallback deadline is 500ms later (at t=2000ms)
       await act(async () => {
         await vi.advanceTimersByTimeAsync(500);
         resolveTabBTerminate();
@@ -5750,10 +5750,10 @@ describe("AuthContext", () => {
         await Promise.resolve();
       });
 
-      // Advance ONLY to Tab A's fallback deadline (2000ms more -> 2500ms since Tab A terminated;
-      // Tab B's deadline is still 500ms away) and wait for both tabs to reload
+      // Advance ONLY to Tab A's fallback deadline (1000ms more -> 1500ms since Tab A terminated;
+      // Tab B's deadline is still 500ms away at t=2000ms) and wait for both tabs to reload
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(1000);
         await bothReloadsCalled;
       });
       expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
