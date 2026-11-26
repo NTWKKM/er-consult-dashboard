@@ -5671,7 +5671,43 @@ describe("AuthContext", () => {
       return vi.fn();
     });
 
-    // Stagger termination between Tab A (resolves immediately) and Tab B (resolves 500ms later)
+    // Observe cross-tab BroadcastChannel traffic to deterministically synchronize peer discovery,
+    // both peer termination requests, and the first tab's termination ACK
+    const observerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    let resolvePeersDiscovered!: () => void;
+    const peersDiscovered = new Promise<void>((resolve) => {
+      resolvePeersDiscovered = resolve;
+    });
+    const terminateRequestSenders = new Set<string>();
+    let resolveBothTerminateRequests!: () => void;
+    const bothTerminateRequestsSent = new Promise<void>((resolve) => {
+      resolveBothTerminateRequests = resolve;
+    });
+    let resolveFirstTerminateAck!: () => void;
+    const firstTerminateAckReceived = new Promise<void>((resolve) => {
+      resolveFirstTerminateAck = resolve;
+    });
+    observerChannel.onmessage = (event) => {
+      const msg = event.data as {
+        type?: string;
+        tabId?: string;
+        senderTabId?: string;
+        requestId?: string;
+      };
+      if (msg.type === "HELLO_ACK" && msg.tabId) {
+        // Tab B's HELLO reached Tab A and Tab A replied HELLO_ACK back to Tab B
+        resolvePeersDiscovered();
+      } else if (msg.type === "LOGOUT_TERMINATE_DB_REQUEST" && msg.senderTabId) {
+        terminateRequestSenders.add(msg.senderTabId);
+        if (terminateRequestSenders.size >= 2) {
+          resolveBothTerminateRequests();
+        }
+      } else if (msg.type === "LOGOUT_TERMINATE_DB_ACK" && msg.requestId) {
+        resolveFirstTerminateAck();
+      }
+    };
+
+    // Stagger termination between the first peer (resolves immediately) and the second peer (resolves 500ms later)
     let resolveTabBTerminate!: () => void;
     let resolveBothTerminatesStarted!: () => void;
     const bothTerminatesStarted = new Promise<void>((resolve) => {
@@ -5703,7 +5739,7 @@ describe("AuthContext", () => {
       }
     });
 
-    // Keep signOut pending briefly so both tabs broadcast LOGOUT_TERMINATE_DB_REQUEST concurrently
+    // Keep signOut resolved so both tabs broadcast LOGOUT_TERMINATE_DB_REQUEST concurrently
     mockSignOut.mockResolvedValue(undefined);
 
     vi.useFakeTimers();
@@ -5723,26 +5759,29 @@ describe("AuthContext", () => {
         </AuthProvider>
       );
 
-      // Sign in both tabs as staff and allow HELLO/HELLO_ACK peer discovery to settle
+      // Sign in both tabs as staff and confirm mutual HELLO/HELLO_ACK peer discovery
       await act(async () => {
         for (const cb of authCallbacks) {
           cb(makeMockStaffUser());
         }
+        await peersDiscovered;
         await vi.advanceTimersByTimeAsync(250);
       });
 
-      // Both tabs initiate logout concurrently -> wait until both tabs have processed
-      // the termination requests and started both termination flows before advancing timers
+      // Both tabs initiate logout concurrently -> wait until both peer termination requests
+      // have been sent, both termination flows have started, and the first tab's ACK is observed
       await act(async () => {
         fireEvent.click(within(tabA.getByTestId("tab-a")).getByRole("button", { name: "Logout" }));
         fireEvent.click(within(tabB.getByTestId("tab-b")).getByRole("button", { name: "Logout" }));
-        await bothTerminatesStarted;
-        await Promise.resolve();
-        await Promise.resolve();
+        await Promise.all([
+          bothTerminateRequestsSent,
+          bothTerminatesStarted,
+          firstTerminateAckReceived,
+        ]);
       });
 
-      // Tab A's terminate resolved immediately and started its 1500ms fallback timer (PEER_CACHE_CLEAR_FALLBACK_MS);
-      // stagger Tab B's terminate completion by 500ms so Tab B's fallback deadline is 500ms later (at t=2000ms)
+      // First peer's terminate resolved and ACKed (scheduling its 1500ms fallback timer);
+      // stagger the second peer's terminate completion by 500ms so its fallback deadline is 500ms later (at t=2000ms)
       await act(async () => {
         await vi.advanceTimersByTimeAsync(500);
         resolveTabBTerminate();
@@ -5783,6 +5822,7 @@ describe("AuthContext", () => {
       newSessionTab.unmount();
       tabB.unmount();
     } finally {
+      observerChannel.close();
       if (prevOnAuthStateChangedImpl) {
         mockOnAuthStateChanged.mockImplementation(prevOnAuthStateChangedImpl);
       }
