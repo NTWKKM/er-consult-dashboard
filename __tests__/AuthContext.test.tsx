@@ -4948,6 +4948,7 @@ describe("AuthContext", () => {
         await Promise.resolve();
         await Promise.resolve();
       });
+      expect(retryButton).toBeDisabled();
       expect(mockTerminate).toHaveBeenCalledTimes(1);
       expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
       expect(reloadSpy).not.toHaveBeenCalled();
@@ -5095,6 +5096,7 @@ describe("AuthContext", () => {
   it("hands off runInitiatorClearWithWatchdog explicitly when a peer takes ownership mid-clear without broadcasting initiator requestId or reloading early", async () => {
     const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
     const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    const postMessageSpy = vi.spyOn(BroadcastChannel.prototype, "postMessage");
     let resolveAck!: () => void;
     const ackReceived = new Promise<void>((resolve) => {
       resolveAck = resolve;
@@ -5125,15 +5127,10 @@ describe("AuthContext", () => {
         })
     );
 
-    let resolvePeerTerminate!: () => void;
-    mockTerminate
-      .mockResolvedValueOnce(undefined)
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            resolvePeerTerminate = resolve;
-          })
-      );
+    // Model Firebase's cached shutdown promise: repeated terminate(db) calls on the same
+    // Firestore instance share the same settled promise.
+    const sharedTerminatePromise = Promise.resolve();
+    mockTerminate.mockImplementation(() => sharedTerminatePromise);
 
     try {
       render(
@@ -5146,44 +5143,316 @@ describe("AuthContext", () => {
         expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
       });
 
-      // Peer takes ownership while initiator's clearIndexedDbPersistence is still pending
-      peerChannel.postMessage({
-        type: "LOGOUT_TERMINATE_DB_REQUEST",
-        requestId: "term-peer-takeover",
-        senderTabId: "peer-takeover-tab",
-      });
-
-      await waitFor(() => {
-        expect(mockTerminate).toHaveBeenCalledTimes(2);
-      });
-
-      // Initiator clear finishes while peer terminate is still pending -> must hand off without
-      // clearing peer marker, broadcasting initiator's old requestId, or reloading prematurely
+      // Peer takes ownership while initiator's clearIndexedDbPersistence is still pending;
+      // the already-terminated Firestore instance ACKs immediately without reloading before clear finishes
       await act(async () => {
-        resolveClear();
-        await Promise.resolve();
-        await Promise.resolve();
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_REQUEST",
+          requestId: "term-peer-takeover",
+          senderTabId: "peer-takeover-tab",
+        });
+        await ackReceived;
       });
 
-      expect(
-        peerMessages.some(
-          (m) => m.type === "LOGOUT_CACHE_CLEARED" && m.requestId === "term-stale-initiator"
-        )
-      ).toBe(false);
+      expect(mockTerminate).toHaveBeenCalledTimes(2);
       expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBe(
         "term-peer-takeover"
       );
       expect(reloadSpy).not.toHaveBeenCalled();
 
-      // Once peer termination completes, explicit handoff (peerCacheClearedRef) completes peer reload
+      // Initiator clear finishes after peer ACK -> must hand off without clearing peer marker
+      // or broadcasting initiator's stale LOGOUT_CACHE_CLEARED, then complete peer reload
       await act(async () => {
-        resolvePeerTerminate();
+        resolveClear();
+        await reloadCalled;
+      });
+
+      expect(
+        postMessageSpy.mock.calls.some(([msg]) => {
+          const typed = msg as { type?: string; requestId?: string } | undefined;
+          return (
+            typed?.type === "LOGOUT_CACHE_CLEARED" &&
+            typed?.requestId === "term-stale-initiator"
+          );
+        })
+      ).toBe(false);
+      expect(
+        peerMessages.some(
+          (m) => m.type === "LOGOUT_CACHE_CLEARED" && m.requestId === "term-stale-initiator"
+        )
+      ).toBe(false);
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      postMessageSpy.mockRestore();
+      peerChannel.close();
+    }
+  });
+
+  it("starts a peer termination watchdog on an existing pending terminate(db) promise and lets only the active peer request update the dialog", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    let resolveTerminate!: () => void;
+    mockTerminate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveTerminate = resolve;
+        })
+    );
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      // Initiator starts logout -> terminate(db) remains pending
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+
+      // Peer takes over while terminate(db) is still pending (reuses existing pending promise)
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_REQUEST",
+          requestId: "term-peer-watchdog-1",
+          senderTabId: "peer-watchdog-tab",
+        });
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+
+      // Peer's watchdog fires after 3000ms -> shows blocked manual_retry dialog while keeping sign-in blocked
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // A newer peer request supersedes the first request before terminate settles
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_REQUEST",
+          requestId: "term-peer-watchdog-2",
+          senderTabId: "peer-watchdog-tab",
+        });
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // Resolving the shared terminate(db) settles only the active request (stays blocked in pending until cache clear)
+      await act(async () => {
+        resolveTerminate();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBe(
+        "term-peer-watchdog-2"
+      );
+    } finally {
+      vi.useRealTimers();
+      peerChannel.close();
+    }
+  });
+
+  it("preserves incoming peer ownership if a peer termination arrives during logout ACK wait", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    let resolveAck!: () => void;
+    const ackReceived = new Promise<void>((resolve) => {
+      resolveAck = resolve;
+    });
+    let resolveReload!: () => void;
+    const reloadCalled = new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    });
+    reloadSpy.mockImplementationOnce(() => {
+      resolveReload();
+    });
+
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      if (msg.type === "LOGOUT_CHECK_REQUEST" && msg.requestId) {
+        peerChannel.postMessage({
+          type: "LOGOUT_CHECK_RESPONSE",
+          requestId: msg.requestId,
+          tabId: "peer-race-tab",
+          hasPending: false,
+          hasDrafts: false,
+        });
+      } else if (msg.type === "LOGOUT_TERMINATE_DB_REQUEST" && msg.requestId) {
+        // Instead of only ACKing, the peer sends its own termination request first, then ACKs ours
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_REQUEST",
+          requestId: "term-peer-race-winner",
+          senderTabId: "peer-race-tab",
+        });
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_ACK",
+          requestId: msg.requestId,
+          tabId: "peer-race-tab",
+        });
+      } else if (
+        msg.type === "LOGOUT_TERMINATE_DB_ACK" &&
+        msg.requestId === "term-peer-race-winner"
+      ) {
+        resolveAck();
+      }
+    };
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "HELLO",
+          tabId: "peer-race-tab",
+          hasPending: false,
+          hasDrafts: false,
+        });
+        await new Promise((r) => setTimeout(r, 20));
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
         await ackReceived;
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Initiator must preserve the peer's marker and role instead of overwriting or clearing locally
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBe(
+        "term-peer-race-winner"
+      );
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_CACHE_CLEARED",
+          requestId: "term-peer-race-winner",
+          senderTabId: "peer-race-tab",
+        });
         await reloadCalled;
       });
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     } finally {
       peerChannel.close();
+    }
+  });
+
+  it("does not mark peer cache cleared or reload early when startup IndexedDB verification fails during peer takeover", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+    let resolveAck!: () => void;
+    const ackReceived = new Promise<void>((resolve) => {
+      resolveAck = resolve;
+    });
+    let resolveReload!: () => void;
+    const reloadCalled = new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    });
+    reloadSpy.mockImplementationOnce(() => {
+      resolveReload();
+    });
+
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      if (msg.type === "LOGOUT_TERMINATE_DB_ACK" && msg.requestId === "term-peer-idb-err") {
+        resolveAck();
+      }
+    };
+
+    let rejectDatabases!: (err: Error) => void;
+    let databasesCallCount = 0;
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      value: {
+        databases: vi.fn(() => {
+          databasesCallCount += 1;
+          if (databasesCallCount === 1) {
+            // Startup check fails -> enters manual_retry gate with verifyIdbCleanOnFinalizeRef = true on retry
+            return Promise.reject(new Error("idb unavailable"));
+          }
+          return new Promise<Array<{ name?: string }>>((_, reject) => {
+            rejectDatabases = reject;
+          });
+        }),
+      },
+    });
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(null);
+        await Promise.resolve();
+      });
+
+      // Startup IDB check fails (call 1) -> auto-triggers runStartupCleanup -> finalize verifies IDB (call 2)
+      await waitFor(() => {
+        expect(databasesCallCount).toBe(2);
+      });
+
+      // Peer takes over while checkStartupFirestoreIndexedDb is in flight
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_TERMINATE_DB_REQUEST",
+          requestId: "term-peer-idb-err",
+          senderTabId: "peer-idb-err-tab",
+        });
+        await ackReceived;
+      });
+
+      // Verification rejects (idbStatus === "error") -> must NOT set peerCacheClearedRef or reload early
+      await act(async () => {
+        rejectDatabases(new Error("idb still unavailable"));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Reload proceeds only after matching peer LOGOUT_CACHE_CLEARED signal
+      await act(async () => {
+        peerChannel.postMessage({
+          type: "LOGOUT_CACHE_CLEARED",
+          requestId: "term-peer-idb-err",
+          senderTabId: "peer-idb-err-tab",
+        });
+        await reloadCalled;
+      });
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      peerChannel.close();
+      if (originalIndexedDbDesc) {
+        Object.defineProperty(window, "indexedDB", originalIndexedDbDesc);
+      } else {
+        delete (window as unknown as { indexedDB?: unknown }).indexedDB;
+      }
     }
   });
 });

@@ -573,6 +573,7 @@ export function AuthProvider({
   const verifyIdbCleanOnFinalizeRef = useRef(false);
   const peerReloadFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const peerClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peerTerminatePendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initiatorClearPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initiatorTerminatePendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cleanupBackdropRef = useRef<HTMLDivElement>(null);
@@ -619,13 +620,13 @@ export function AuthProvider({
         clearTimeout(peerClearPendingTimerRef.current);
         peerClearPendingTimerRef.current = null;
       }
+      if (peerTerminatePendingTimerRef.current !== null) {
+        clearTimeout(peerTerminatePendingTimerRef.current);
+        peerTerminatePendingTimerRef.current = null;
+      }
       if (initiatorClearPendingTimerRef.current !== null) {
         clearTimeout(initiatorClearPendingTimerRef.current);
         initiatorClearPendingTimerRef.current = null;
-      }
-      if (initiatorTerminatePendingTimerRef.current !== null) {
-        clearTimeout(initiatorTerminatePendingTimerRef.current);
-        initiatorTerminatePendingTimerRef.current = null;
       }
       if (initiatorTerminatePendingTimerRef.current !== null) {
         clearTimeout(initiatorTerminatePendingTimerRef.current);
@@ -896,6 +897,10 @@ export function AuthProvider({
               clearTimeout(peerClearPendingTimerRef.current);
               peerClearPendingTimerRef.current = null;
             }
+            if (peerTerminatePendingTimerRef.current !== null) {
+              clearTimeout(peerTerminatePendingTimerRef.current);
+              peerTerminatePendingTimerRef.current = null;
+            }
             const isCurrentRequest = () =>
               channelRef.current === channel && activeTerminateRequestIdRef.current === requestId;
             const sendAck = () => {
@@ -918,7 +923,27 @@ export function AuthProvider({
               setManualRetryError(!markerPersisted);
               setUser(null);
               setIsAuthorizedStaff(false);
-              void terminate(activeDb)
+              let peerTerminateSettled = false;
+              let terminatePromise = activeTerminatePromiseRef.current;
+              if (!terminatePromise) {
+                const createdPromise = terminate(activeDb).finally(() => {
+                  if (activeTerminatePromiseRef.current === createdPromise) {
+                    activeTerminatePromiseRef.current = null;
+                  }
+                });
+                activeTerminatePromiseRef.current = createdPromise;
+                terminatePromise = createdPromise;
+              }
+              peerTerminatePendingTimerRef.current = setTimeout(() => {
+                peerTerminatePendingTimerRef.current = null;
+                if (peerTerminateSettled || !isCurrentRequest()) return;
+                pendingFirestoreCleanupRef.current = true;
+                terminatedDbRef.current = activeDb;
+                setCleanupBlockedByPending(true);
+                setCleanupNeedsConnectionReset(false);
+                setCleanupPhase("manual_retry");
+              }, PEER_CACHE_CLEAR_PENDING_WAIT_MS);
+              void terminatePromise
                 .then(
                   () => {
                     if (isCurrentRequest()) {
@@ -932,6 +957,11 @@ export function AuthProvider({
                   }
                 )
                 .finally(() => {
+                  peerTerminateSettled = true;
+                  if (peerTerminatePendingTimerRef.current !== null) {
+                    clearTimeout(peerTerminatePendingTimerRef.current);
+                    peerTerminatePendingTimerRef.current = null;
+                  }
                   sendAck();
                   if (!isCurrentRequest()) return;
                   peerDbTerminatedRef.current = true;
@@ -945,64 +975,68 @@ export function AuthProvider({
                     setCleanupNeedsConnectionReset(true);
                     setManualRetryError(true);
                     setCleanupPhase("manual_retry");
-                  } else if (peerReloadFallbackTimerRef.current === null) {
-                    // Safety fallback if initiating tab closed/crashed: clear persistence locally
-                    // before reloading; if initiating tab is still clearing, retry up to 6 times,
-                    // or surface instructions if a deletion remains pending beyond a bounded wait.
-                    const scheduleFallbackCheck = (attempt = 0) => {
-                      peerReloadFallbackTimerRef.current = setTimeout(() => {
-                        peerReloadFallbackTimerRef.current = null;
-                        if (!isCurrentRequest()) return;
-                        if (peerCacheClearedRef.current) {
-                          triggerPeerReloadIfReady();
-                          return;
-                        }
-                        let settled = false;
-                        const clearPromise = getOrStartClearPersistence(activeDb);
-                        if (peerClearPendingTimerRef.current !== null) {
-                          clearTimeout(peerClearPendingTimerRef.current);
-                        }
-                        peerClearPendingTimerRef.current = setTimeout(() => {
-                          peerClearPendingTimerRef.current = null;
-                          if (settled || !isCurrentRequest()) return;
-                          pendingFirestoreCleanupRef.current = true;
-                          terminatedDbRef.current = activeDb;
-                          setCleanupBlockedByPending(true);
-                          setCleanupPhase("manual_retry");
-                        }, PEER_CACHE_CLEAR_PENDING_WAIT_MS);
-
-                        void clearPromise.then(
-                          () => {
-                            settled = true;
-                            if (peerClearPendingTimerRef.current !== null) {
-                              clearTimeout(peerClearPendingTimerRef.current);
-                              peerClearPendingTimerRef.current = null;
-                            }
-                            if (!isCurrentRequest()) return;
-                            setCleanupBlockedByPending(false);
-                            peerCacheClearedRef.current = true;
+                  } else {
+                    setCleanupBlockedByPending(false);
+                    setCleanupPhase("pending");
+                    if (peerReloadFallbackTimerRef.current === null) {
+                      // Safety fallback if initiating tab closed/crashed: clear persistence locally
+                      // before reloading; if initiating tab is still clearing, retry up to 6 times,
+                      // or surface instructions if a deletion remains pending beyond a bounded wait.
+                      const scheduleFallbackCheck = (attempt = 0) => {
+                        peerReloadFallbackTimerRef.current = setTimeout(() => {
+                          peerReloadFallbackTimerRef.current = null;
+                          if (!isCurrentRequest()) return;
+                          if (peerCacheClearedRef.current) {
                             triggerPeerReloadIfReady();
-                          },
-                          () => {
-                            settled = true;
-                            if (peerClearPendingTimerRef.current !== null) {
-                              clearTimeout(peerClearPendingTimerRef.current);
-                              peerClearPendingTimerRef.current = null;
-                            }
-                            if (!isCurrentRequest()) return;
-                            setCleanupBlockedByPending(false);
-                            if (attempt < 5) {
-                              scheduleFallbackCheck(attempt + 1);
-                            } else {
-                              pendingFirestoreCleanupRef.current = true;
-                              terminatedDbRef.current = activeDb;
-                              setCleanupPhase("manual_retry");
-                            }
+                            return;
                           }
-                        );
-                      }, PEER_CACHE_CLEAR_FALLBACK_MS);
-                    };
-                    scheduleFallbackCheck(0);
+                          let settled = false;
+                          const clearPromise = getOrStartClearPersistence(activeDb);
+                          if (peerClearPendingTimerRef.current !== null) {
+                            clearTimeout(peerClearPendingTimerRef.current);
+                          }
+                          peerClearPendingTimerRef.current = setTimeout(() => {
+                            peerClearPendingTimerRef.current = null;
+                            if (settled || !isCurrentRequest()) return;
+                            pendingFirestoreCleanupRef.current = true;
+                            terminatedDbRef.current = activeDb;
+                            setCleanupBlockedByPending(true);
+                            setCleanupPhase("manual_retry");
+                          }, PEER_CACHE_CLEAR_PENDING_WAIT_MS);
+
+                          void clearPromise.then(
+                            () => {
+                              settled = true;
+                              if (peerClearPendingTimerRef.current !== null) {
+                                clearTimeout(peerClearPendingTimerRef.current);
+                                peerClearPendingTimerRef.current = null;
+                              }
+                              if (!isCurrentRequest()) return;
+                              setCleanupBlockedByPending(false);
+                              peerCacheClearedRef.current = true;
+                              triggerPeerReloadIfReady();
+                            },
+                            () => {
+                              settled = true;
+                              if (peerClearPendingTimerRef.current !== null) {
+                                clearTimeout(peerClearPendingTimerRef.current);
+                                peerClearPendingTimerRef.current = null;
+                              }
+                              if (!isCurrentRequest()) return;
+                              setCleanupBlockedByPending(false);
+                              if (attempt < 5) {
+                                scheduleFallbackCheck(attempt + 1);
+                              } else {
+                                pendingFirestoreCleanupRef.current = true;
+                                terminatedDbRef.current = activeDb;
+                                setCleanupPhase("manual_retry");
+                              }
+                            }
+                          );
+                        }, PEER_CACHE_CLEAR_FALLBACK_MS);
+                      };
+                      scheduleFallbackCheck(0);
+                    }
                   }
                 });
             } else {
@@ -1092,6 +1126,10 @@ export function AuthProvider({
       if (peerClearPendingTimerRef.current !== null) {
         clearTimeout(peerClearPendingTimerRef.current);
         peerClearPendingTimerRef.current = null;
+      }
+      if (peerTerminatePendingTimerRef.current !== null) {
+        clearTimeout(peerTerminatePendingTimerRef.current);
+        peerTerminatePendingTimerRef.current = null;
       }
       if (initiatorClearPendingTimerRef.current !== null) {
         clearTimeout(initiatorClearPendingTimerRef.current);
@@ -1306,8 +1344,11 @@ export function AuthProvider({
         const idbStatus = await checkStartupFirestoreIndexedDb(targetDb);
         if (hasActivePeerTermination()) {
           initiatorFinalizingRef.current = false;
-          peerCacheClearedRef.current = true;
-          triggerPeerReloadIfReady();
+          if (idbStatus !== "error") {
+            verifyIdbCleanOnFinalizeRef.current = false;
+            peerCacheClearedRef.current = true;
+            triggerPeerReloadIfReady();
+          }
           return;
         }
         if (cleanupRoleRef.current !== "initiator") {
@@ -1877,6 +1918,11 @@ export function AuthProvider({
         const terminateRequestId =
           (await terminatePeerFirestoreTabs()) ??
           `term-${ownerTabId}-${Date.now()}-${logoutSequenceRef.current}`;
+        if (hasActivePeerTermination()) {
+          terminationStarted = true;
+          setLogoutCleanupGateActive(false);
+          return;
+        }
         terminationStarted = true;
         const markerPersisted = writePendingCleanupMarker(terminateRequestId);
         pendingFirestoreCleanupRef.current = true;
