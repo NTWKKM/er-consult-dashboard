@@ -4903,10 +4903,87 @@ describe("AuthContext", () => {
     }
   });
 
+  it("keeps watchdog Retry observing pending terminate() on normal logout without starting a second terminate, clear, or reload", async () => {
+    let resolveTerminate!: () => void;
+    mockTerminate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveTerminate = resolve;
+        })
+    );
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await act(async () => {
+        authCallback!(makeMockStaffUser());
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+
+      // Watchdog fires while terminate() remains pending -> shows enabled Retry with close-other-tabs instructions
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      const retryButton = within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: /ลองล้างแคช/,
+      });
+      expect(retryButton).not.toBeDisabled();
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/กรุณาปิดแท็บอื่นของระบบที่เปิดค้างไว้/);
+
+      // Clicking Retry while terminate() is still pending observes the same termination without starting another terminate, clear, or reload
+      await act(async () => {
+        fireEvent.click(retryButton);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cleanup")).toHaveTextContent("true");
+
+      // Resolving the original pending terminate() completes exactly one clear and one reload
+      await act(async () => {
+        resolveTerminate();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockTerminate).toHaveBeenCalledTimes(1);
+      expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("defers startup retry cleanup to an active peer termination owner without starting a competing termination request", async () => {
     const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
     const peerMessages: Array<{ type: string; requestId?: string }> = [];
     const originalIndexedDbDesc = Object.getOwnPropertyDescriptor(window, "indexedDB");
+
+    let resolveAckReceived!: () => void;
+    const ackReceived = new Promise<void>((resolve) => {
+      resolveAckReceived = resolve;
+    });
+    let resolveReloadCalled!: () => void;
+    const reloadCalled = new Promise<void>((resolve) => {
+      resolveReloadCalled = resolve;
+    });
+    reloadSpy.mockImplementationOnce(() => {
+      resolveReloadCalled();
+    });
 
     peerChannel.onmessage = (event) => {
       const msg = event.data as { type: string; requestId?: string };
@@ -4919,6 +4996,11 @@ describe("AuthContext", () => {
           hasPending: false,
           hasDrafts: true,
         });
+      } else if (
+        msg.type === "LOGOUT_TERMINATE_DB_ACK" &&
+        msg.requestId === "term-peer-owner-1"
+      ) {
+        resolveAckReceived();
       }
     };
 
@@ -4971,15 +5053,15 @@ describe("AuthContext", () => {
       });
       expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-      // Peer becomes active termination owner while startup Retry prompt is open
+      // Peer becomes active termination owner while startup Retry prompt is open;
+      // synchronize deterministically on BroadcastChannel ACK delivery
       await act(async () => {
         peerChannel.postMessage({
           type: "LOGOUT_TERMINATE_DB_REQUEST",
           requestId: "term-peer-owner-1",
           senderTabId: "peer-owner-tab",
         });
-        await Promise.resolve();
-        await Promise.resolve();
+        await ackReceived;
       });
 
       // Peer request owns the cleanup: marker reflects peer's requestId, no competing LOGOUT_TERMINATE_DB_REQUEST sent
@@ -4987,17 +5069,16 @@ describe("AuthContext", () => {
         "term-peer-owner-1"
       );
       expect(peerMessages.some((m) => m.type === "LOGOUT_TERMINATE_DB_REQUEST")).toBe(false);
-      expect(peerMessages.some((m) => m.type === "LOGOUT_TERMINATE_DB_ACK" && m.requestId === "term-peer-owner-1")).toBe(true);
       expect(mockTerminate).toHaveBeenCalledTimes(1);
 
-      // Peer completes cache clear -> reloads cleanly under the peer owner
+      // Peer completes cache clear -> synchronize deterministically on reload invocation
       await act(async () => {
         peerChannel.postMessage({
           type: "LOGOUT_CACHE_CLEARED",
           requestId: "term-peer-owner-1",
           senderTabId: "peer-owner-tab",
         });
-        await Promise.resolve();
+        await reloadCalled;
       });
       expect(reloadSpy).toHaveBeenCalledTimes(1);
     } finally {
@@ -5008,6 +5089,101 @@ describe("AuthContext", () => {
       } else {
         delete (window as unknown as { indexedDB?: unknown }).indexedDB;
       }
+    }
+  });
+
+  it("hands off runInitiatorClearWithWatchdog explicitly when a peer takes ownership mid-clear without broadcasting initiator requestId or reloading early", async () => {
+    const peerChannel = new BroadcastChannel("er_consult_auth_sync_v1");
+    const peerMessages: Array<{ type: string; requestId?: string }> = [];
+    let resolveAck!: () => void;
+    const ackReceived = new Promise<void>((resolve) => {
+      resolveAck = resolve;
+    });
+    let resolveReload!: () => void;
+    const reloadCalled = new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    });
+    reloadSpy.mockImplementationOnce(() => {
+      resolveReload();
+    });
+
+    peerChannel.onmessage = (event) => {
+      const msg = event.data as { type: string; requestId?: string };
+      peerMessages.push(msg);
+      if (msg.type === "LOGOUT_TERMINATE_DB_ACK" && msg.requestId === "term-peer-takeover") {
+        resolveAck();
+      }
+    };
+
+    window.sessionStorage.setItem("er_consult_pending_cache_cleanup_v1", "term-stale-initiator");
+
+    let resolveClear!: () => void;
+    mockClearIndexedDbPersistence.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveClear = resolve;
+        })
+    );
+
+    let resolvePeerTerminate!: () => void;
+    mockTerminate
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolvePeerTerminate = resolve;
+          })
+      );
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(mockClearIndexedDbPersistence).toHaveBeenCalledTimes(1);
+      });
+
+      // Peer takes ownership while initiator's clearIndexedDbPersistence is still pending
+      peerChannel.postMessage({
+        type: "LOGOUT_TERMINATE_DB_REQUEST",
+        requestId: "term-peer-takeover",
+        senderTabId: "peer-takeover-tab",
+      });
+
+      await waitFor(() => {
+        expect(mockTerminate).toHaveBeenCalledTimes(2);
+      });
+
+      // Initiator clear finishes while peer terminate is still pending -> must hand off without
+      // clearing peer marker, broadcasting initiator's old requestId, or reloading prematurely
+      await act(async () => {
+        resolveClear();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(
+        peerMessages.some(
+          (m) => m.type === "LOGOUT_CACHE_CLEARED" && m.requestId === "term-stale-initiator"
+        )
+      ).toBe(false);
+      expect(window.sessionStorage.getItem("er_consult_pending_cache_cleanup_v1")).toBe(
+        "term-peer-takeover"
+      );
+      expect(reloadSpy).not.toHaveBeenCalled();
+
+      // Once peer termination completes, explicit handoff (peerCacheClearedRef) completes peer reload
+      await act(async () => {
+        resolvePeerTerminate();
+        await ackReceived;
+        await reloadCalled;
+      });
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      peerChannel.close();
     }
   });
 });

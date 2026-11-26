@@ -1217,8 +1217,26 @@ export function AuthProvider({
     return requestId;
   }, []);
 
+  const hasActivePeerTermination = useCallback(
+    () => cleanupRoleRef.current === "peer" || activeTerminateRequestIdRef.current !== null,
+    []
+  );
+
   const runInitiatorClearWithWatchdog = useCallback(
     async (targetDb: Firestore) => {
+      const expectedRequestId = initiatorTerminateRequestIdRef.current;
+      const isActiveInitiatorOwner = () =>
+        cleanupRoleRef.current === "initiator" &&
+        initiatorTerminateRequestIdRef.current === expectedRequestId &&
+        !hasActivePeerTermination();
+
+      if (!isActiveInitiatorOwner()) {
+        if (hasActivePeerTermination()) {
+          initiatorTerminateRequestIdRef.current = null;
+        }
+        return;
+      }
+
       if (initiatorClearPendingTimerRef.current !== null) {
         clearTimeout(initiatorClearPendingTimerRef.current);
       }
@@ -1226,7 +1244,7 @@ export function AuthProvider({
       const clearPromise = getOrStartClearPersistence(targetDb);
       initiatorClearPendingTimerRef.current = setTimeout(() => {
         initiatorClearPendingTimerRef.current = null;
-        if (settled) return;
+        if (settled || !isActiveInitiatorOwner()) return;
         pendingFirestoreCleanupRef.current = true;
         terminatedDbRef.current = targetDb;
         setCleanupBlockedByPending(true);
@@ -1241,6 +1259,15 @@ export function AuthProvider({
           clearTimeout(initiatorClearPendingTimerRef.current);
           initiatorClearPendingTimerRef.current = null;
         }
+      }
+
+      if (!isActiveInitiatorOwner()) {
+        if (hasActivePeerTermination()) {
+          initiatorTerminateRequestIdRef.current = null;
+          peerCacheClearedRef.current = true;
+          triggerPeerReloadIfReady();
+        }
+        return;
       }
 
       if (initiatorFinalizingRef.current) return;
@@ -1262,6 +1289,11 @@ export function AuthProvider({
       if (!canReadPendingCleanupStorage()) {
         // Storage remains unreadable: keep cleanup gate active rather than reloading into an unverified state
         initiatorFinalizingRef.current = false;
+        if (hasActivePeerTermination()) {
+          peerCacheClearedRef.current = true;
+          triggerPeerReloadIfReady();
+          return;
+        }
         pendingFirestoreCleanupRef.current = true;
         terminatedDbRef.current = targetDb;
         setCleanupBlockedByPending(false);
@@ -1272,6 +1304,16 @@ export function AuthProvider({
       }
       if (verifyIdbCleanOnFinalizeRef.current) {
         const idbStatus = await checkStartupFirestoreIndexedDb(targetDb);
+        if (hasActivePeerTermination()) {
+          initiatorFinalizingRef.current = false;
+          peerCacheClearedRef.current = true;
+          triggerPeerReloadIfReady();
+          return;
+        }
+        if (cleanupRoleRef.current !== "initiator") {
+          initiatorFinalizingRef.current = false;
+          return;
+        }
         if (idbStatus === "error") {
           // IndexedDB enumeration still rejects: hold cleanup gate rather than reloading into an unverified loop
           initiatorFinalizingRef.current = false;
@@ -1285,6 +1327,16 @@ export function AuthProvider({
         }
         verifyIdbCleanOnFinalizeRef.current = false;
       }
+      if (hasActivePeerTermination()) {
+        initiatorFinalizingRef.current = false;
+        peerCacheClearedRef.current = true;
+        triggerPeerReloadIfReady();
+        return;
+      }
+      if (cleanupRoleRef.current !== "initiator") {
+        initiatorFinalizingRef.current = false;
+        return;
+      }
       pendingFirestoreCleanupRef.current = false;
       cleanupRoleRef.current = null;
       terminatedDbRef.current = null;
@@ -1295,12 +1347,7 @@ export function AuthProvider({
         window.location.reload();
       }
     },
-    [getOrStartClearPersistence]
-  );
-
-  const hasActivePeerTermination = useCallback(
-    () => cleanupRoleRef.current === "peer" || activeTerminateRequestIdRef.current !== null,
-    []
+    [getOrStartClearPersistence, hasActivePeerTermination, triggerPeerReloadIfReady]
   );
 
   const runInitiatorTerminateWithWatchdog = useCallback(
@@ -1335,15 +1382,17 @@ export function AuthProvider({
       }
 
       if (keepBlockedDialog) {
-        pendingFirestoreCleanupRef.current = true;
-        terminatedDbRef.current = targetDb;
-        setCleanupBlockedByPending(true);
-        setCleanupNeedsConnectionReset(false);
-        setCleanupPhase("manual_retry");
+        if (!hasActivePeerTermination()) {
+          pendingFirestoreCleanupRef.current = true;
+          terminatedDbRef.current = targetDb;
+          setCleanupBlockedByPending(true);
+          setCleanupNeedsConnectionReset(false);
+          setCleanupPhase("manual_retry");
+        }
       } else {
         initiatorTerminatePendingTimerRef.current = setTimeout(() => {
           initiatorTerminatePendingTimerRef.current = null;
-          if (settled) return;
+          if (settled || hasActivePeerTermination()) return;
           pendingFirestoreCleanupRef.current = true;
           terminatedDbRef.current = targetDb;
           setCleanupBlockedByPending(true);
@@ -1362,7 +1411,7 @@ export function AuthProvider({
         }
       }
     },
-    []
+    [hasActivePeerTermination]
   );
 
   const runStartupCleanup = useCallback(
@@ -1393,9 +1442,15 @@ export function AuthProvider({
           startupDiscardPromptActiveRef.current = true;
           let startupCheck: { canProceed: boolean; confirmedDiscard: boolean };
           try {
+            const requestStartupDiscardConfirmation = (message: string) => {
+              if (isCancelled() || hasActivePeerTermination()) {
+                return Promise.resolve(false);
+              }
+              return requestDiscardConfirmation(message);
+            };
             startupCheck = await confirmPendingWritesBeforeLogout(
               freshDb,
-              requestDiscardConfirmation,
+              requestStartupDiscardConfirmation,
               queryPeerTabsBeforeLogout
             );
           } finally {
@@ -1438,6 +1493,7 @@ export function AuthProvider({
         setCleanupPhase(keepBlockedDialog ? "manual_retry" : "pending");
         setLogoutCleanupGateActive(false);
         await runInitiatorTerminateWithWatchdog(freshDb, { keepBlockedDialog });
+        if (isCancelled() || hasActivePeerTermination()) return;
         await runInitiatorClearWithWatchdog(freshDb);
       } catch {
         if (isCancelled() || hasActivePeerTermination()) return;
@@ -1839,8 +1895,10 @@ export function AuthProvider({
         setIsAuthorizedStaff(false);
         try {
           await runInitiatorTerminateWithWatchdog(db);
+          if (hasActivePeerTermination()) return;
           await runInitiatorClearWithWatchdog(db);
         } catch {
+          if (hasActivePeerTermination()) return;
           // Keep access blocked and offer retry; do NOT reload with stale PHI in IndexedDB
           pendingFirestoreCleanupRef.current = true;
           setCleanupBlockedByPending(false);
@@ -1878,6 +1936,7 @@ export function AuthProvider({
     }
   }, [
     enterPostSignOutDeclinedHold,
+    hasActivePeerTermination,
     queryPeerTabsBeforeLogout,
     terminatePeerFirestoreTabs,
     requestDiscardConfirmation,
